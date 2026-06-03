@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#18212f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>11408 备考记录</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">11408 考研</p>
+          <h1>备考分数本</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button" id="importBtn" type="button" title="导入数据" aria-label="导入数据">
+            <span aria-hidden="true">↑</span>
+          </button>
+          <button class="icon-button" id="exportBtn" type="button" title="导出数据" aria-label="导出数据">
+            <span aria-hidden="true">↓</span>
+          </button>
+          <input type="file" id="importFile" accept=".json" style="display: none;" />
+        </div>
+      </header>
+
+      <main>
+        <section class="summary-grid" aria-label="总览">
+          <article class="metric">
+            <span class="metric-label">总记录</span>
+            <strong id="totalRecords">0</strong>
+            <small>套模拟卷</small>
+          </article>
+          <article class="metric">
+            <span class="metric-label">近 7 天</span>
+            <strong id="weekRecords">0</strong>
+            <small>次练习</small>
+          </article>
+          <article class="metric">
+            <span class="metric-label">目标差距</span>
+            <strong id="targetGap">--</strong>
+            <small>平均还差</small>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>各科状态</h2>
+            <button id="manageSubjectsBtn" type="button">科目</button>
+          </div>
+          <div class="subject-list" id="subjectList"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>学习洞察</h2>
+          </div>
+          <div class="insights-list" id="insightsList"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>新增模考</h2>
+          </div>
+          <form id="recordForm" class="record-form">
+            <label>
+              科目
+              <select id="subjectId" required></select>
+            </label>
+            <label>
+              试卷名称
+              <input id="paperName" type="text" placeholder="例如：408 真题模拟 01" required />
+            </label>
+            <div class="form-row">
+              <label>
+                得分
+                <input id="score" type="number" inputmode="decimal" min="0" step="0.5" required />
+              </label>
+              <label>
+                满分
+                <input id="fullScore" type="number" inputmode="decimal" min="1" step="1" required />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                日期
+                <input id="examDate" type="date" required />
+              </label>
+              <label>
+                用时
+                <input id="duration" type="number" inputmode="numeric" min="0" step="1" placeholder="分钟" />
+              </label>
+            </div>
+            <label>
+              主要失分原因
+              <select id="mistakeReason">
+                <option value="不会">不会</option>
+                <option value="粗心">粗心</option>
+                <option value="时间不够">时间不够</option>
+                <option value="审题错误">审题错误</option>
+                <option value="知识点遗忘">知识点遗忘</option>
+              </select>
+            </label>
+            <label>
+              复盘备注
+              <textarea id="note" rows="3" placeholder="这套卷暴露了什么？下次先补哪里？"></textarea>
+            </label>
+            <button class="primary-button" type="submit">保存记录</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>单科趋势</h2>
+            <select id="chartSubject"></select>
+          </div>
+          <canvas id="trendCanvas" width="720" height="300" aria-label="成绩趋势图"></canvas>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>各科得分率对比</h2>
+          </div>
+          <canvas id="radarCanvas" width="720" height="500" aria-label="雷达图"></canvas>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>失分原因分析</h2>
+          </div>
+          <canvas id="pieCanvas" width="720" height="400" aria-label="饼图"></canvas>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>练习频率</h2>
+          </div>
+          <canvas id="heatmapCanvas" width="720" height="180" aria-label="热力图"></canvas>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>最近记录</h2>
+            <button id="clearDemoBtn" type="button">清空</button>
+          </div>
+          <div class="record-list" id="recordList"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="subjectDialog">
+      <form method="dialog" class="dialog-card">
+        <div class="section-head">
+          <h2>科目目标</h2>
+          <button type="submit" aria-label="关闭">×</button>
+        </div>
+        <div id="subjectEditor" class="subject-editor"></div>
+        <button class="primary-button" id="saveSubjectsBtn" type="button">保存科目设置</button>
+      </form>
+    </dialog>
+
+    <dialog id="importDialog">
+      <div class="dialog-card">
+        <div class="section-head">
+          <h2>导入数据</h2>
+        </div>
+        <p class="dialog-text">检测到导入数据，请选择导入方式：</p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="importMergeBtn" type="button">合并数据</button>
+          <button class="primary-button" id="importReplaceBtn" type="button">覆盖数据</button>
+        </div>
+        <p class="dialog-hint">合并模式会保留现有数据并添加新数据；覆盖模式会删除所有现有数据。</p>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

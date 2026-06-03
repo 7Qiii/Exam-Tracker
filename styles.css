@@ -1,0 +1,498 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7f4;
+  --surface: #ffffff;
+  --ink: #18212f;
+  --muted: #667085;
+  --line: #d9e1dc;
+  --accent: #18706f;
+  --accent-strong: #115958;
+  --warn: #b85c38;
+  --blue: #315b9d;
+  --radius: 8px;
+  font-family: "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 18px 14px 32px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 2px 18px;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.eyebrow {
+  margin: 0 0 3px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.12;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+.icon-button,
+.section-head button,
+.section-head select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 12px;
+}
+
+.icon-button {
+  width: 42px;
+  padding: 0;
+  font-size: 22px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.metric,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.metric {
+  padding: 12px;
+  min-width: 0;
+}
+
+.metric-label,
+.metric small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric strong {
+  display: block;
+  margin: 4px 0 2px;
+  font-size: 23px;
+  line-height: 1;
+}
+
+.panel {
+  margin-top: 12px;
+  padding: 14px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.subject-list,
+.record-list,
+.subject-editor,
+.insights-list {
+  display: grid;
+  gap: 10px;
+}
+
+.insight-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: #fbfcfb;
+  border-left-width: 4px;
+}
+
+.insight-card strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.insight-card p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.insight-tip {
+  font-weight: 600;
+  margin-top: 6px !important;
+}
+
+.insight-success {
+  border-left-color: #18706f;
+  background: #f0f9f9;
+}
+
+.insight-success strong {
+  color: #18706f;
+}
+
+.insight-warning {
+  border-left-color: #b85c38;
+  background: #fef6f4;
+}
+
+.insight-warning strong {
+  color: #b85c38;
+}
+
+.insight-info {
+  border-left-color: #315b9d;
+  background: #f4f7fb;
+}
+
+.insight-info strong {
+  color: #315b9d;
+}
+
+.insight-tip {
+  border-left-color: #8060a8;
+  background: #f8f6fb;
+}
+
+.insight-tip strong {
+  color: #8060a8;
+}
+
+.subject-card,
+.record-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.subject-top,
+.record-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.subject-name,
+.record-title {
+  font-weight: 800;
+}
+
+.subject-score {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e9eeec;
+  margin: 10px 0 8px;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.record-form {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 10px;
+  outline: none;
+}
+
+textarea {
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(24, 112, 111, 0.12);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.primary-button {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+}
+
+.primary-button:active {
+  background: var(--accent-strong);
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfb;
+}
+
+.record-card {
+  position: relative;
+}
+
+.delete-record {
+  border: 0;
+  background: transparent;
+  color: var(--warn);
+  font-weight: 800;
+}
+
+dialog {
+  width: min(560px, calc(100% - 24px));
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0;
+}
+
+dialog::backdrop {
+  background: rgba(24, 33, 47, 0.42);
+}
+
+.dialog-card {
+  padding: 16px;
+}
+
+.dialog-text {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 12px 0;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.secondary-button {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.secondary-button:active {
+  background: var(--bg);
+}
+
+.dialog-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 8px 0 0;
+}
+
+.subject-edit-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr;
+  gap: 8px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%) translateY(16px);
+  max-width: calc(100% - 28px);
+  border-radius: var(--radius);
+  background: #18212f;
+  color: #fff;
+  padding: 10px 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.empty {
+  color: var(--muted);
+  padding: 10px 0;
+}
+
+@media (max-width: 560px) {
+  .summary-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .metric {
+    padding: 10px 8px;
+  }
+
+  .metric strong {
+    font-size: 20px;
+  }
+
+  .form-row,
+  .subject-edit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .icon-button {
+    width: 40px;
+    min-height: 40px;
+  }
+
+  canvas {
+    touch-action: pan-y;
+  }
+
+  .dialog-actions {
+    grid-template-columns: 1fr;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+}
+
+/* 针对高分辨率屏幕（如华为 Mate 70 Pro）的优化 */
+@media (min-resolution: 2dppx) {
+  canvas {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+}
+
+/* 触摸优化 - 增大可点击区域 */
+@media (hover: none) and (pointer: coarse) {
+  button,
+  select,
+  input[type="date"],
+  input[type="file"] {
+    min-height: 44px;
+  }
+
+  .delete-record,
+  .section-head button {
+    min-height: 40px;
+    padding: 8px 14px;
+  }
+
+  .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* 安全区域适配（刘海屏、药丸屏） */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .app-shell {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: max(32px, env(safe-area-inset-bottom));
+  }
+
+  .toast {
+    bottom: max(22px, calc(env(safe-area-inset-bottom) + 10px));
+  }
+}
