@@ -1,0 +1,8 @@
+{
+  "name": "11408-exam-tracker",
+  "version": "2.0.0",
+  "description": "考研 11408 备考记录应用",
+  "scripts": {
+    "start": "npx http-server . -p 5173"
+  }
+}
