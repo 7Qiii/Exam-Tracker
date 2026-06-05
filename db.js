@@ -1,4 +1,4 @@
-// IndexedDB 数据库管理模块
+const CLOUD_PIN_KEY = "exam-11408-cloud-pin";
 const DB_NAME = "exam-11408-db";
 const DB_VERSION = 1;
 const STORE_NAME = "state";
@@ -30,67 +30,66 @@ function openDB() {
 }
 
 export async function loadState() {
+  const localState = await loadLocalState();
+  const cloudPin = getCloudPin();
+
+  if (!cloudPin) {
+    return localState;
+  }
+
   try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], "readonly");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get("appState");
+    const cloudState = await fetchCloudState(cloudPin);
+    if (cloudState) {
+      await saveLocalState(cloudState);
+      return cloudState;
+    }
 
-      request.onsuccess = () => {
-        const data = request.result;
-        if (data && data.subjects && Array.isArray(data.records)) {
-          resolve(data);
-        } else {
-          // 尝试从 localStorage 迁移数据
-          resolve(migrateFromLocalStorage());
-        }
-      };
+    if (localState) {
+      await saveCloudState(localState, cloudPin);
+    }
 
-      request.onerror = () => reject(request.error);
-    });
+    return localState;
   } catch (error) {
-    console.error("IndexedDB 加载失败，使用 localStorage", error);
-    return migrateFromLocalStorage();
+    console.error("Cloud load failed; using local data", error);
+    return localState;
   }
 }
 
 export async function saveState(state) {
-  try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(state, "appState");
+  await saveLocalState(state);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  } catch (error) {
-    console.error("IndexedDB 保存失败", error);
-    throw error;
+  const cloudPin = getCloudPin();
+  if (!cloudPin) {
+    return;
   }
+
+  await saveCloudState(state, cloudPin);
 }
 
-function migrateFromLocalStorage() {
-  const STORAGE_KEY = "exam-11408-state-v1";
-  const raw = localStorage.getItem(STORAGE_KEY);
+export function getStorageMode() {
+  return getCloudPin() ? "cloud" : "local";
+}
 
-  if (!raw) {
-    return null;
+export async function configureCloudSync() {
+  const currentPin = getCloudPin();
+  const nextPin = window.prompt(
+    "输入云端同步密码。手机和电脑输入同一个密码，就会使用同一份云端数据。留空可关闭云同步。",
+    currentPin || ""
+  );
+
+  if (nextPin === null) {
+    return { changed: false, mode: getStorageMode() };
   }
 
-  try {
-    const parsed = JSON.parse(raw);
-    // 迁移后保存到 IndexedDB
-    saveState(parsed).then(() => {
-      console.log("数据已从 localStorage 迁移到 IndexedDB");
-      localStorage.removeItem(STORAGE_KEY);
-    });
-    return parsed;
-  } catch {
-    return null;
+  const trimmed = nextPin.trim();
+  if (!trimmed) {
+    localStorage.removeItem(CLOUD_PIN_KEY);
+    return { changed: true, mode: "local" };
   }
+
+  localStorage.setItem(CLOUD_PIN_KEY, trimmed);
+  const state = await loadState();
+  return { changed: true, mode: "cloud", state };
 }
 
 export async function exportData() {
@@ -108,20 +107,17 @@ export async function importData(jsonString, mergeMode = false) {
 
     if (mergeMode) {
       const current = await loadState();
-
-      // 合并科目（以 id 为准，相同 id 的科目保留现有配置）
-      const subjectMap = new Map(current.subjects.map(s => [s.id, s]));
-      imported.subjects.forEach(s => {
-        if (!subjectMap.has(s.id)) {
-          subjectMap.set(s.id, s);
+      const subjectMap = new Map((current?.subjects || []).map((subject) => [subject.id, subject]));
+      imported.subjects.forEach((subject) => {
+        if (!subjectMap.has(subject.id)) {
+          subjectMap.set(subject.id, subject);
         }
       });
 
-      // 合并记录（去重，以 id 为准）
-      const recordMap = new Map(current.records.map(r => [r.id, r]));
-      imported.records.forEach(r => {
-        if (!recordMap.has(r.id)) {
-          recordMap.set(r.id, r);
+      const recordMap = new Map((current?.records || []).map((record) => [record.id, record]));
+      imported.records.forEach((record) => {
+        if (!recordMap.has(record.id)) {
+          recordMap.set(record.id, record);
         }
       });
 
@@ -132,12 +128,105 @@ export async function importData(jsonString, mergeMode = false) {
 
       await saveState(merged);
       return { success: true, mode: "merge", recordCount: merged.records.length };
-    } else {
-      // 覆盖模式
-      await saveState(imported);
-      return { success: true, mode: "replace", recordCount: imported.records.length };
     }
+
+    await saveState(imported);
+    return { success: true, mode: "replace", recordCount: imported.records.length };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+}
+
+async function loadLocalState() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], "readonly");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get("appState");
+
+      request.onsuccess = () => {
+        const data = request.result;
+        if (data && data.subjects && Array.isArray(data.records)) {
+          resolve(data);
+        } else {
+          resolve(migrateFromLocalStorage());
+        }
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error("IndexedDB load failed; using localStorage", error);
+    return migrateFromLocalStorage();
+  }
+}
+
+async function saveLocalState(state) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(state, "appState");
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error("IndexedDB save failed", error);
+    throw error;
+  }
+}
+
+async function fetchCloudState(pin) {
+  const response = await fetch("/api/state", {
+    headers: { "x-app-pin": pin },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cloud load failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  return payload.state || null;
+}
+
+async function saveCloudState(state, pin) {
+  const response = await fetch("/api/state", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-app-pin": pin
+    },
+    body: JSON.stringify(state)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cloud save failed: ${response.status}`);
+  }
+}
+
+function getCloudPin() {
+  return localStorage.getItem(CLOUD_PIN_KEY) || "";
+}
+
+function migrateFromLocalStorage() {
+  const storageKey = "exam-11408-state-v1";
+  const raw = localStorage.getItem(storageKey);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    saveLocalState(parsed).then(() => {
+      localStorage.removeItem(storageKey);
+    });
+    return parsed;
+  } catch {
+    return null;
   }
 }

@@ -92,6 +92,12 @@ h2 {
   font-size: 22px;
 }
 
+.icon-button.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

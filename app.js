@@ -1,4 +1,4 @@
-import { loadState as loadStateDB, saveState as saveStateDB, importData } from "./db.js";
+import { configureCloudSync, getStorageMode, loadState as loadStateDB, saveState as saveStateDB, importData } from "./db.js";
 import { drawTrendChart, drawRadarChart, drawPieChart, drawHeatmapChart } from "./charts.js";
 import { generateInsights, calculateStudyIntensity } from "./analytics.js";
 
@@ -41,6 +41,7 @@ const els = {
   insightsList: document.querySelector("#insightsList"),
   toast: document.querySelector("#toast"),
   exportBtn: document.querySelector("#exportBtn"),
+  cloudSyncBtn: document.querySelector("#cloudSyncBtn"),
   importBtn: document.querySelector("#importBtn"),
   importFile: document.querySelector("#importFile"),
   clearDemoBtn: document.querySelector("#clearDemoBtn"),
@@ -76,6 +77,7 @@ function bindEvents() {
   els.subjectId.addEventListener("change", syncFullScore);
   els.chartSubject.addEventListener("change", () => drawAllCharts());
   els.exportBtn.addEventListener("click", exportDataToFile);
+  els.cloudSyncBtn.addEventListener("click", handleCloudSync);
   els.importBtn.addEventListener("click", () => els.importFile.click());
   els.importFile.addEventListener("change", handleImportFile);
   els.clearDemoBtn.addEventListener("click", clearRecords);
@@ -97,10 +99,31 @@ async function saveState() {
 function render() {
   renderSelectors();
   renderSummary();
+  renderStorageMode();
   renderSubjects();
   renderRecords();
   renderInsights();
   drawAllCharts();
+}
+
+function renderStorageMode() {
+  if (!els.cloudSyncBtn) return;
+  const isCloud = getStorageMode() === "cloud";
+  els.cloudSyncBtn.classList.toggle("is-active", isCloud);
+  els.cloudSyncBtn.title = isCloud ? "云端同步已开启" : "云端同步未开启";
+  els.cloudSyncBtn.setAttribute("aria-label", els.cloudSyncBtn.title);
+}
+
+async function handleCloudSync() {
+  try {
+    const result = await configureCloudSync();
+    state = result.state || await loadStateDB();
+    render();
+    showToast(result.mode === "cloud" ? "云端同步已开启" : "已切换为本机存储");
+  } catch (error) {
+    console.error("Cloud sync setup failed", error);
+    showToast("云端同步失败，请检查密码和 Vercel 配置");
+  }
 }
 
 function renderSelectors() {
