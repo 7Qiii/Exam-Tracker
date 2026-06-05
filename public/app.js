@@ -1,6 +1,5 @@
 import { configureCloudSync, getStorageMode, loadState as loadStateDB, saveState as saveStateDB, importData } from "./db.js";
-import { drawTrendChart, drawRadarChart, drawPieChart, drawHeatmapChart } from "./charts.js";
-import { generateInsights, calculateStudyIntensity } from "./analytics.js";
+import { drawTrendChart } from "./charts.js";
 
 const defaultSubjects = [
   { id: "math1", name: "数学一", fullScore: 150, targetScore: 115, color: "#18706f" },
@@ -28,17 +27,11 @@ const els = {
   score: document.querySelector("#score"),
   fullScore: document.querySelector("#fullScore"),
   examDate: document.querySelector("#examDate"),
-  duration: document.querySelector("#duration"),
-  mistakeReason: document.querySelector("#mistakeReason"),
   note: document.querySelector("#note"),
   recordForm: document.querySelector("#recordForm"),
   chartSubject: document.querySelector("#chartSubject"),
   trendCanvas: document.querySelector("#trendCanvas"),
-  radarCanvas: document.querySelector("#radarCanvas"),
-  pieCanvas: document.querySelector("#pieCanvas"),
-  heatmapCanvas: document.querySelector("#heatmapCanvas"),
   recordList: document.querySelector("#recordList"),
-  insightsList: document.querySelector("#insightsList"),
   toast: document.querySelector("#toast"),
   exportBtn: document.querySelector("#exportBtn"),
   cloudSyncBtn: document.querySelector("#cloudSyncBtn"),
@@ -75,7 +68,7 @@ async function loadInitialState() {
 function bindEvents() {
   els.recordForm.addEventListener("submit", addRecord);
   els.subjectId.addEventListener("change", syncFullScore);
-  els.chartSubject.addEventListener("change", () => drawAllCharts());
+  els.chartSubject.addEventListener("change", () => drawTrend());
   els.exportBtn.addEventListener("click", exportDataToFile);
   els.cloudSyncBtn.addEventListener("click", handleCloudSync);
   els.importBtn.addEventListener("click", () => els.importFile.click());
@@ -102,8 +95,7 @@ function render() {
   renderStorageMode();
   renderSubjects();
   renderRecords();
-  renderInsights();
-  drawAllCharts();
+  drawTrend();
 }
 
 function renderStorageMode() {
@@ -157,52 +149,6 @@ function renderSummary() {
   els.targetGap.textContent = avgGap === null ? "--" : avgGap;
 }
 
-function renderInsights() {
-  if (!state.records.length) {
-    els.insightsList.innerHTML = `<p class="empty">记录几套卷后，这里会显示学习建议</p>`;
-    return;
-  }
-
-  const recordsMap = {};
-  state.subjects.forEach((s) => {
-    recordsMap[s.id] = recordsFor(s.id);
-  });
-
-  const insights = generateInsights(state.subjects, recordsMap);
-  const intensity = calculateStudyIntensity(state.records, 7);
-
-  if (!insights.length && intensity.level === 'medium') {
-    els.insightsList.innerHTML = `<p class="empty">继续保持当前学习节奏 💪</p>`;
-    return;
-  }
-
-  let html = '';
-
-  // 学习强度卡片
-  const intensityClass = intensity.level === 'high' ? 'insight-success' :
-                         intensity.level === 'medium' ? 'insight-info' : 'insight-warning';
-  html += `
-    <article class="insight-card ${intensityClass}">
-      <strong>学习强度</strong>
-      <p>近7天练习 ${intensity.totalTests} 次，平均每天 ${intensity.testsPerDay} 次</p>
-      <p class="insight-tip">${intensity.suggestion}</p>
-    </article>
-  `;
-
-  // 各科洞察
-  insights.forEach(insight => {
-    const typeClass = `insight-${insight.type}`;
-    html += `
-      <article class="insight-card ${typeClass}">
-        <strong>${insight.subject}</strong>
-        <p>${insight.message}</p>
-      </article>
-    `;
-  });
-
-  els.insightsList.innerHTML = html;
-}
-
 function renderSubjects() {
   if (!state.subjects.length) {
     els.subjectList.innerHTML = `<p class="empty">还没有科目。</p>`;
@@ -247,12 +193,12 @@ function renderRecords() {
           <div class="record-top">
             <div>
               <p class="record-title">${escapeHtml(record.paperName)}</p>
-              <p class="meta">${escapeHtml(subject?.name || "未知科目")} · ${record.date} · ${record.duration || "--"} 分钟</p>
+              <p class="meta">${escapeHtml(subject?.name || "未知科目")} · ${record.date}</p>
             </div>
             <button class="delete-record" type="button" onclick="deleteRecord('${record.id}')">删除</button>
           </div>
           <div class="progress" aria-hidden="true"><span style="width:${Math.min(100, pct)}%; background:${subject?.color || "#18706f"}"></span></div>
-          <p class="meta">得分 ${record.score}/${record.fullScore}，得分率 ${pct}% · 主要原因：${escapeHtml(record.mistakeReason)}</p>
+          <p class="meta">得分 ${record.score}/${record.fullScore}，得分率 ${pct}%</p>
           ${record.note ? `<p class="meta">复盘：${escapeHtml(record.note)}</p>` : ""}
         </article>
       `;
@@ -277,8 +223,6 @@ async function addRecord(event) {
     score,
     fullScore,
     date: els.examDate.value,
-    duration: Number(els.duration.value) || null,
-    mistakeReason: els.mistakeReason.value,
     note: els.note.value.trim(),
     createdAt: new Date().toISOString()
   });
@@ -313,24 +257,10 @@ function syncFullScore() {
   }
 }
 
-function drawAllCharts() {
-  // 绘制单科趋势图
+function drawTrend() {
   const subject = findSubject(els.chartSubject.value);
   const records = recordsFor(els.chartSubject.value).slice(-8);
   drawTrendChart(els.trendCanvas, records, subject, true);
-
-  // 绘制雷达图
-  const recordsMap = {};
-  state.subjects.forEach((s) => {
-    recordsMap[s.id] = recordsFor(s.id);
-  });
-  drawRadarChart(els.radarCanvas, state.subjects, recordsMap);
-
-  // 绘制失分原因饼图
-  drawPieChart(els.pieCanvas, state.records);
-
-  // 绘制练习频率热力图
-  drawHeatmapChart(els.heatmapCanvas, state.records);
 }
 
 function openSubjectDialog() {
@@ -429,7 +359,7 @@ function findSubject(id) {
   return state.subjects.find((subject) => subject.id === id);
 }
 
-function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, duration, mistakeReason, note) {
+function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, _duration, _mistakeReason, note) {
   const date = new Date();
   date.setDate(date.getDate() + daysAgo);
   return {
@@ -439,8 +369,6 @@ function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, duration,
     score,
     fullScore,
     date: date.toISOString().slice(0, 10),
-    duration,
-    mistakeReason,
     note,
     createdAt: date.toISOString()
   };

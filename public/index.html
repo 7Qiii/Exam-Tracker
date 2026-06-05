@@ -62,13 +62,6 @@
 
         <section class="panel">
           <div class="section-head">
-            <h2>学习洞察</h2>
-          </div>
-          <div class="insights-list" id="insightsList"></div>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
             <h2>新增模考</h2>
           </div>
           <form id="recordForm" class="record-form">
@@ -95,21 +88,7 @@
                 日期
                 <input id="examDate" type="date" required />
               </label>
-              <label>
-                用时
-                <input id="duration" type="number" inputmode="numeric" min="0" step="1" placeholder="分钟" />
-              </label>
             </div>
-            <label>
-              主要失分原因
-              <select id="mistakeReason">
-                <option value="不会">不会</option>
-                <option value="粗心">粗心</option>
-                <option value="时间不够">时间不够</option>
-                <option value="审题错误">审题错误</option>
-                <option value="知识点遗忘">知识点遗忘</option>
-              </select>
-            </label>
             <label>
               复盘备注
               <textarea id="note" rows="3" placeholder="这套卷暴露了什么？下次先补哪里？"></textarea>
@@ -124,27 +103,6 @@
             <select id="chartSubject"></select>
           </div>
           <canvas id="trendCanvas" width="720" height="300" aria-label="成绩趋势图"></canvas>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>各科得分率对比</h2>
-          </div>
-          <canvas id="radarCanvas" width="720" height="500" aria-label="雷达图"></canvas>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>失分原因分析</h2>
-          </div>
-          <canvas id="pieCanvas" width="720" height="400" aria-label="饼图"></canvas>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>练习频率</h2>
-          </div>
-          <canvas id="heatmapCanvas" width="720" height="180" aria-label="热力图"></canvas>
         </section>
 
         <section class="panel">
