@@ -39,6 +39,8 @@ const els = {
   subjectCountHint: document.querySelector("#subjectCountHint"),
   bestRateHint: document.querySelector("#bestRateHint"),
   pageTitle: document.querySelector("#pageTitle"),
+  menuBtn: document.querySelector("#menuBtn"),
+  sidebarBackdrop: document.querySelector("#sidebarBackdrop"),
   storageBadge: document.querySelector("#storageBadge"),
   subjectList: document.querySelector("#subjectList"),
   subjectId: document.querySelector("#subjectId"),
@@ -110,10 +112,13 @@ async function loadInitialState() {
 
 function bindEvents() {
   els.recordForm.addEventListener("submit", addRecord);
+  els.menuBtn.addEventListener("click", toggleSidebar);
+  els.sidebarBackdrop.addEventListener("click", closeSidebar);
   document.querySelectorAll("[data-view-link]").forEach((link) => {
     link.addEventListener("click", (event) => {
       event.preventDefault();
       setActiveView(link.dataset.viewLink, true);
+      closeSidebar();
     });
   });
   els.subjectId.addEventListener("change", syncFullScore);
@@ -143,6 +148,9 @@ function bindEvents() {
   els.importMergeBtn.addEventListener("click", () => processImport(true));
   els.importReplaceBtn.addEventListener("click", () => processImport(false));
   els.closeDetailBtn.addEventListener("click", () => els.detailDialog.close());
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSidebar();
+  });
   window.addEventListener("hashchange", () => setActiveView(location.hash.replace("#", "") || "dashboard", false));
 }
 
@@ -228,6 +236,26 @@ function setActiveView(view, updateHash) {
     history.pushState(null, "", `#${nextView}`);
   }
   window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function toggleSidebar() {
+  if (document.body.classList.contains("sidebar-open")) {
+    closeSidebar();
+  } else {
+    openSidebar();
+  }
+}
+
+function openSidebar() {
+  document.body.classList.add("sidebar-open");
+  els.sidebarBackdrop.hidden = false;
+  els.menuBtn.setAttribute("aria-expanded", "true");
+}
+
+function closeSidebar() {
+  document.body.classList.remove("sidebar-open");
+  els.sidebarBackdrop.hidden = true;
+  els.menuBtn.setAttribute("aria-expanded", "false");
 }
 
 function renderSubjects() {
@@ -1000,6 +1028,24 @@ function showToast(message) {
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+
+    navigator.serviceWorker.register("./sw.js").then((registration) => {
+      registration.update();
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        if (!worker) return;
+        worker.addEventListener("statechange", () => {
+          if (worker.state === "installed" && navigator.serviceWorker.controller) {
+            worker.postMessage({ type: "SKIP_WAITING" });
+          }
+        });
+      });
+    }).catch(() => {});
   }
 }
