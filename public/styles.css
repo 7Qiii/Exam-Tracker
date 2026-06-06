@@ -713,16 +713,56 @@ dialog::backdrop {
   }
 
   .sidebar {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: 20;
     height: auto;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .brand {
+    padding: 0;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
   }
 
   .side-nav {
     grid-template-columns: repeat(4, 1fr);
+    overflow-x: auto;
+  }
+
+  .side-nav a {
+    min-width: 78px;
+    padding: 9px 8px;
+    text-align: center;
+    white-space: nowrap;
   }
 
   .sync-card {
     margin-top: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .sync-card p {
+    display: none;
+  }
+
+  .sync-card span {
+    align-self: center;
+  }
+
+  .sync-card button {
+    width: auto;
+    min-height: 34px;
+    padding: 0 14px;
   }
 
   .metric-grid,
@@ -738,6 +778,39 @@ dialog::backdrop {
 }
 
 @media (max-width: 620px) {
+  .sidebar {
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+  }
+
+  .brand small {
+    display: none;
+  }
+
+  .side-nav {
+    display: flex;
+    gap: 8px;
+    margin: 0 -2px;
+    padding-bottom: 2px;
+  }
+
+  .side-nav a {
+    flex: 0 0 auto;
+    min-width: 76px;
+    font-size: 13px;
+  }
+
+  .sync-card {
+    grid-template-columns: auto 1fr;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .sync-card button {
+    justify-self: end;
+    max-width: 150px;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: column;

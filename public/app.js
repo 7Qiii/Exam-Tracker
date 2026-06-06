@@ -20,6 +20,7 @@ let pendingImportData = null;
 let pendingImportKind = "json";
 let overviewPoints = [];
 let overviewDateGroups = [];
+let trendPoints = [];
 const pageSize = 8;
 const chartTheme = {
   bg: "#ffffff",
@@ -60,6 +61,7 @@ const els = {
   overviewTooltip: document.querySelector("#overviewTooltip"),
   chartPointInfo: document.querySelector("#chartPointInfo"),
   trendCanvas: document.querySelector("#trendCanvas"),
+  trendPointInfo: document.querySelector("#trendPointInfo"),
   distributionCanvas: document.querySelector("#distributionCanvas"),
   recordTableBody: document.querySelector("#recordTableBody"),
   pageInfo: document.querySelector("#pageInfo"),
@@ -123,6 +125,7 @@ function bindEvents() {
   els.overviewTrendCanvas.addEventListener("click", handleOverviewChartClick);
   els.overviewTrendCanvas.addEventListener("mousemove", handleOverviewChartHover);
   els.overviewTrendCanvas.addEventListener("mouseleave", hideOverviewTooltip);
+  els.trendCanvas.addEventListener("click", handleTrendChartClick);
   els.filterSubject.addEventListener("change", resetPageAndRender);
   els.searchInput.addEventListener("input", resetPageAndRender);
   els.dateFrom.addEventListener("change", resetPageAndRender);
@@ -471,11 +474,7 @@ function handleOverviewChartClick(event) {
     return;
   }
 
-  const pct = round((hit.record.score / hit.record.fullScore) * 100);
-  els.chartPointInfo.innerHTML = `
-    <strong>${escapeHtml(hit.subject.name)}</strong>
-    ${escapeHtml(hit.record.paperName)} · ${hit.record.date} · ${hit.record.score}/${hit.record.fullScore} (${pct}%)
-  `;
+  els.chartPointInfo.innerHTML = chartPointDetail(hit);
 }
 
 function handleOverviewChartHover(event) {
@@ -532,6 +531,26 @@ function hideOverviewTooltip() {
   els.overviewTooltip.setAttribute("aria-hidden", "true");
 }
 
+function handleTrendChartClick(event) {
+  const { x, y } = chartPointer(els.trendCanvas, event);
+  const hit = trendPoints.find((point) => Math.hypot(point.x - x, point.y - y) <= 14);
+
+  if (!hit) {
+    els.trendPointInfo.textContent = "点击折线上的节点查看试卷名称、日期和得分。";
+    return;
+  }
+
+  els.trendPointInfo.innerHTML = chartPointDetail(hit);
+}
+
+function chartPointDetail(point) {
+  const pct = round((point.record.score / point.record.fullScore) * 100);
+  return `
+    <strong>${escapeHtml(point.record.paperName)}</strong>
+    ${point.record.date} · ${escapeHtml(point.subject.name)} · ${point.record.score}/${point.record.fullScore} (${pct}%)
+  `;
+}
+
 function drawTrendChart(canvas, records, subject) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
@@ -539,10 +558,12 @@ function drawTrendChart(canvas, records, subject) {
   const pad = { top: 28, right: 24, bottom: 38, left: 50 };
   const plot = chartPlot(width, height, pad);
   ctx.clearRect(0, 0, width, height);
+  trendPoints = [];
   const yMax = niceChartMax(subject?.fullScore || Math.max(1, ...records.map((record) => record.fullScore)));
   drawChartFrame(ctx, width, height, pad, { yMax, suffix: "分" });
 
   if (!records.length || !subject) {
+    els.trendPointInfo.textContent = "点击折线上的节点查看试卷名称、日期和得分。";
     drawEmptyChart(ctx, width, height, "选择科目并记录成绩后显示趋势");
     return;
   }
@@ -551,8 +572,10 @@ function drawTrendChart(canvas, records, subject) {
     const rate = (record.score / record.fullScore) * 100;
     const x = records.length === 1 ? plot.left + plot.width / 2 : plot.left + (plot.width / (records.length - 1)) * index;
     const y = plot.bottom - (record.score / yMax) * plot.height;
-    return { x, y, record, rate };
+    return { x, y, record, subject, rate };
   });
+  trendPoints = points;
+  els.trendPointInfo.textContent = "点击折线上的节点查看试卷名称、日期和得分。";
 
   ctx.strokeStyle = subject.color;
   ctx.lineWidth = 2.4;
@@ -592,22 +615,18 @@ function drawDistributionChart(canvas, records) {
     return;
   }
 
-  const maxScore = niceChartMax(Math.max(1, ...records.map((record) => record.fullScore)));
-  const bucketSize = Math.max(10, Math.ceil(maxScore / 5 / 10) * 10);
-  const buckets = Array.from({ length: 5 }, (_, index) => {
-    const min = index * bucketSize;
-    const max = index === 4 ? maxScore : ((index + 1) * bucketSize - 1);
-    return {
-      label: index === 4 ? `${min}+` : `${min}-${max}`,
-      min,
-      max,
-      count: 0
-    };
-  });
+  const buckets = [
+    { label: "140+", min: 140, max: Infinity, count: 0 },
+    { label: "130-140", min: 130, max: 139.999, count: 0 },
+    { label: "120-125", min: 120, max: 124.999, count: 0 },
+    { label: "125-130", min: 125, max: 129.999, count: 0 },
+    { label: "110-120", min: 110, max: 119.999, count: 0 },
+    { label: "100-110", min: 100, max: 109.999, count: 0 }
+  ];
 
   records.forEach((record) => {
-    const bucket = buckets.find((item) => record.score >= item.min && record.score <= item.max) || buckets.at(-1);
-    bucket.count += 1;
+    const bucket = buckets.find((item) => record.score >= item.min && record.score <= item.max);
+    if (bucket) bucket.count += 1;
   });
 
   const maxCount = Math.max(1, ...buckets.map((item) => item.count));
