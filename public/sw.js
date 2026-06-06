@@ -4,6 +4,7 @@ const ASSETS = [
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./reset.html",
   "./db.js",
   "./manifest.webmanifest",
   "./icon.svg"
