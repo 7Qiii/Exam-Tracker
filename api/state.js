@@ -1,4 +1,4 @@
-import { list, put } from "@vercel/blob";
+import { get, put } from "@vercel/blob";
 
 const BLOB_KEY = "exam-11408-state.json";
 
@@ -28,22 +28,13 @@ export default async function handler(request, response) {
 
   try {
     if (request.method === "GET") {
-      const result = await list({ prefix: BLOB_KEY, limit: 1 });
-      const blob = result.blobs.find((item) => item.pathname === BLOB_KEY);
-
-      if (!blob) {
+      const result = await readCloudState();
+      if (!result) {
         response.status(200).json({ state: null });
         return;
       }
 
-      const blobResponse = await fetch(`${blob.url}?t=${Date.now()}`);
-      if (!blobResponse.ok) {
-        response.status(502).json({ error: "Could not read cloud data" });
-        return;
-      }
-
-      const state = await blobResponse.json();
-      response.status(200).json({ state });
+      response.status(200).json({ state: result });
       return;
     }
 
@@ -54,7 +45,7 @@ export default async function handler(request, response) {
     }
 
     await put(BLOB_KEY, JSON.stringify(state), {
-      access: "public",
+      access: "private",
       allowOverwrite: true,
       contentType: "application/json"
     });
@@ -62,6 +53,23 @@ export default async function handler(request, response) {
     response.status(200).json({ ok: true });
   } catch (error) {
     response.status(500).json({ error: error.message || "Cloud sync failed" });
+  }
+}
+
+async function readCloudState() {
+  try {
+    const result = await get(BLOB_KEY, { access: "private", useCache: false });
+    if (!result || result.statusCode !== 200 || !result.stream) {
+      return null;
+    }
+
+    return await new Response(result.stream).json();
+  } catch (error) {
+    if (error?.name === "BlobNotFoundError" || /not found/i.test(error?.message || "")) {
+      return null;
+    }
+
+    throw error;
   }
 }
 
