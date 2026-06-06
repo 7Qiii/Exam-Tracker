@@ -713,56 +713,44 @@ dialog::backdrop {
   }
 
   .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
     height: auto;
-    padding: 14px 16px;
-    gap: 12px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(148, 163, 184, 0.26);
+    background: rgba(15, 23, 42, 0.98);
+    box-shadow: 0 -10px 28px rgba(15, 23, 42, 0.16);
   }
 
   .brand {
-    padding: 0;
-  }
-
-  .brand-mark {
-    width: 36px;
-    height: 36px;
+    display: none;
   }
 
   .side-nav {
-    grid-template-columns: repeat(4, 1fr);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
     overflow-x: auto;
   }
 
   .side-nav a {
-    min-width: 78px;
-    padding: 9px 8px;
+    min-width: 0;
+    padding: 9px 4px;
     text-align: center;
     white-space: nowrap;
+    font-size: 13px;
   }
 
   .sync-card {
-    margin-top: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 10px;
-    padding: 10px;
-  }
-
-  .sync-card p {
     display: none;
   }
 
-  .sync-card span {
-    align-self: center;
-  }
-
-  .sync-card button {
-    width: auto;
-    min-height: 34px;
-    padding: 0 14px;
+  main {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
   }
 
   .metric-grid,
@@ -779,36 +767,15 @@ dialog::backdrop {
 
 @media (max-width: 620px) {
   .sidebar {
-    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
-  }
-
-  .brand small {
-    display: none;
+    padding-inline: 8px;
   }
 
   .side-nav {
-    display: flex;
-    gap: 8px;
-    margin: 0 -2px;
-    padding-bottom: 2px;
+    gap: 5px;
   }
 
   .side-nav a {
-    flex: 0 0 auto;
-    min-width: 76px;
-    font-size: 13px;
-  }
-
-  .sync-card {
-    grid-template-columns: auto 1fr;
-    border: 0;
-    background: transparent;
-    padding: 0;
-  }
-
-  .sync-card button {
-    justify-self: end;
-    max-width: 150px;
+    font-size: 12px;
   }
 
   .topbar {
@@ -821,7 +788,6 @@ dialog::backdrop {
     padding: 16px;
   }
 
-  .side-nav,
   .filter-bar,
   .chart-filters,
   .form-row,

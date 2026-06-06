@@ -380,7 +380,7 @@ async function handleCloudSync() {
     showToast(result.mode === "cloud" ? "云端同步已开启" : "已切换为本地缓存");
   } catch (error) {
     console.error("Cloud sync setup failed", error);
-    showToast("云端同步失败，请检查密码和 Vercel 配置");
+    showToast(error.message || "云端同步失败，请检查密码和 Vercel 配置");
   }
 }
 

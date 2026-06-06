@@ -186,7 +186,7 @@ async function fetchCloudState(pin) {
   });
 
   if (!response.ok) {
-    throw new Error(`Cloud load failed: ${response.status}`);
+    throw cloudError("Cloud load failed", response.status);
   }
 
   const payload = await response.json();
@@ -204,8 +204,24 @@ async function saveCloudState(state, pin) {
   });
 
   if (!response.ok) {
-    throw new Error(`Cloud save failed: ${response.status}`);
+    throw cloudError("Cloud save failed", response.status);
   }
+}
+
+function cloudError(message, status) {
+  if (status === 404) {
+    return new Error(`${message}: API 未部署。请检查 Vercel Root Directory 是否为仓库根目录，而不是 public。`);
+  }
+
+  if (status === 401) {
+    return new Error(`${message}: 同步密码不正确。`);
+  }
+
+  if (status === 500) {
+    return new Error(`${message}: Vercel 环境变量或 Blob 存储未配置。`);
+  }
+
+  return new Error(`${message}: ${status}`);
 }
 
 function getCloudPin() {

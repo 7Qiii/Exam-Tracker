@@ -59,3 +59,13 @@ npx http-server . -p 5173
 🎯 **智能建议**：AI 分析学习趋势，提供个性化建议  
 📱 **移动优先**：针对手机使用场景优化，支持添加到桌面  
 💾 **数据安全**：支持导入导出，数据完全掌控在自己手中
+# Vercel 云同步配置
+
+如果 `/api/state` 返回 404，说明 Vercel 没有部署 `api/state.js`。请在 Vercel 项目设置里确认：
+
+- Root Directory 使用仓库根目录，不要设置成 `public`
+- Output Directory 留空或使用默认值
+- Environment Variables 里设置 `APP_PIN`
+- Storage 里连接 Vercel Blob
+
+这个项目目前使用 `APP_PIN` 作为个人同步密码。手机和电脑输入同一个密码，就会读写同一份云端数据。
