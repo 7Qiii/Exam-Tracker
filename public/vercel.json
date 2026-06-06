@@ -6,7 +6,7 @@
       "use": "@vercel/node"
     },
     {
-      "src": "public/**",
+      "src": "**",
       "use": "@vercel/static"
     }
   ],
@@ -21,22 +21,15 @@
     },
     {
       "src": "/sw.js",
-      "dest": "/public/sw.js",
+      "dest": "/sw.js",
       "headers": {
         "Service-Worker-Allowed": "/",
         "Cache-Control": "public, max-age=0, must-revalidate"
       }
     },
     {
-      "src": "/",
-      "dest": "/public/index.html",
-      "headers": {
-        "Cache-Control": "public, max-age=0, must-revalidate"
-      }
-    },
-    {
       "src": "/(.*)",
-      "dest": "/public/$1",
+      "dest": "/$1",
       "headers": {
         "Cache-Control": "public, max-age=0, must-revalidate"
       }
