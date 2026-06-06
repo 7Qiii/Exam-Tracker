@@ -287,7 +287,29 @@
       </div>
     </dialog>
 
+    <dialog id="syncDialog">
+      <form id="syncForm" class="dialog-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Cloud Sync</p>
+            <h2>云端同步</h2>
+          </div>
+          <button id="closeSyncBtn" type="button" aria-label="关闭">×</button>
+        </div>
+        <p class="dialog-text">输入 Vercel 里配置的 APP_PIN。手机和电脑输入同一个密码后，会使用同一份云端数据。</p>
+        <label>
+          同步密码
+          <input id="cloudPinInput" type="password" autocomplete="current-password" placeholder="输入 APP_PIN" />
+        </label>
+        <p class="dialog-hint" id="syncDialogHint">留空并确认可关闭云端同步。</p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="disableSyncBtn" type="button">关闭同步</button>
+          <button class="primary-button" id="confirmSyncBtn" type="submit">连接云端</button>
+        </div>
+      </form>
+    </dialog>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260606-2"></script>
+    <script type="module" src="./app.js?v=20260606-3"></script>
   </body>
 </html>

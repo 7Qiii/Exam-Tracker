@@ -70,25 +70,39 @@ export function getStorageMode() {
   return getCloudPin() ? "cloud" : "local";
 }
 
-export async function configureCloudSync() {
+export function getSavedCloudPin() {
+  return getCloudPin();
+}
+
+export async function configureCloudSync(nextPin) {
   const currentPin = getCloudPin();
-  const nextPin = window.prompt(
+  const inputPin = nextPin ?? window.prompt(
     "输入云端同步密码。手机和电脑输入同一个密码，就会使用同一份云端数据。留空可关闭云同步。",
     currentPin || ""
   );
 
-  if (nextPin === null) {
+  if (inputPin === null) {
     return { changed: false, mode: getStorageMode() };
   }
 
-  const trimmed = nextPin.trim();
+  const trimmed = inputPin.trim();
   if (!trimmed) {
     localStorage.removeItem(CLOUD_PIN_KEY);
     return { changed: true, mode: "local" };
   }
 
+  const localState = await loadLocalState();
+  const cloudState = await fetchCloudState(trimmed);
+  const state = cloudState || localState;
+
+  if (state) {
+    await saveLocalState(state);
+    if (!cloudState) {
+      await saveCloudState(state, trimmed);
+    }
+  }
+
   localStorage.setItem(CLOUD_PIN_KEY, trimmed);
-  const state = await loadState();
   return { changed: true, mode: "cloud", state };
 }
 

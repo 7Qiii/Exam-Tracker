@@ -1,4 +1,4 @@
-import { configureCloudSync, getStorageMode, loadState as loadStateDB, saveState as saveStateDB, importData } from "./db.js";
+import { configureCloudSync, getSavedCloudPin, getStorageMode, loadState as loadStateDB, saveState as saveStateDB, importData } from "./db.js";
 
 const defaultSubjects = [
   { id: "math1", name: "数学一", fullScore: 150, targetScore: 115, color: "#0f766e" },
@@ -85,7 +85,14 @@ const els = {
   importReplaceBtn: document.querySelector("#importReplaceBtn"),
   detailDialog: document.querySelector("#detailDialog"),
   recordDetail: document.querySelector("#recordDetail"),
-  closeDetailBtn: document.querySelector("#closeDetailBtn")
+  closeDetailBtn: document.querySelector("#closeDetailBtn"),
+  syncDialog: document.querySelector("#syncDialog"),
+  syncForm: document.querySelector("#syncForm"),
+  cloudPinInput: document.querySelector("#cloudPinInput"),
+  syncDialogHint: document.querySelector("#syncDialogHint"),
+  closeSyncBtn: document.querySelector("#closeSyncBtn"),
+  disableSyncBtn: document.querySelector("#disableSyncBtn"),
+  confirmSyncBtn: document.querySelector("#confirmSyncBtn")
 };
 
 const viewTitles = {
@@ -148,6 +155,9 @@ function bindEvents() {
   els.importMergeBtn.addEventListener("click", () => processImport(true));
   els.importReplaceBtn.addEventListener("click", () => processImport(false));
   els.closeDetailBtn.addEventListener("click", () => els.detailDialog.close());
+  els.syncForm.addEventListener("submit", submitCloudSync);
+  els.closeSyncBtn.addEventListener("click", () => els.syncDialog.close());
+  els.disableSyncBtn.addEventListener("click", disableCloudSync);
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSidebar();
   });
@@ -401,14 +411,40 @@ function syncFullScore() {
 }
 
 async function handleCloudSync() {
+  els.cloudPinInput.value = getSavedCloudPin();
+  els.syncDialogHint.textContent = "连接前会实际检测云端，成功后才会提示已开启。";
+  els.confirmSyncBtn.disabled = false;
+  els.disableSyncBtn.disabled = false;
+  els.syncDialog.showModal();
+}
+
+async function submitCloudSync(event) {
+  event.preventDefault();
+  await runCloudSync(els.cloudPinInput.value);
+}
+
+async function disableCloudSync() {
+  await runCloudSync("");
+}
+
+async function runCloudSync(pin) {
+  els.confirmSyncBtn.disabled = true;
+  els.disableSyncBtn.disabled = true;
+  els.syncDialogHint.textContent = pin.trim() ? "正在连接云端..." : "正在关闭云端同步...";
+
   try {
-    const result = await configureCloudSync();
+    const result = await configureCloudSync(pin);
     state = result.state || await loadStateDB() || state;
     render();
+    els.syncDialog.close();
     showToast(result.mode === "cloud" ? "云端同步已开启" : "已切换为本地缓存");
   } catch (error) {
     console.error("Cloud sync setup failed", error);
-    showToast(error.message || "云端同步失败，请检查密码和 Vercel 配置");
+    els.syncDialogHint.textContent = error.message || "云端同步失败，请检查密码和 Vercel 配置";
+    showToast("云端同步失败");
+  } finally {
+    els.confirmSyncBtn.disabled = false;
+    els.disableSyncBtn.disabled = false;
   }
 }
 
