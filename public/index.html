@@ -2,117 +2,206 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#18212f" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="format-detection" content="telephone=no" />
-    <title>11408 备考记录</title>
+    <title>Exam Tracker 控制台</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">11408 考研</p>
-          <h1>备考分数本</h1>
-        </div>
-        <div class="topbar-actions">
-          <button class="icon-button" id="cloudSyncBtn" type="button" title="云端同步" aria-label="云端同步">
-            <span aria-hidden="true">☁</span>
-          </button>
-          <button class="icon-button" id="importBtn" type="button" title="导入数据" aria-label="导入数据">
-            <span aria-hidden="true">↑</span>
-          </button>
-          <button class="icon-button" id="exportBtn" type="button" title="导出数据" aria-label="导出数据">
-            <span aria-hidden="true">↓</span>
-          </button>
-          <input type="file" id="importFile" accept=".json" style="display: none;" />
-        </div>
-      </header>
-
-      <main>
-        <section class="summary-grid" aria-label="总览">
-          <article class="metric">
-            <span class="metric-label">总记录</span>
-            <strong id="totalRecords">0</strong>
-            <small>套模拟卷</small>
-          </article>
-          <article class="metric">
-            <span class="metric-label">近 7 天</span>
-            <strong id="weekRecords">0</strong>
-            <small>次练习</small>
-          </article>
-          <article class="metric">
-            <span class="metric-label">目标差距</span>
-            <strong id="targetGap">--</strong>
-            <small>平均还差</small>
-          </article>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>各科状态</h2>
-            <button id="manageSubjectsBtn" type="button">科目</button>
+    <div class="console-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">ET</span>
+          <div>
+            <strong>Exam Tracker</strong>
+            <small>11408 成绩控制台</small>
           </div>
-          <div class="subject-list" id="subjectList"></div>
-        </section>
+        </div>
+        <nav class="side-nav" aria-label="主导航">
+          <a href="#overview" class="active">概览</a>
+          <a href="#records">成绩列表</a>
+          <a href="#charts">数据图表</a>
+          <a href="#entry">新增记录</a>
+        </nav>
+        <div class="sync-card">
+          <span id="storageBadge">本地缓存</span>
+          <p>手机和电脑输入同一同步密码后，可查看同一份云端数据。</p>
+          <button id="cloudSyncBtn" type="button">云端同步</button>
+        </div>
+      </aside>
 
-        <section class="panel">
-          <div class="section-head">
-            <h2>新增模考</h2>
+      <div class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Console</p>
+            <h1>成绩追踪工作台</h1>
           </div>
-          <form id="recordForm" class="record-form">
-            <label>
-              科目
-              <select id="subjectId" required></select>
-            </label>
-            <label>
-              试卷名称
-              <input id="paperName" type="text" placeholder="例如：408 真题模拟 01" required />
-            </label>
-            <div class="form-row">
+          <div class="topbar-actions">
+            <button id="importBtn" type="button">批量导入</button>
+            <button id="exportBtn" type="button">导出数据</button>
+            <button id="manageSubjectsBtn" type="button">科目设置</button>
+            <input type="file" id="importFile" accept=".json,.csv" hidden />
+          </div>
+        </header>
+
+        <main>
+          <section class="login-panel" id="loginPanel">
+            <div>
+              <p class="eyebrow">Private Access</p>
+              <h2>个人同步入口</h2>
+              <p>点击云端同步并输入你在 Vercel 配置的 APP_PIN。未开启云同步时，数据会保存在当前设备本地缓存中。</p>
+            </div>
+            <button id="loginSyncBtn" type="button">连接云端数据</button>
+          </section>
+
+          <section class="metric-grid" id="overview">
+            <article class="metric-card">
+              <span>总记录</span>
+              <strong id="totalRecords">0</strong>
+              <small>累计模拟卷</small>
+            </article>
+            <article class="metric-card">
+              <span>近 7 天</span>
+              <strong id="weekRecords">0</strong>
+              <small>新增练习</small>
+            </article>
+            <article class="metric-card">
+              <span>平均目标差距</span>
+              <strong id="targetGap">--</strong>
+              <small>越接近 0 越好</small>
+            </article>
+            <article class="metric-card">
+              <span>当前筛选</span>
+              <strong id="filteredRecords">0</strong>
+              <small>列表结果</small>
+            </article>
+          </section>
+
+          <section class="content-grid">
+            <article class="panel" id="entry">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Create</p>
+                  <h2>新增成绩</h2>
+                </div>
+              </div>
+              <form id="recordForm" class="record-form">
+                <label>
+                  科目
+                  <select id="subjectId" required></select>
+                </label>
+                <label>
+                  试卷名称
+                  <input id="paperName" type="text" placeholder="例如：408 真题模拟 01" required />
+                </label>
+                <div class="form-row">
+                  <label>
+                    得分
+                    <input id="score" type="number" inputmode="decimal" min="0" step="0.5" required />
+                  </label>
+                  <label>
+                    满分
+                    <input id="fullScore" type="number" inputmode="decimal" min="1" step="1" required />
+                  </label>
+                </div>
+                <label>
+                  日期
+                  <input id="examDate" type="date" required />
+                </label>
+                <label>
+                  复盘备注
+                  <textarea id="note" rows="4" placeholder="这套卷暴露了什么？下一步补哪里？"></textarea>
+                </label>
+                <button class="primary-button" type="submit">保存记录</button>
+              </form>
+            </article>
+
+            <article class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Subjects</p>
+                  <h2>各科状态</h2>
+                </div>
+              </div>
+              <div class="subject-list" id="subjectList"></div>
+            </article>
+          </section>
+
+          <section class="panel" id="charts">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Analytics</p>
+                <h2>成绩可视化</h2>
+              </div>
+              <select id="chartSubject"></select>
+            </div>
+            <div class="chart-grid">
+              <div class="chart-box">
+                <h3>历次考试趋势</h3>
+                <canvas id="trendCanvas" width="720" height="320" aria-label="历次考试趋势"></canvas>
+              </div>
+              <div class="chart-box">
+                <h3>分数分布</h3>
+                <canvas id="distributionCanvas" width="720" height="320" aria-label="分数分布"></canvas>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" id="records">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Records</p>
+                <h2>成绩列表</h2>
+              </div>
+              <button id="clearDemoBtn" type="button">清空</button>
+            </div>
+            <div class="filter-bar">
               <label>
-                得分
-                <input id="score" type="number" inputmode="decimal" min="0" step="0.5" required />
+                科目
+                <select id="filterSubject"></select>
               </label>
               <label>
-                满分
-                <input id="fullScore" type="number" inputmode="decimal" min="1" step="1" required />
+                关键词
+                <input id="searchInput" type="search" placeholder="搜索试卷或备注" />
+              </label>
+              <label>
+                起始日期
+                <input id="dateFrom" type="date" />
+              </label>
+              <label>
+                结束日期
+                <input id="dateTo" type="date" />
               </label>
             </div>
-            <div class="form-row">
-              <label>
-                日期
-                <input id="examDate" type="date" required />
-              </label>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>科目</th>
+                    <th>试卷</th>
+                    <th>分数</th>
+                    <th>得分率</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="recordTableBody"></tbody>
+              </table>
             </div>
-            <label>
-              复盘备注
-              <textarea id="note" rows="3" placeholder="这套卷暴露了什么？下次先补哪里？"></textarea>
-            </label>
-            <button class="primary-button" type="submit">保存记录</button>
-          </form>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>单科趋势</h2>
-            <select id="chartSubject"></select>
-          </div>
-          <canvas id="trendCanvas" width="720" height="300" aria-label="成绩趋势图"></canvas>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>最近记录</h2>
-            <button id="clearDemoBtn" type="button">清空</button>
-          </div>
-          <div class="record-list" id="recordList"></div>
-        </section>
-      </main>
+            <div class="pagination">
+              <span id="pageInfo">第 1 页</span>
+              <div>
+                <button id="prevPageBtn" type="button">上一页</button>
+                <button id="nextPageBtn" type="button">下一页</button>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
 
     <dialog id="subjectDialog">
@@ -131,12 +220,21 @@
         <div class="section-head">
           <h2>导入数据</h2>
         </div>
-        <p class="dialog-text">检测到导入数据，请选择导入方式：</p>
+        <p class="dialog-text">支持导入 JSON 备份文件，或 CSV 文件。CSV 表头：subject,paperName,score,fullScore,date,note。</p>
         <div class="dialog-actions">
           <button class="secondary-button" id="importMergeBtn" type="button">合并数据</button>
           <button class="primary-button" id="importReplaceBtn" type="button">覆盖数据</button>
         </div>
-        <p class="dialog-hint">合并模式会保留现有数据并添加新数据；覆盖模式会删除所有现有数据。</p>
+      </div>
+    </dialog>
+
+    <dialog id="detailDialog">
+      <div class="dialog-card">
+        <div class="section-head">
+          <h2>成绩详情</h2>
+          <button id="closeDetailBtn" type="button" aria-label="关闭">×</button>
+        </div>
+        <div id="recordDetail" class="record-detail"></div>
       </div>
     </dialog>
 
