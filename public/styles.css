@@ -188,6 +188,13 @@ button {
 
 main {
   padding: 22px 26px 34px;
+}
+
+.view-page {
+  display: none;
+}
+
+.view-page.is-active {
   display: grid;
   gap: 16px;
 }
@@ -265,6 +272,10 @@ h3 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.metric-grid.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .metric-card {
@@ -415,6 +426,27 @@ textarea:focus {
   border-radius: var(--radius);
   background: var(--surface-soft);
   padding: 12px;
+}
+
+.dashboard-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.chart-point-info {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.chart-point-info strong {
+  color: var(--ink);
+  margin-right: 8px;
 }
 
 canvas {

@@ -22,10 +22,10 @@
           </div>
         </div>
         <nav class="side-nav" aria-label="主导航">
-          <a href="#overview" class="active">概览</a>
-          <a href="#records">成绩列表</a>
-          <a href="#charts">数据图表</a>
-          <a href="#entry">新增记录</a>
+          <a href="#dashboard" class="active" data-view-link="dashboard">数据看板</a>
+          <a href="#records" data-view-link="records">成绩管理</a>
+          <a href="#charts" data-view-link="charts">图表分析</a>
+          <a href="#entry" data-view-link="entry">新增记录</a>
         </nav>
         <div class="sync-card">
           <span id="storageBadge">本地缓存</span>
@@ -38,7 +38,7 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">Console</p>
-            <h1>成绩追踪工作台</h1>
+            <h1 id="pageTitle">数据看板</h1>
           </div>
           <div class="topbar-actions">
             <button id="importBtn" type="button">批量导入</button>
@@ -49,40 +49,60 @@
         </header>
 
         <main>
-          <section class="login-panel" id="loginPanel">
-            <div>
-              <p class="eyebrow">Private Access</p>
-              <h2>个人同步入口</h2>
-              <p>点击云端同步并输入你在 Vercel 配置的 APP_PIN。未开启云同步时，数据会保存在当前设备本地缓存中。</p>
-            </div>
-            <button id="loginSyncBtn" type="button">连接云端数据</button>
+          <section class="view-page is-active" data-view="dashboard">
+            <section class="login-panel" id="loginPanel">
+              <div>
+                <p class="eyebrow">Private Access</p>
+                <h2>个人同步入口</h2>
+                <p>点击云端同步并输入你在 Vercel 配置的 APP_PIN。未开启云同步时，数据会保存在当前设备本地缓存中。</p>
+              </div>
+              <button id="loginSyncBtn" type="button">连接云端数据</button>
+            </section>
+
+            <section class="metric-grid compact">
+              <article class="metric-card">
+                <span>累计模拟卷</span>
+                <strong id="totalRecords">0</strong>
+                <small>全部成绩记录</small>
+              </article>
+              <article class="metric-card">
+                <span>当前科目</span>
+                <strong id="subjectCount">0</strong>
+                <small>已配置科目数</small>
+              </article>
+              <article class="metric-card">
+                <span>最高得分率</span>
+                <strong id="bestRate">--</strong>
+                <small>历史最高单卷</small>
+              </article>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Overview</p>
+                  <h2>各科成绩走势</h2>
+                </div>
+              </div>
+              <div class="chart-box dashboard-chart">
+                <canvas id="overviewTrendCanvas" width="960" height="360" aria-label="各科成绩走势"></canvas>
+                <div class="chart-point-info" id="chartPointInfo">点击折线上的节点查看试卷名称、日期和得分。</div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Subjects</p>
+                  <h2>各科状态</h2>
+                </div>
+              </div>
+              <div class="subject-list" id="subjectList"></div>
+            </section>
           </section>
 
-          <section class="metric-grid" id="overview">
-            <article class="metric-card">
-              <span>总记录</span>
-              <strong id="totalRecords">0</strong>
-              <small>累计模拟卷</small>
-            </article>
-            <article class="metric-card">
-              <span>近 7 天</span>
-              <strong id="weekRecords">0</strong>
-              <small>新增练习</small>
-            </article>
-            <article class="metric-card">
-              <span>平均目标差距</span>
-              <strong id="targetGap">--</strong>
-              <small>越接近 0 越好</small>
-            </article>
-            <article class="metric-card">
-              <span>当前筛选</span>
-              <strong id="filteredRecords">0</strong>
-              <small>列表结果</small>
-            </article>
-          </section>
-
-          <section class="content-grid">
-            <article class="panel" id="entry">
+          <section class="view-page" data-view="entry">
+            <article class="panel">
               <div class="section-head">
                 <div>
                   <p class="eyebrow">Create</p>
@@ -119,86 +139,80 @@
                 <button class="primary-button" type="submit">保存记录</button>
               </form>
             </article>
+          </section>
 
-            <article class="panel">
+          <section class="view-page" data-view="charts">
+            <section class="panel">
               <div class="section-head">
                 <div>
-                  <p class="eyebrow">Subjects</p>
-                  <h2>各科状态</h2>
+                  <p class="eyebrow">Analytics</p>
+                  <h2>成绩可视化</h2>
+                </div>
+                <select id="chartSubject"></select>
+              </div>
+              <div class="chart-grid">
+                <div class="chart-box">
+                  <h3>历次考试趋势</h3>
+                  <canvas id="trendCanvas" width="720" height="320" aria-label="历次考试趋势"></canvas>
+                </div>
+                <div class="chart-box">
+                  <h3>分数分布</h3>
+                  <canvas id="distributionCanvas" width="720" height="320" aria-label="分数分布"></canvas>
                 </div>
               </div>
-              <div class="subject-list" id="subjectList"></div>
-            </article>
+            </section>
           </section>
 
-          <section class="panel" id="charts">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Analytics</p>
-                <h2>成绩可视化</h2>
+          <section class="view-page" data-view="records">
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Records</p>
+                  <h2>成绩管理</h2>
+                </div>
+                <button id="clearDemoBtn" type="button">清空</button>
               </div>
-              <select id="chartSubject"></select>
-            </div>
-            <div class="chart-grid">
-              <div class="chart-box">
-                <h3>历次考试趋势</h3>
-                <canvas id="trendCanvas" width="720" height="320" aria-label="历次考试趋势"></canvas>
+              <div class="filter-bar">
+                <label>
+                  科目
+                  <select id="filterSubject"></select>
+                </label>
+                <label>
+                  关键词
+                  <input id="searchInput" type="search" placeholder="搜索试卷或备注" />
+                </label>
+                <label>
+                  起始日期
+                  <input id="dateFrom" type="date" />
+                </label>
+                <label>
+                  结束日期
+                  <input id="dateTo" type="date" />
+                </label>
               </div>
-              <div class="chart-box">
-                <h3>分数分布</h3>
-                <canvas id="distributionCanvas" width="720" height="320" aria-label="分数分布"></canvas>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>日期</th>
+                      <th>科目</th>
+                      <th>试卷</th>
+                      <th>分数</th>
+                      <th>得分率</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recordTableBody"></tbody>
+                </table>
               </div>
-            </div>
-          </section>
-
-          <section class="panel" id="records">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Records</p>
-                <h2>成绩列表</h2>
+              <div class="pagination">
+                <span id="pageInfo">第 1 页</span>
+                <div>
+                  <button id="prevPageBtn" type="button">上一页</button>
+                  <button id="nextPageBtn" type="button">下一页</button>
+                </div>
               </div>
-              <button id="clearDemoBtn" type="button">清空</button>
-            </div>
-            <div class="filter-bar">
-              <label>
-                科目
-                <select id="filterSubject"></select>
-              </label>
-              <label>
-                关键词
-                <input id="searchInput" type="search" placeholder="搜索试卷或备注" />
-              </label>
-              <label>
-                起始日期
-                <input id="dateFrom" type="date" />
-              </label>
-              <label>
-                结束日期
-                <input id="dateTo" type="date" />
-              </label>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>科目</th>
-                    <th>试卷</th>
-                    <th>分数</th>
-                    <th>得分率</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="recordTableBody"></tbody>
-              </table>
-            </div>
-            <div class="pagination">
-              <span id="pageInfo">第 1 页</span>
-              <div>
-                <button id="prevPageBtn" type="button">上一页</button>
-                <button id="nextPageBtn" type="button">下一页</button>
-              </div>
-            </div>
+            </section>
           </section>
         </main>
       </div>

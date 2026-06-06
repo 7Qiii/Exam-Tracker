@@ -18,13 +18,14 @@ let state = null;
 let currentPage = 1;
 let pendingImportData = null;
 let pendingImportKind = "json";
+let overviewPoints = [];
 const pageSize = 8;
 
 const els = {
   totalRecords: document.querySelector("#totalRecords"),
-  weekRecords: document.querySelector("#weekRecords"),
-  targetGap: document.querySelector("#targetGap"),
-  filteredRecords: document.querySelector("#filteredRecords"),
+  subjectCount: document.querySelector("#subjectCount"),
+  bestRate: document.querySelector("#bestRate"),
+  pageTitle: document.querySelector("#pageTitle"),
   storageBadge: document.querySelector("#storageBadge"),
   subjectList: document.querySelector("#subjectList"),
   subjectId: document.querySelector("#subjectId"),
@@ -39,6 +40,8 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   dateFrom: document.querySelector("#dateFrom"),
   dateTo: document.querySelector("#dateTo"),
+  overviewTrendCanvas: document.querySelector("#overviewTrendCanvas"),
+  chartPointInfo: document.querySelector("#chartPointInfo"),
   trendCanvas: document.querySelector("#trendCanvas"),
   distributionCanvas: document.querySelector("#distributionCanvas"),
   recordTableBody: document.querySelector("#recordTableBody"),
@@ -64,6 +67,13 @@ const els = {
   closeDetailBtn: document.querySelector("#closeDetailBtn")
 };
 
+const viewTitles = {
+  dashboard: "数据看板",
+  records: "成绩管理",
+  charts: "图表分析",
+  entry: "新增记录"
+};
+
 init();
 
 async function init() {
@@ -81,8 +91,15 @@ async function loadInitialState() {
 
 function bindEvents() {
   els.recordForm.addEventListener("submit", addRecord);
+  document.querySelectorAll("[data-view-link]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      setActiveView(link.dataset.viewLink, true);
+    });
+  });
   els.subjectId.addEventListener("change", syncFullScore);
   els.chartSubject.addEventListener("change", drawCharts);
+  els.overviewTrendCanvas.addEventListener("click", handleOverviewChartClick);
   els.filterSubject.addEventListener("change", resetPageAndRender);
   els.searchInput.addEventListener("input", resetPageAndRender);
   els.dateFrom.addEventListener("change", resetPageAndRender);
@@ -100,6 +117,7 @@ function bindEvents() {
   els.importMergeBtn.addEventListener("click", () => processImport(true));
   els.importReplaceBtn.addEventListener("click", () => processImport(false));
   els.closeDetailBtn.addEventListener("click", () => els.detailDialog.close());
+  window.addEventListener("hashchange", () => setActiveView(location.hash.replace("#", "") || "dashboard", false));
 }
 
 async function saveState() {
@@ -118,6 +136,8 @@ function render() {
   renderSubjects();
   renderTable();
   drawCharts();
+  drawOverviewTrend();
+  setActiveView(location.hash.replace("#", "") || "dashboard", false);
 }
 
 function renderSelectors() {
@@ -139,26 +159,30 @@ function renderSelectors() {
 }
 
 function renderSummary() {
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - 7);
-  const weekCount = state.records.filter((record) => new Date(record.date) >= weekStart).length;
-  const gaps = state.subjects
-    .map((subject) => {
-      const avg = subjectAverage(subject.id);
-      return avg === null ? null : Math.max(0, subject.targetScore - avg);
-    })
-    .filter((item) => item !== null);
-  const avgGap = gaps.length ? round(gaps.reduce((sum, item) => sum + item, 0) / gaps.length) : null;
-
   els.totalRecords.textContent = state.records.length;
-  els.weekRecords.textContent = weekCount;
-  els.targetGap.textContent = avgGap === null ? "--" : avgGap;
-  els.filteredRecords.textContent = filteredRecords().length;
+  els.subjectCount.textContent = state.subjects.length;
+  const rates = state.records.map((record) => (record.score / record.fullScore) * 100);
+  els.bestRate.textContent = rates.length ? `${round(Math.max(...rates))}%` : "--";
 }
 
 function renderStorageMode() {
   const isCloud = getStorageMode() === "cloud";
   els.storageBadge.textContent = isCloud ? "云端同步" : "本地缓存";
+}
+
+function setActiveView(view, updateHash) {
+  const nextView = viewTitles[view] ? view : "dashboard";
+  document.querySelectorAll("[data-view]").forEach((page) => {
+    page.classList.toggle("is-active", page.dataset.view === nextView);
+  });
+  document.querySelectorAll("[data-view-link]").forEach((link) => {
+    link.classList.toggle("active", link.dataset.viewLink === nextView);
+  });
+  els.pageTitle.textContent = viewTitles[nextView];
+  if (updateHash && location.hash !== `#${nextView}`) {
+    history.pushState(null, "", `#${nextView}`);
+  }
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function renderSubjects() {
@@ -224,7 +248,6 @@ function renderTable() {
   els.pageInfo.textContent = `第 ${currentPage} / ${totalPages} 页 · 共 ${rows.length} 条`;
   els.prevPageBtn.disabled = currentPage <= 1;
   els.nextPageBtn.disabled = currentPage >= totalPages;
-  els.filteredRecords.textContent = rows.length;
 }
 
 async function addRecord(event) {
@@ -321,6 +344,96 @@ function drawCharts() {
   const records = recordsFor(els.chartSubject.value).slice(-12);
   drawTrendChart(els.trendCanvas, records, subject);
   drawDistributionChart(els.distributionCanvas, filteredRecords());
+}
+
+function drawOverviewTrend() {
+  const canvas = els.overviewTrendCanvas;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = 46;
+  overviewPoints = [];
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  drawGrid(ctx, width, height, pad);
+
+  if (!state.records.length) {
+    drawEmptyChart(ctx, width, height, "暂无成绩数据");
+    return;
+  }
+
+  const allDates = [...new Set(state.records.map((record) => record.date))].sort();
+  const maxScore = Math.max(...state.subjects.map((subject) => subject.fullScore), ...state.records.map((record) => record.fullScore));
+
+  state.subjects.forEach((subject) => {
+    const records = recordsFor(subject.id);
+    if (!records.length) return;
+
+    const points = records.map((record) => {
+      const dateIndex = Math.max(0, allDates.indexOf(record.date));
+      const x = allDates.length === 1 ? width / 2 : pad + ((width - pad * 2) / (allDates.length - 1)) * dateIndex;
+      const y = height - pad - (record.score / maxScore) * (height - pad * 2);
+      return { x, y, record, subject };
+    });
+
+    ctx.strokeStyle = subject.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.stroke();
+
+    points.forEach((point) => {
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = subject.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      overviewPoints.push(point);
+    });
+  });
+
+  drawOverviewLegend(ctx, state.subjects, width);
+}
+
+function drawOverviewLegend(ctx, subjects, width) {
+  let x = 48;
+  const y = 22;
+  subjects.forEach((subject) => {
+    ctx.fillStyle = subject.color;
+    ctx.fillRect(x, y - 8, 12, 12);
+    ctx.fillStyle = "#475569";
+    ctx.font = "16px Microsoft YaHei, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(subject.name, x + 18, y + 2);
+    x += Math.min(150, Math.max(86, subject.name.length * 18 + 42));
+    if (x > width - 120) x = width - 120;
+  });
+}
+
+function handleOverviewChartClick(event) {
+  const rect = els.overviewTrendCanvas.getBoundingClientRect();
+  const scaleX = els.overviewTrendCanvas.width / rect.width;
+  const scaleY = els.overviewTrendCanvas.height / rect.height;
+  const x = (event.clientX - rect.left) * scaleX;
+  const y = (event.clientY - rect.top) * scaleY;
+  const hit = overviewPoints.find((point) => Math.hypot(point.x - x, point.y - y) <= 14);
+
+  if (!hit) {
+    els.chartPointInfo.textContent = "点击折线上的节点查看试卷名称、日期和得分。";
+    return;
+  }
+
+  const pct = round((hit.record.score / hit.record.fullScore) * 100);
+  els.chartPointInfo.innerHTML = `
+    <strong>${escapeHtml(hit.subject.name)}</strong>
+    ${escapeHtml(hit.record.paperName)} · ${hit.record.date} · ${hit.record.score}/${hit.record.fullScore} (${pct}%)
+  `;
 }
 
 function drawTrendChart(canvas, records, subject) {
