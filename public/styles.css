@@ -334,6 +334,18 @@ h3 {
   padding: 6px 9px;
 }
 
+.dashboard-summary-panel {
+  padding-bottom: 2px;
+}
+
+.dashboard-summary-panel .section-head {
+  margin-bottom: 0;
+}
+
+.summary-filter {
+  grid-template-columns: 180px;
+}
+
 .record-form,
 .subject-list,
 .subject-editor {

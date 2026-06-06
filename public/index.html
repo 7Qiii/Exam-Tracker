@@ -59,21 +59,36 @@
               <button id="loginSyncBtn" type="button">连接云端数据</button>
             </section>
 
+            <section class="panel dashboard-summary-panel">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Summary</p>
+                  <h2>首页数据</h2>
+                </div>
+                <div class="chart-filters summary-filter" aria-label="首页数据筛选">
+                  <label>
+                    统计科目
+                    <select id="summarySubject"></select>
+                  </label>
+                </div>
+              </div>
+            </section>
+
             <section class="metric-grid compact">
               <article class="metric-card">
                 <span>累计模拟卷</span>
                 <strong id="totalRecords">0</strong>
-                <small>全部成绩记录</small>
+                <small id="totalRecordsHint">当前统计范围</small>
               </article>
               <article class="metric-card">
-                <span>当前科目</span>
+                <span>平均分</span>
                 <strong id="subjectCount">0</strong>
-                <small>已配置科目数</small>
+                <small id="subjectCountHint">按原始分数计算</small>
               </article>
               <article class="metric-card">
-                <span>最高得分率</span>
+                <span>最高分</span>
                 <strong id="bestRate">--</strong>
-                <small>历史最高单卷</small>
+                <small id="bestRateHint">历史最高单卷</small>
               </article>
             </section>
 

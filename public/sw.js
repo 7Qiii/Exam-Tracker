@@ -1,4 +1,4 @@
-const CACHE_NAME = "exam-tracker-console-v4";
+const CACHE_NAME = "exam-tracker-console-v5";
 const ASSETS = [
   "./",
   "./index.html",

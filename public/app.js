@@ -34,6 +34,9 @@ const els = {
   totalRecords: document.querySelector("#totalRecords"),
   subjectCount: document.querySelector("#subjectCount"),
   bestRate: document.querySelector("#bestRate"),
+  totalRecordsHint: document.querySelector("#totalRecordsHint"),
+  subjectCountHint: document.querySelector("#subjectCountHint"),
+  bestRateHint: document.querySelector("#bestRateHint"),
   pageTitle: document.querySelector("#pageTitle"),
   storageBadge: document.querySelector("#storageBadge"),
   subjectList: document.querySelector("#subjectList"),
@@ -44,6 +47,7 @@ const els = {
   examDate: document.querySelector("#examDate"),
   note: document.querySelector("#note"),
   recordForm: document.querySelector("#recordForm"),
+  summarySubject: document.querySelector("#summarySubject"),
   chartSubject: document.querySelector("#chartSubject"),
   overviewSubject: document.querySelector("#overviewSubject"),
   overviewDateFrom: document.querySelector("#overviewDateFrom"),
@@ -111,6 +115,7 @@ function bindEvents() {
     });
   });
   els.subjectId.addEventListener("change", syncFullScore);
+  els.summarySubject.addEventListener("change", renderSummary);
   els.chartSubject.addEventListener("change", drawCharts);
   els.overviewSubject.addEventListener("change", drawOverviewTrend);
   els.overviewDateFrom.addEventListener("change", drawOverviewTrend);
@@ -164,15 +169,18 @@ function renderSelectors() {
     .join("");
   const filterOptions = `<option value="all">全部科目</option>${subjectOptions}`;
   const currentSubject = els.subjectId.value || state.subjects[0]?.id;
+  const currentSummary = els.summarySubject.value || "all";
   const currentChart = els.chartSubject.value || currentSubject;
   const currentFilter = els.filterSubject.value || "all";
   const currentOverview = els.overviewSubject.value || "all";
 
   els.subjectId.innerHTML = subjectOptions;
+  els.summarySubject.innerHTML = filterOptions;
   els.chartSubject.innerHTML = subjectOptions;
   els.filterSubject.innerHTML = filterOptions;
   els.overviewSubject.innerHTML = filterOptions;
   els.subjectId.value = currentSubject;
+  els.summarySubject.value = currentSummary;
   els.chartSubject.value = currentChart;
   els.filterSubject.value = currentFilter;
   els.overviewSubject.value = currentOverview;
@@ -180,10 +188,23 @@ function renderSelectors() {
 }
 
 function renderSummary() {
-  els.totalRecords.textContent = state.records.length;
-  els.subjectCount.textContent = state.subjects.length;
-  const rates = state.records.map((record) => (record.score / record.fullScore) * 100);
-  els.bestRate.textContent = rates.length ? `${round(Math.max(...rates))}%` : "--";
+  const subjectId = els.summarySubject.value || "all";
+  const subject = findSubject(subjectId);
+  const records = state.records.filter((record) => subjectId === "all" || record.subjectId === subjectId);
+  const scopeName = subject?.name || "全部科目";
+  const average = records.length
+    ? round(records.reduce((sum, record) => sum + record.score, 0) / records.length)
+    : null;
+  const best = records.length
+    ? records.reduce((max, record) => record.score > max.score ? record : max, records[0])
+    : null;
+
+  els.totalRecords.textContent = records.length;
+  els.totalRecordsHint.textContent = scopeName;
+  els.subjectCount.textContent = average === null ? "--" : average;
+  els.subjectCountHint.textContent = subject ? `满分 ${subject.fullScore} 分` : "跨科目仅作粗略参考";
+  els.bestRate.textContent = best ? best.score : "--";
+  els.bestRateHint.textContent = best ? `${escapeHtml(findSubject(best.subjectId)?.name || scopeName)} · ${best.fullScore} 分卷` : "暂无记录";
 }
 
 function renderStorageMode() {
@@ -437,9 +458,6 @@ function drawOverviewTrend() {
     });
   });
 
-  if (visibleSubjects.length === 1) {
-    drawTargetLine(ctx, plot, visibleSubjects[0], yMax);
-  }
   drawXAxisLabels(ctx, allDates, plot);
   drawLegend(ctx, visibleSubjects, plot.left, 18, width - pad.right);
 }
@@ -535,8 +553,6 @@ function drawTrendChart(canvas, records, subject) {
     const y = plot.bottom - (record.score / yMax) * plot.height;
     return { x, y, record, rate };
   });
-
-  drawTargetLine(ctx, plot, subject, yMax);
 
   ctx.strokeStyle = subject.color;
   ctx.lineWidth = 2.4;
@@ -658,25 +674,6 @@ function drawChartFrame(ctx, width, height, pad, options = {}) {
   ctx.moveTo(plot.left, plot.bottom);
   ctx.lineTo(plot.right, plot.bottom);
   ctx.stroke();
-}
-
-function drawTargetLine(ctx, plot, subject, yMax) {
-  if (!subject || !subject.targetScore) return;
-  const targetY = plot.bottom - (subject.targetScore / yMax) * plot.height;
-  if (targetY < plot.top || targetY > plot.bottom) return;
-
-  ctx.strokeStyle = "#dc2626";
-  ctx.lineWidth = 1.4;
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ctx.moveTo(plot.left, targetY);
-  ctx.lineTo(plot.right, targetY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = "#dc2626";
-  ctx.font = "12px Microsoft YaHei, sans-serif";
-  ctx.textAlign = "right";
-  ctx.fillText(`目标 ${subject.targetScore}分`, plot.right, Math.max(14, targetY - 8));
 }
 
 function chartTicks(yMax) {
