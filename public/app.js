@@ -19,7 +19,16 @@ let currentPage = 1;
 let pendingImportData = null;
 let pendingImportKind = "json";
 let overviewPoints = [];
+let overviewDateGroups = [];
 const pageSize = 8;
+const chartTheme = {
+  bg: "#ffffff",
+  band: "#f7f8fa",
+  grid: "#edf1f6",
+  axis: "#d7dde6",
+  text: "#64748b",
+  ink: "#111827"
+};
 
 const els = {
   totalRecords: document.querySelector("#totalRecords"),
@@ -41,6 +50,7 @@ const els = {
   dateFrom: document.querySelector("#dateFrom"),
   dateTo: document.querySelector("#dateTo"),
   overviewTrendCanvas: document.querySelector("#overviewTrendCanvas"),
+  overviewTooltip: document.querySelector("#overviewTooltip"),
   chartPointInfo: document.querySelector("#chartPointInfo"),
   trendCanvas: document.querySelector("#trendCanvas"),
   distributionCanvas: document.querySelector("#distributionCanvas"),
@@ -100,6 +110,8 @@ function bindEvents() {
   els.subjectId.addEventListener("change", syncFullScore);
   els.chartSubject.addEventListener("change", drawCharts);
   els.overviewTrendCanvas.addEventListener("click", handleOverviewChartClick);
+  els.overviewTrendCanvas.addEventListener("mousemove", handleOverviewChartHover);
+  els.overviewTrendCanvas.addEventListener("mouseleave", hideOverviewTooltip);
   els.filterSubject.addEventListener("change", resetPageAndRender);
   els.searchInput.addEventListener("input", resetPageAndRender);
   els.dateFrom.addEventListener("change", resetPageAndRender);
@@ -351,12 +363,12 @@ function drawOverviewTrend() {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
-  const pad = 46;
+  const pad = { top: 30, right: 28, bottom: 42, left: 54 };
+  const plot = chartPlot(width, height, pad);
   overviewPoints = [];
+  overviewDateGroups = [];
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
-  drawGrid(ctx, width, height, pad);
+  drawChartFrame(ctx, width, height, pad, { yMax: 100, suffix: "%" });
 
   if (!state.records.length) {
     drawEmptyChart(ctx, width, height, "暂无成绩数据");
@@ -364,7 +376,12 @@ function drawOverviewTrend() {
   }
 
   const allDates = [...new Set(state.records.map((record) => record.date))].sort();
-  const maxScore = Math.max(...state.subjects.map((subject) => subject.fullScore), ...state.records.map((record) => record.fullScore));
+  const xForIndex = (index) => allDates.length === 1 ? plot.left + plot.width / 2 : plot.left + (plot.width / (allDates.length - 1)) * index;
+
+  allDates.forEach((date, index) => {
+    const x = xForIndex(index);
+    overviewDateGroups.push({ date, x, points: [] });
+  });
 
   state.subjects.forEach((subject) => {
     const records = recordsFor(subject.id);
@@ -372,13 +389,18 @@ function drawOverviewTrend() {
 
     const points = records.map((record) => {
       const dateIndex = Math.max(0, allDates.indexOf(record.date));
-      const x = allDates.length === 1 ? width / 2 : pad + ((width - pad * 2) / (allDates.length - 1)) * dateIndex;
-      const y = height - pad - (record.score / maxScore) * (height - pad * 2);
-      return { x, y, record, subject };
+      const rate = (record.score / record.fullScore) * 100;
+      const x = xForIndex(dateIndex);
+      const y = plot.bottom - (rate / 100) * plot.height;
+      const point = { x, y, record, subject, rate };
+      overviewDateGroups[dateIndex]?.points.push(point);
+      return point;
     });
 
     ctx.strokeStyle = subject.color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2.2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     ctx.beginPath();
     points.forEach((point, index) => {
       if (index === 0) ctx.moveTo(point.x, point.y);
@@ -387,41 +409,23 @@ function drawOverviewTrend() {
     ctx.stroke();
 
     points.forEach((point) => {
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = subject.color;
       ctx.strokeStyle = subject.color;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+      ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       overviewPoints.push(point);
     });
   });
 
-  drawOverviewLegend(ctx, state.subjects, width);
-}
-
-function drawOverviewLegend(ctx, subjects, width) {
-  let x = 48;
-  const y = 22;
-  subjects.forEach((subject) => {
-    ctx.fillStyle = subject.color;
-    ctx.fillRect(x, y - 8, 12, 12);
-    ctx.fillStyle = "#475569";
-    ctx.font = "16px Microsoft YaHei, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText(subject.name, x + 18, y + 2);
-    x += Math.min(150, Math.max(86, subject.name.length * 18 + 42));
-    if (x > width - 120) x = width - 120;
-  });
+  drawXAxisLabels(ctx, allDates, plot);
+  drawLegend(ctx, state.subjects.filter((subject) => recordsFor(subject.id).length), plot.left, 18, width - pad.right);
 }
 
 function handleOverviewChartClick(event) {
-  const rect = els.overviewTrendCanvas.getBoundingClientRect();
-  const scaleX = els.overviewTrendCanvas.width / rect.width;
-  const scaleY = els.overviewTrendCanvas.height / rect.height;
-  const x = (event.clientX - rect.left) * scaleX;
-  const y = (event.clientY - rect.top) * scaleY;
+  const { x, y } = chartPointer(els.overviewTrendCanvas, event);
   const hit = overviewPoints.find((point) => Math.hypot(point.x - x, point.y - y) <= 14);
 
   if (!hit) {
@@ -436,40 +440,100 @@ function handleOverviewChartClick(event) {
   `;
 }
 
+function handleOverviewChartHover(event) {
+  if (!overviewDateGroups.length) return;
+  const { x } = chartPointer(els.overviewTrendCanvas, event);
+  const nearest = overviewDateGroups.reduce((best, group) => {
+    const distance = Math.abs(group.x - x);
+    return !best || distance < best.distance ? { group, distance } : best;
+  }, null);
+
+  if (!nearest || nearest.distance > 48 || !nearest.group.points.length) {
+    hideOverviewTooltip();
+    return;
+  }
+
+  const records = nearest.group.points
+    .slice()
+    .sort((a, b) => b.rate - a.rate);
+  const total = records.length;
+  const rows = records.map((point) => `
+    <div class="tooltip-row">
+      <span class="tooltip-dot" style="background:${point.subject.color}"></span>
+      <span>${escapeHtml(point.subject.name)} · ${escapeHtml(point.record.paperName)}</span>
+      <strong>${round(point.rate)}%</strong>
+    </div>
+  `).join("");
+
+  showOverviewTooltip(event, `
+    <div class="tooltip-title">${formatChartDate(nearest.group.date)}</div>
+    <div class="tooltip-row total"><span>总计</span><strong>${total}</strong></div>
+    ${rows}
+  `);
+}
+
+function showOverviewTooltip(event, html) {
+  const tooltip = els.overviewTooltip;
+  const box = tooltip.parentElement.getBoundingClientRect();
+  tooltip.innerHTML = html;
+  tooltip.classList.add("show");
+  tooltip.setAttribute("aria-hidden", "false");
+
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const offset = 14;
+  let left = event.clientX - box.left + offset;
+  let top = event.clientY - box.top - tooltipRect.height / 2;
+  left = Math.min(Math.max(10, left), box.width - tooltipRect.width - 10);
+  top = Math.min(Math.max(10, top), box.height - tooltipRect.height - 10);
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function hideOverviewTooltip() {
+  els.overviewTooltip.classList.remove("show");
+  els.overviewTooltip.setAttribute("aria-hidden", "true");
+}
+
 function drawTrendChart(canvas, records, subject) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
-  const pad = 42;
+  const pad = { top: 28, right: 24, bottom: 38, left: 50 };
+  const plot = chartPlot(width, height, pad);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
-  drawGrid(ctx, width, height, pad);
+  drawChartFrame(ctx, width, height, pad, { yMax: 100, suffix: "%" });
 
   if (!records.length || !subject) {
     drawEmptyChart(ctx, width, height, "选择科目并记录成绩后显示趋势");
     return;
   }
 
-  const maxScore = Math.max(subject.fullScore, ...records.map((record) => record.fullScore));
   const points = records.map((record, index) => {
-    const x = records.length === 1 ? width / 2 : pad + ((width - pad * 2) / (records.length - 1)) * index;
-    const y = height - pad - (record.score / maxScore) * (height - pad * 2);
-    return { x, y, record };
+    const rate = (record.score / record.fullScore) * 100;
+    const x = records.length === 1 ? plot.left + plot.width / 2 : plot.left + (plot.width / (records.length - 1)) * index;
+    const y = plot.bottom - (rate / 100) * plot.height;
+    return { x, y, record, rate };
   });
 
-  const targetY = height - pad - (subject.targetScore / maxScore) * (height - pad * 2);
+  const targetRate = (subject.targetScore / subject.fullScore) * 100;
+  const targetY = plot.bottom - (targetRate / 100) * plot.height;
   ctx.strokeStyle = "#dc2626";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 5]);
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([5, 5]);
   ctx.beginPath();
-  ctx.moveTo(pad, targetY);
-  ctx.lineTo(width - pad, targetY);
+  ctx.moveTo(plot.left, targetY);
+  ctx.lineTo(plot.right, targetY);
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.fillStyle = "#dc2626";
+  ctx.font = "12px Microsoft YaHei, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(`目标 ${round(targetRate)}%`, plot.right, Math.max(14, targetY - 8));
 
   ctx.strokeStyle = subject.color;
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 2.4;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
   ctx.beginPath();
   points.forEach((point, index) => {
     if (index === 0) ctx.moveTo(point.x, point.y);
@@ -478,26 +542,28 @@ function drawTrendChart(canvas, records, subject) {
   ctx.stroke();
 
   points.forEach((point) => {
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = subject.color;
     ctx.strokeStyle = subject.color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   });
+
+  drawXAxisLabels(ctx, records.map((record) => record.date), plot);
 }
 
 function drawDistributionChart(canvas, records) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
-  const pad = 42;
+  const pad = { top: 28, right: 22, bottom: 38, left: 46 };
+  const plot = chartPlot(width, height, pad);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
 
   if (!records.length) {
+    drawChartFrame(ctx, width, height, pad, { yMax: 1, suffix: "" });
     drawEmptyChart(ctx, width, height, "暂无筛选结果");
     return;
   }
@@ -517,36 +583,132 @@ function drawDistributionChart(canvas, records) {
   });
 
   const maxCount = Math.max(1, ...buckets.map((item) => item.count));
-  const barWidth = (width - pad * 2) / buckets.length - 16;
+  const yMax = Math.max(4, maxCount);
+  drawChartFrame(ctx, width, height, pad, { yMax, suffix: "" });
+  const step = plot.width / buckets.length;
+  const barWidth = Math.min(54, step * 0.52);
   buckets.forEach((bucket, index) => {
-    const barHeight = ((height - pad * 2) * bucket.count) / maxCount;
-    const x = pad + index * ((width - pad * 2) / buckets.length) + 8;
-    const y = height - pad - barHeight;
-    ctx.fillStyle = "#0f766e";
-    ctx.fillRect(x, y, barWidth, barHeight);
-    ctx.fillStyle = "#64748b";
-    ctx.font = "18px Microsoft YaHei, sans-serif";
+    const barHeight = (plot.height * bucket.count) / yMax;
+    const x = plot.left + index * step + (step - barWidth) / 2;
+    const y = plot.bottom - barHeight;
+    const gradient = ctx.createLinearGradient(0, y, 0, plot.bottom);
+    gradient.addColorStop(0, "#2563eb");
+    gradient.addColorStop(1, "#67e8f9");
+    ctx.fillStyle = gradient;
+    roundRect(ctx, x, y, barWidth, barHeight, 6);
+    ctx.fill();
+    ctx.fillStyle = chartTheme.text;
+    ctx.font = "12px Microsoft YaHei, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(bucket.label, x + barWidth / 2, height - 14);
-    ctx.fillText(bucket.count, x + barWidth / 2, y - 10);
+    ctx.fillText(bucket.label, x + barWidth / 2, height - 12);
+    ctx.fillStyle = chartTheme.ink;
+    ctx.font = "700 13px Microsoft YaHei, sans-serif";
+    ctx.fillText(bucket.count, x + barWidth / 2, Math.max(18, y - 8));
   });
 }
 
-function drawGrid(ctx, width, height, pad) {
-  ctx.strokeStyle = "#e2e8f0";
+function chartPlot(width, height, pad) {
+  return {
+    left: pad.left,
+    right: width - pad.right,
+    top: pad.top,
+    bottom: height - pad.bottom,
+    width: width - pad.left - pad.right,
+    height: height - pad.top - pad.bottom
+  };
+}
+
+function drawChartFrame(ctx, width, height, pad, options = {}) {
+  const plot = chartPlot(width, height, pad);
+  const yMax = options.yMax || 100;
+  ctx.fillStyle = chartTheme.bg;
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = chartTheme.band;
+  ctx.fillRect(plot.left, plot.top, plot.width, plot.height);
+
+  ctx.strokeStyle = chartTheme.grid;
   ctx.lineWidth = 1;
-  for (let i = 0; i < 4; i += 1) {
-    const y = pad + ((height - pad * 2) / 3) * i;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = plot.top + (plot.height / 4) * i;
+    const value = Math.round(yMax - (yMax / 4) * i);
     ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(width - pad, y);
+    ctx.moveTo(plot.left, y);
+    ctx.lineTo(plot.right, y);
     ctx.stroke();
+    ctx.fillStyle = chartTheme.text;
+    ctx.font = "12px Microsoft YaHei, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(`${value}${options.suffix || ""}`, plot.left - 10, y + 4);
   }
+
+  ctx.strokeStyle = chartTheme.axis;
+  ctx.beginPath();
+  ctx.moveTo(plot.left, plot.bottom);
+  ctx.lineTo(plot.right, plot.bottom);
+  ctx.stroke();
+}
+
+function drawXAxisLabels(ctx, labels, plot) {
+  if (!labels.length) return;
+  const indexes = labels.length <= 4
+    ? labels.map((_, index) => index)
+    : [0, Math.floor((labels.length - 1) / 2), labels.length - 1];
+  ctx.fillStyle = chartTheme.text;
+  ctx.font = "12px Microsoft YaHei, sans-serif";
+  ctx.textAlign = "center";
+  indexes.forEach((index) => {
+    const x = labels.length === 1 ? plot.left + plot.width / 2 : plot.left + (plot.width / (labels.length - 1)) * index;
+    ctx.fillText(formatChartDate(labels[index]), x, plot.bottom + 24);
+  });
+}
+
+function drawLegend(ctx, subjects, x, y, maxX) {
+  let currentX = x;
+  ctx.font = "12px Microsoft YaHei, sans-serif";
+  subjects.forEach((subject) => {
+    const labelWidth = Math.min(120, ctx.measureText(subject.name).width + 30);
+    if (currentX + labelWidth > maxX) return;
+    ctx.fillStyle = subject.color;
+    ctx.beginPath();
+    ctx.arc(currentX + 4, y - 4, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#475569";
+    ctx.font = "12px Microsoft YaHei, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(subject.name, currentX + 14, y);
+    currentX += labelWidth + 12;
+  });
+}
+
+function chartPointer(canvas, event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * (canvas.width / rect.width),
+    y: (event.clientY - rect.top) * (canvas.height / rect.height)
+  };
+}
+
+function formatChartDate(date) {
+  const parts = String(date).split("-");
+  return parts.length === 3 ? `${parts[1]}-${parts[2]}` : String(date);
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, Math.abs(height) / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height);
+  ctx.lineTo(x, y + height);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 function drawEmptyChart(ctx, width, height, text) {
   ctx.fillStyle = "#64748b";
-  ctx.font = "24px Microsoft YaHei, sans-serif";
+  ctx.font = "14px Microsoft YaHei, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(text, width / 2, height / 2);
 }

@@ -85,7 +85,8 @@
                 </div>
               </div>
               <div class="chart-box dashboard-chart">
-                <canvas id="overviewTrendCanvas" width="960" height="360" aria-label="各科成绩走势"></canvas>
+                <canvas id="overviewTrendCanvas" class="chart-canvas chart-canvas-large" width="1080" height="340" aria-label="各科成绩走势"></canvas>
+                <div class="chart-tooltip" id="overviewTooltip" aria-hidden="true"></div>
                 <div class="chart-point-info" id="chartPointInfo">点击折线上的节点查看试卷名称、日期和得分。</div>
               </div>
             </section>
@@ -153,11 +154,11 @@
               <div class="chart-grid">
                 <div class="chart-box">
                   <h3>历次考试趋势</h3>
-                  <canvas id="trendCanvas" width="720" height="320" aria-label="历次考试趋势"></canvas>
+                  <canvas id="trendCanvas" class="chart-canvas" width="720" height="300" aria-label="历次考试趋势"></canvas>
                 </div>
                 <div class="chart-box">
                   <h3>分数分布</h3>
-                  <canvas id="distributionCanvas" width="720" height="320" aria-label="分数分布"></canvas>
+                  <canvas id="distributionCanvas" class="chart-canvas" width="720" height="300" aria-label="分数分布"></canvas>
                 </div>
               </div>
             </section>
