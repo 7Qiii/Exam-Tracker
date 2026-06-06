@@ -45,6 +45,9 @@ const els = {
   note: document.querySelector("#note"),
   recordForm: document.querySelector("#recordForm"),
   chartSubject: document.querySelector("#chartSubject"),
+  overviewSubject: document.querySelector("#overviewSubject"),
+  overviewDateFrom: document.querySelector("#overviewDateFrom"),
+  overviewDateTo: document.querySelector("#overviewDateTo"),
   filterSubject: document.querySelector("#filterSubject"),
   searchInput: document.querySelector("#searchInput"),
   dateFrom: document.querySelector("#dateFrom"),
@@ -109,6 +112,9 @@ function bindEvents() {
   });
   els.subjectId.addEventListener("change", syncFullScore);
   els.chartSubject.addEventListener("change", drawCharts);
+  els.overviewSubject.addEventListener("change", drawOverviewTrend);
+  els.overviewDateFrom.addEventListener("change", drawOverviewTrend);
+  els.overviewDateTo.addEventListener("change", drawOverviewTrend);
   els.overviewTrendCanvas.addEventListener("click", handleOverviewChartClick);
   els.overviewTrendCanvas.addEventListener("mousemove", handleOverviewChartHover);
   els.overviewTrendCanvas.addEventListener("mouseleave", hideOverviewTooltip);
@@ -160,13 +166,16 @@ function renderSelectors() {
   const currentSubject = els.subjectId.value || state.subjects[0]?.id;
   const currentChart = els.chartSubject.value || currentSubject;
   const currentFilter = els.filterSubject.value || "all";
+  const currentOverview = els.overviewSubject.value || "all";
 
   els.subjectId.innerHTML = subjectOptions;
   els.chartSubject.innerHTML = subjectOptions;
   els.filterSubject.innerHTML = filterOptions;
+  els.overviewSubject.innerHTML = filterOptions;
   els.subjectId.value = currentSubject;
   els.chartSubject.value = currentChart;
   els.filterSubject.value = currentFilter;
+  els.overviewSubject.value = currentOverview;
   syncFullScore();
 }
 
@@ -365,17 +374,24 @@ function drawOverviewTrend() {
   const height = canvas.height;
   const pad = { top: 30, right: 28, bottom: 42, left: 54 };
   const plot = chartPlot(width, height, pad);
+  const records = overviewRecords();
+  const selectedSubject = els.overviewSubject.value;
+  const visibleSubjects = state.subjects.filter((subject) => {
+    return (selectedSubject === "all" || subject.id === selectedSubject)
+      && records.some((record) => record.subjectId === subject.id);
+  });
+  const yMax = niceChartMax(Math.max(1, ...visibleSubjects.map((subject) => subject.fullScore), ...records.map((record) => record.fullScore)));
   overviewPoints = [];
   overviewDateGroups = [];
   ctx.clearRect(0, 0, width, height);
-  drawChartFrame(ctx, width, height, pad, { yMax: 100, suffix: "%" });
+  drawChartFrame(ctx, width, height, pad, { yMax, suffix: "分" });
 
-  if (!state.records.length) {
-    drawEmptyChart(ctx, width, height, "暂无成绩数据");
+  if (!records.length) {
+    drawEmptyChart(ctx, width, height, "暂无匹配成绩数据");
     return;
   }
 
-  const allDates = [...new Set(state.records.map((record) => record.date))].sort();
+  const allDates = [...new Set(records.map((record) => record.date))].sort();
   const xForIndex = (index) => allDates.length === 1 ? plot.left + plot.width / 2 : plot.left + (plot.width / (allDates.length - 1)) * index;
 
   allDates.forEach((date, index) => {
@@ -383,15 +399,16 @@ function drawOverviewTrend() {
     overviewDateGroups.push({ date, x, points: [] });
   });
 
-  state.subjects.forEach((subject) => {
-    const records = recordsFor(subject.id);
-    if (!records.length) return;
+  visibleSubjects.forEach((subject) => {
+    const subjectRecords = records
+      .filter((record) => record.subjectId === subject.id)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
 
-    const points = records.map((record) => {
+    const points = subjectRecords.map((record) => {
       const dateIndex = Math.max(0, allDates.indexOf(record.date));
       const rate = (record.score / record.fullScore) * 100;
       const x = xForIndex(dateIndex);
-      const y = plot.bottom - (rate / 100) * plot.height;
+      const y = plot.bottom - (record.score / yMax) * plot.height;
       const point = { x, y, record, subject, rate };
       overviewDateGroups[dateIndex]?.points.push(point);
       return point;
@@ -420,8 +437,11 @@ function drawOverviewTrend() {
     });
   });
 
+  if (visibleSubjects.length === 1) {
+    drawTargetLine(ctx, plot, visibleSubjects[0], yMax);
+  }
   drawXAxisLabels(ctx, allDates, plot);
-  drawLegend(ctx, state.subjects.filter((subject) => recordsFor(subject.id).length), plot.left, 18, width - pad.right);
+  drawLegend(ctx, visibleSubjects, plot.left, 18, width - pad.right);
 }
 
 function handleOverviewChartClick(event) {
@@ -461,7 +481,7 @@ function handleOverviewChartHover(event) {
     <div class="tooltip-row">
       <span class="tooltip-dot" style="background:${point.subject.color}"></span>
       <span>${escapeHtml(point.subject.name)} · ${escapeHtml(point.record.paperName)}</span>
-      <strong>${round(point.rate)}%</strong>
+      <strong>${point.record.score}/${point.record.fullScore}</strong>
     </div>
   `).join("");
 
@@ -501,7 +521,8 @@ function drawTrendChart(canvas, records, subject) {
   const pad = { top: 28, right: 24, bottom: 38, left: 50 };
   const plot = chartPlot(width, height, pad);
   ctx.clearRect(0, 0, width, height);
-  drawChartFrame(ctx, width, height, pad, { yMax: 100, suffix: "%" });
+  const yMax = niceChartMax(subject?.fullScore || Math.max(1, ...records.map((record) => record.fullScore)));
+  drawChartFrame(ctx, width, height, pad, { yMax, suffix: "分" });
 
   if (!records.length || !subject) {
     drawEmptyChart(ctx, width, height, "选择科目并记录成绩后显示趋势");
@@ -511,24 +532,11 @@ function drawTrendChart(canvas, records, subject) {
   const points = records.map((record, index) => {
     const rate = (record.score / record.fullScore) * 100;
     const x = records.length === 1 ? plot.left + plot.width / 2 : plot.left + (plot.width / (records.length - 1)) * index;
-    const y = plot.bottom - (rate / 100) * plot.height;
+    const y = plot.bottom - (record.score / yMax) * plot.height;
     return { x, y, record, rate };
   });
 
-  const targetRate = (subject.targetScore / subject.fullScore) * 100;
-  const targetY = plot.bottom - (targetRate / 100) * plot.height;
-  ctx.strokeStyle = "#dc2626";
-  ctx.lineWidth = 1.4;
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ctx.moveTo(plot.left, targetY);
-  ctx.lineTo(plot.right, targetY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = "#dc2626";
-  ctx.font = "12px Microsoft YaHei, sans-serif";
-  ctx.textAlign = "right";
-  ctx.fillText(`目标 ${round(targetRate)}%`, plot.right, Math.max(14, targetY - 8));
+  drawTargetLine(ctx, plot, subject, yMax);
 
   ctx.strokeStyle = subject.color;
   ctx.lineWidth = 2.4;
@@ -563,22 +571,26 @@ function drawDistributionChart(canvas, records) {
   ctx.clearRect(0, 0, width, height);
 
   if (!records.length) {
-    drawChartFrame(ctx, width, height, pad, { yMax: 1, suffix: "" });
+    drawChartFrame(ctx, width, height, pad, { yMax: 4, suffix: "" });
     drawEmptyChart(ctx, width, height, "暂无筛选结果");
     return;
   }
 
-  const buckets = [
-    { label: "0-59", min: 0, max: 59, count: 0 },
-    { label: "60-69", min: 60, max: 69, count: 0 },
-    { label: "70-79", min: 70, max: 79, count: 0 },
-    { label: "80-89", min: 80, max: 89, count: 0 },
-    { label: "90-100", min: 90, max: 100, count: 0 }
-  ];
+  const maxScore = niceChartMax(Math.max(1, ...records.map((record) => record.fullScore)));
+  const bucketSize = Math.max(10, Math.ceil(maxScore / 5 / 10) * 10);
+  const buckets = Array.from({ length: 5 }, (_, index) => {
+    const min = index * bucketSize;
+    const max = index === 4 ? maxScore : ((index + 1) * bucketSize - 1);
+    return {
+      label: index === 4 ? `${min}+` : `${min}-${max}`,
+      min,
+      max,
+      count: 0
+    };
+  });
 
   records.forEach((record) => {
-    const rate = (record.score / record.fullScore) * 100;
-    const bucket = buckets.find((item) => rate >= item.min && rate <= item.max) || buckets.at(-1);
+    const bucket = buckets.find((item) => record.score >= item.min && record.score <= item.max) || buckets.at(-1);
     bucket.count += 1;
   });
 
@@ -621,6 +633,7 @@ function chartPlot(width, height, pad) {
 function drawChartFrame(ctx, width, height, pad, options = {}) {
   const plot = chartPlot(width, height, pad);
   const yMax = options.yMax || 100;
+  const ticks = chartTicks(yMax);
   ctx.fillStyle = chartTheme.bg;
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = chartTheme.band;
@@ -628,9 +641,8 @@ function drawChartFrame(ctx, width, height, pad, options = {}) {
 
   ctx.strokeStyle = chartTheme.grid;
   ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i += 1) {
-    const y = plot.top + (plot.height / 4) * i;
-    const value = Math.round(yMax - (yMax / 4) * i);
+  ticks.forEach((value) => {
+    const y = plot.bottom - (value / yMax) * plot.height;
     ctx.beginPath();
     ctx.moveTo(plot.left, y);
     ctx.lineTo(plot.right, y);
@@ -639,13 +651,41 @@ function drawChartFrame(ctx, width, height, pad, options = {}) {
     ctx.font = "12px Microsoft YaHei, sans-serif";
     ctx.textAlign = "right";
     ctx.fillText(`${value}${options.suffix || ""}`, plot.left - 10, y + 4);
-  }
+  });
 
   ctx.strokeStyle = chartTheme.axis;
   ctx.beginPath();
   ctx.moveTo(plot.left, plot.bottom);
   ctx.lineTo(plot.right, plot.bottom);
   ctx.stroke();
+}
+
+function drawTargetLine(ctx, plot, subject, yMax) {
+  if (!subject || !subject.targetScore) return;
+  const targetY = plot.bottom - (subject.targetScore / yMax) * plot.height;
+  if (targetY < plot.top || targetY > plot.bottom) return;
+
+  ctx.strokeStyle = "#dc2626";
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(plot.left, targetY);
+  ctx.lineTo(plot.right, targetY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#dc2626";
+  ctx.font = "12px Microsoft YaHei, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(`目标 ${subject.targetScore}分`, plot.right, Math.max(14, targetY - 8));
+}
+
+function chartTicks(yMax) {
+  if (yMax <= 4) return [4, 3, 2, 1, 0];
+  if (yMax === 150) return [150, 100, 50, 0];
+  if (yMax >= 200 && yMax <= 300 && yMax % 50 === 0) {
+    return Array.from({ length: yMax / 50 + 1 }, (_, index) => yMax - index * 50);
+  }
+  return [1, 0.75, 0.5, 0.25, 0].map((ratio) => Math.round(yMax * ratio));
 }
 
 function drawXAxisLabels(ctx, labels, plot) {
@@ -704,6 +744,27 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
+}
+
+function overviewRecords() {
+  const subject = els.overviewSubject.value || "all";
+  const from = els.overviewDateFrom.value;
+  const to = els.overviewDateTo.value;
+
+  return state.records
+    .filter((record) => subject === "all" || record.subjectId === subject)
+    .filter((record) => !from || record.date >= from)
+    .filter((record) => !to || record.date <= to)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+}
+
+function niceChartMax(value) {
+  const max = Math.max(1, Number(value) || 1);
+  if (max <= 100) return 100;
+  if (max <= 150) return 150;
+  if (max <= 200) return 200;
+  const magnitude = 10 ** Math.floor(Math.log10(max));
+  return Math.ceil(max / magnitude) * magnitude;
 }
 
 function drawEmptyChart(ctx, width, height, text) {

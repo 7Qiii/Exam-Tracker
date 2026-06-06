@@ -83,6 +83,20 @@
                   <p class="eyebrow">Overview</p>
                   <h2>各科成绩走势</h2>
                 </div>
+                <div class="chart-filters" aria-label="首页图表筛选">
+                  <label>
+                    科目
+                    <select id="overviewSubject"></select>
+                  </label>
+                  <label>
+                    起始日期
+                    <input id="overviewDateFrom" type="date" />
+                  </label>
+                  <label>
+                    结束日期
+                    <input id="overviewDateTo" type="date" />
+                  </label>
+                </div>
               </div>
               <div class="chart-box dashboard-chart">
                 <canvas id="overviewTrendCanvas" class="chart-canvas chart-canvas-large" width="1080" height="340" aria-label="各科成绩走势"></canvas>
