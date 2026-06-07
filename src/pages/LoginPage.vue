@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { Cloud, Database, KeyRound, LogOut, Mail, UserPlus } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
 import { isSupabaseConfigured } from "../services/supabase";
@@ -11,6 +11,14 @@ const message = ref("");
 const form = reactive({
   email: "",
   password: ""
+});
+
+onMounted(() => {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("confirmed") === "1") {
+    message.value = "邮箱已确认，现在可以登录并开启同步。";
+    window.history.replaceState({}, "", "/login");
+  }
 });
 
 const statusText = computed(() => {
