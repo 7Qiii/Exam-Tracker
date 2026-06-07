@@ -10,20 +10,25 @@ const filters = reactive({ keyword: "", subjectId: "" });
 const showForm = ref(true);
 
 const filteredMistakes = computed(() => {
-  const keyword = filters.keyword.trim().toLowerCase();
+  const keyword = normalizeSearch(filters.keyword);
   return store.mistakes
     .filter((item) => {
       const subject = store.subjectName(item.subjectId);
+      const haystack = normalizeSearch([item.title, item.knowledgePoint, item.analysis, subject].join(" "));
       return (
-        (!keyword || `${item.title} ${item.knowledgePoint} ${item.analysis} ${subject}`.toLowerCase().includes(keyword)) &&
+        (!keyword || haystack.includes(keyword)) &&
         (!filters.subjectId || item.subjectId === filters.subjectId)
       );
     })
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 });
 
 function imageCount(id) {
   return store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === id).length;
+}
+
+function normalizeSearch(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
 </script>
 

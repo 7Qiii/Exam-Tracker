@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { ChevronLeft, ChevronRight, Trash2 } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
@@ -11,20 +11,38 @@ const pageSize = 8;
 const filters = reactive({ keyword: "", subjectId: "" });
 
 const filteredRecords = computed(() => {
-  const keyword = filters.keyword.trim().toLowerCase();
+  const keyword = normalizeSearch(filters.keyword);
   return [...store.records]
     .filter((record) => {
       const subject = store.subjectName(record.subjectId);
+      const haystack = normalizeSearch([
+        record.paperName,
+        record.note,
+        subject,
+        record.score,
+        record.fullScore,
+        record.date,
+        `${record.score}/${record.fullScore}`,
+        `${record.score} / ${record.fullScore}`
+      ].join(" "));
       return (
-        (!keyword || `${record.paperName} ${record.note} ${subject}`.toLowerCase().includes(keyword)) &&
+        (!keyword || haystack.includes(keyword)) &&
         (!filters.subjectId || record.subjectId === filters.subjectId)
       );
     })
-    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 });
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)));
 const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1) * pageSize, page.value * pageSize));
+
+watch(() => [filters.keyword, filters.subjectId], () => {
+  page.value = 1;
+});
+
+function normalizeSearch(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+}
 </script>
 
 <template>
@@ -77,6 +95,9 @@ const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1)
                     <Trash2 :size="15" />
                   </button>
                 </td>
+              </tr>
+              <tr v-if="!pagedRecords.length">
+                <td colspan="5" class="empty-cell">没有找到匹配的成绩。</td>
               </tr>
             </tbody>
           </table>

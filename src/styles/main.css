@@ -385,6 +385,7 @@ p {
 .metric-card small,
 .section-meta,
 .empty,
+.empty-cell,
 .subject-card span,
 .list-card span,
 .mistake-card span,
@@ -701,6 +702,11 @@ td a,
 .text-link {
   color: var(--blue);
   font-weight: 800;
+}
+
+.empty-cell {
+  text-align: center;
+  white-space: normal;
 }
 
 .text-link {
