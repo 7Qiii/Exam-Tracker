@@ -72,7 +72,7 @@ onMounted(() => {
           </div>
           <button class="ghost-button" type="button" title="云端同步">
             <Cloud :size="17" />
-            <span>本地优先</span>
+            <span>{{ store.user ? "云端同步" : "本地优先" }}</span>
           </button>
           <button class="ghost-button icon-only" type="button" title="设置">
             <Settings :size="18" />

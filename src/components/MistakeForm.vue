@@ -137,6 +137,9 @@ async function submit() {
       <Save :size="17" />
       {{ props.mistake ? "保存错题" : "新增错题" }}
     </button>
-    <p class="form-tip"><BookOpenCheck :size="16" /> 错题内容可持续补充，图片会先离线保存到当前设备。</p>
+    <p class="form-tip">
+      <BookOpenCheck :size="16" />
+      {{ store.user ? "图片会压缩后上传到 Cloudflare R2，并在本地保留索引缓存。" : "未登录时图片只会离线保存到当前设备。" }}
+    </p>
   </form>
 </template>

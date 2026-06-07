@@ -14,7 +14,7 @@ const previews = computed(() => [
   ...props.images.map((image) => ({
     id: image.id,
     name: image.name,
-    url: URL.createObjectURL(image.blob),
+    url: image.url || URL.createObjectURL(image.blob),
     persisted: true
   })),
   ...pending.value

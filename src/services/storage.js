@@ -91,6 +91,13 @@ export async function addImages(ownerType, ownerId, files) {
   return entries;
 }
 
+export async function addImageEntries(entries) {
+  if (entries.length) {
+    await db.images.bulkPut(entries);
+  }
+  return entries;
+}
+
 export async function exportPortableData() {
   const data = await loadAllData();
   const images = await Promise.all(
