@@ -24,14 +24,12 @@ const latestRecords = computed(() =>
 const subjectStats = computed(() =>
   store.subjects.map((subject) => {
     const records = store.records.filter((record) => record.subjectId === subject.id);
-    const average = records.length
-      ? Math.round((records.reduce((sum, record) => sum + record.score, 0) / records.length) * 10) / 10
-      : 0;
+    const latest = [...records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0];
     return {
       ...subject,
       count: records.length,
-      average,
-      progress: subject.targetScore ? Math.min(100, Math.round((average / subject.targetScore) * 100)) : 0
+      latest,
+      progress: latest ? Math.min(100, Math.round((latest.score / latest.fullScore) * 100)) : 0
     };
   })
 );
@@ -66,7 +64,7 @@ async function onImport(event) {
       <div>
         <p class="eyebrow">Workspace</p>
         <h2>把成绩、错题和图片复盘放在同一个工作台。</h2>
-        <p>本地优先存储，支持后续不断补充知识点、解析、复盘状态和图片资料。</p>
+        <p>本地优先存储，支持后续不断补充知识点、解析复盘和图片资料。</p>
       </div>
       <div class="hero-actions">
         <RouterLink class="primary-button" to="/mistakes">
@@ -88,8 +86,8 @@ async function onImport(event) {
     <section class="summary-grid">
       <MetricCard label="成绩记录" :value="store.records.length" hint="套试卷 / 专项练习" tone="blue" />
       <MetricCard label="近 7 天练习" :value="weekCount" hint="保持节奏更重要" tone="green" />
-      <MetricCard label="待复盘错题" :value="store.pendingMistakes" hint="未标记为已掌握" tone="orange" />
-      <MetricCard label="综合得分率" :value="`${store.averageRate}%`" hint="按满分加权" tone="purple" />
+      <MetricCard label="错题记录" :value="store.mistakes.length" hint="解析与图片复盘" tone="orange" />
+      <MetricCard label="最近成绩" :value="latestRecords[0] ? `${latestRecords[0].score}/${latestRecords[0].fullScore}` : '--'" hint="最近一套卷" tone="purple" />
     </section>
 
     <section class="content-grid">
@@ -115,7 +113,7 @@ async function onImport(event) {
               <strong>{{ subject.name }}</strong>
               <span>{{ subject.count }} 条记录</span>
             </div>
-            <b>{{ subject.average || "--" }} / {{ subject.targetScore }}</b>
+            <b>{{ subject.latest ? `${subject.latest.score} / ${subject.latest.fullScore}` : "--" }}</b>
             <div class="progress"><i :style="{ width: `${subject.progress}%`, background: subject.color }"></i></div>
           </article>
         </div>

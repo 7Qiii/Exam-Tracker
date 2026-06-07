@@ -25,13 +25,6 @@ const form = reactive({
   nextReviewAt: ""
 });
 
-const reasonOptions = [
-  { value: "concept", label: "概念不清" },
-  { value: "method", label: "方法不熟" },
-  { value: "careless", label: "审题/计算失误" },
-  { value: "time", label: "时间不足" }
-];
-
 const relatedImages = computed(() => (props.mistake ? store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === props.mistake.id) : []));
 
 watch(
@@ -87,19 +80,6 @@ async function submit() {
       错题标题
       <input v-model.trim="form.title" required placeholder="例如：进程调度周转时间计算" />
     </label>
-
-    <div class="form-row two">
-      <label>
-        错因
-        <select v-model="form.reason">
-          <option v-for="item in reasonOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-        </select>
-      </label>
-      <label>
-        下次复盘日期
-        <input v-model="form.nextReviewAt" type="date" />
-      </label>
-    </div>
 
     <label>
       解析与复盘

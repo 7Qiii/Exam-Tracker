@@ -6,7 +6,7 @@ import MistakeForm from "../components/MistakeForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
-const filters = reactive({ keyword: "", subjectId: "", status: "" });
+const filters = reactive({ keyword: "", subjectId: "" });
 const showForm = ref(true);
 
 const filteredMistakes = computed(() => {
@@ -16,8 +16,7 @@ const filteredMistakes = computed(() => {
       const subject = store.subjectName(item.subjectId);
       return (
         (!keyword || `${item.title} ${item.knowledgePoint} ${item.analysis} ${subject}`.toLowerCase().includes(keyword)) &&
-        (!filters.subjectId || item.subjectId === filters.subjectId) &&
-        (!filters.status || item.status === filters.status)
+        (!filters.subjectId || item.subjectId === filters.subjectId)
       );
     })
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -40,13 +39,6 @@ function imageCount(id) {
         <select v-model="filters.subjectId">
           <option value="">全部科目</option>
           <option v-for="subject in store.subjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
-        </select>
-        <select v-model="filters.status">
-          <option value="">全部状态</option>
-          <option>待复盘</option>
-          <option>已整理</option>
-          <option>复盘中</option>
-          <option>已掌握</option>
         </select>
       </div>
     </section>
@@ -72,8 +64,7 @@ function imageCount(id) {
               <span>{{ store.subjectName(item.subjectId) }} / {{ item.knowledgePoint || "未分类知识点" }}</span>
             </RouterLink>
             <div class="tag-row">
-              <i>{{ item.status }}</i>
-              <i>{{ item.reason }}</i>
+              <i>{{ item.analysis ? "已写解析" : "待补解析" }}</i>
               <i><Image :size="14" />{{ imageCount(item.id) }} 张图</i>
             </div>
             <button class="icon-button danger" type="button" @click="store.removeMistake(item.id)">

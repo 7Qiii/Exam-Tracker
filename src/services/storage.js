@@ -10,10 +10,10 @@ db.version(1).stores({
 });
 
 export const defaultSubjects = [
-  { id: "math1", name: "数学一", fullScore: 150, targetScore: 115, color: "#177ddc" },
-  { id: "english1", name: "英语一", fullScore: 100, targetScore: 75, color: "#12b76a" },
-  { id: "politics", name: "政治", fullScore: 100, targetScore: 75, color: "#f79009" },
-  { id: "cs408", name: "408", fullScore: 150, targetScore: 115, color: "#7a5af8" }
+  { id: "math1", name: "数学一", fullScore: 150, color: "#177ddc" },
+  { id: "english1", name: "英语一", fullScore: 100, color: "#12b76a" },
+  { id: "politics", name: "政治", fullScore: 100, color: "#f79009" },
+  { id: "cs408", name: "408", fullScore: 150, color: "#7a5af8" }
 ];
 
 export function createDemoRecords() {

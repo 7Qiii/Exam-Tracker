@@ -32,7 +32,7 @@ async function remove() {
       </div>
       <div class="detail-metrics">
         <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
-        <article><span>得分率</span><strong>{{ Math.round((record.score / record.fullScore) * 1000) / 10 }}%</strong></article>
+        <article><span>科目</span><strong>{{ store.subjectName(record.subjectId) }}</strong></article>
       </div>
       <div class="note-block">
         <h3>复盘备注</h3>
@@ -47,7 +47,7 @@ async function remove() {
       <div class="card-list">
         <RouterLink v-for="item in relatedMistakes" :key="item.id" class="list-card" :to="`/mistakes/${item.id}`">
           <strong>{{ item.title }}</strong>
-          <span>{{ item.knowledgePoint || "未填写知识点" }} / {{ item.status }}</span>
+          <span>{{ item.knowledgePoint || "未填写知识点" }}</span>
         </RouterLink>
         <p v-if="!relatedMistakes.length" class="empty">这条成绩还没有关联错题。</p>
       </div>

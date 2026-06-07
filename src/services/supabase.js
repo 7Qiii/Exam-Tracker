@@ -124,7 +124,6 @@ function fromSubjectRow(row) {
     id: row.id,
     name: row.name,
     fullScore: row.full_score,
-    targetScore: row.target_score,
     color: row.color,
     createdAt: row.created_at
   };
@@ -135,7 +134,7 @@ function toSubjectRow(subject) {
     id: subject.id,
     name: subject.name,
     full_score: Number(subject.fullScore),
-    target_score: Number(subject.targetScore),
+    target_score: Number(subject.fullScore),
     color: subject.color
   };
 }

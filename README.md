@@ -21,7 +21,7 @@ npm run build
 
 - Vue3 + Vite + Pinia + Vue Router 控制台架构
 - 成绩记录、筛选、分页、详情页与 ECharts 统计图
-- 错题记录、分类检索、状态管理、关联成绩
+- 错题记录、分类检索、解析复盘
 - 错题图片多图上传，图片 Blob 本地保存到 IndexedDB
 - Supabase Auth/Postgres 多设备同步入口
 - Cloudflare R2 预签名上传，图片压缩后存对象存储
@@ -33,9 +33,9 @@ npm run build
 
 默认使用 IndexedDB 本地优先存储：
 
-- `subjects`：科目、满分、目标分、颜色
+- `subjects`：科目、满分、颜色
 - `records`：考试/练习成绩
-- `mistakes`：错题、知识点、错因、复盘状态
+- `mistakes`：错题、知识点、解析复盘
 - `images`：错题图片 Blob
 
 云端同步方案：

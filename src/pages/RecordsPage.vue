@@ -8,18 +8,16 @@ import { useTrackerStore } from "../stores/tracker";
 const store = useTrackerStore();
 const page = ref(1);
 const pageSize = 8;
-const filters = reactive({ keyword: "", subjectId: "", minRate: "" });
+const filters = reactive({ keyword: "", subjectId: "" });
 
 const filteredRecords = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase();
   return [...store.records]
     .filter((record) => {
       const subject = store.subjectName(record.subjectId);
-      const rate = (record.score / record.fullScore) * 100;
       return (
         (!keyword || `${record.paperName} ${record.note} ${subject}`.toLowerCase().includes(keyword)) &&
-        (!filters.subjectId || record.subjectId === filters.subjectId) &&
-        (!filters.minRate || rate >= Number(filters.minRate))
+        (!filters.subjectId || record.subjectId === filters.subjectId)
       );
     })
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
@@ -42,12 +40,6 @@ const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1)
           <option value="">全部科目</option>
           <option v-for="subject in store.subjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
-        <select v-model="filters.minRate" @change="page = 1">
-          <option value="">不限得分率</option>
-          <option value="60">60% 以上</option>
-          <option value="75">75% 以上</option>
-          <option value="90">90% 以上</option>
-        </select>
       </div>
     </section>
 
@@ -69,7 +61,7 @@ const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1)
               <tr>
                 <th>试卷</th>
                 <th>科目</th>
-                <th>得分率</th>
+                <th>得分</th>
                 <th>日期</th>
                 <th></th>
               </tr>
@@ -78,7 +70,7 @@ const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1)
               <tr v-for="record in pagedRecords" :key="record.id">
                 <td><RouterLink :to="`/records/${record.id}`">{{ record.paperName }}</RouterLink></td>
                 <td>{{ store.subjectName(record.subjectId) }}</td>
-                <td>{{ Math.round((record.score / record.fullScore) * 1000) / 10 }}%</td>
+                <td>{{ record.score }} / {{ record.fullScore }}</td>
                 <td>{{ record.date }}</td>
                 <td>
                   <button class="icon-button danger" type="button" @click="store.removeRecord(record.id)">

@@ -29,6 +29,11 @@ const pageTitle = computed(() => {
   return matched?.label || "详情";
 });
 
+const latestRecord = computed(() =>
+  [...store.records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0]
+);
+const sidebarScore = computed(() => (latestRecord.value ? `${latestRecord.value.score}/${latestRecord.value.fullScore}` : "--"));
+const sidebarHint = computed(() => (latestRecord.value ? latestRecord.value.paperName : "还没有成绩记录"));
 const userInitial = computed(() => (store.user?.email || "未").slice(0, 1).toUpperCase());
 const syncLabel = computed(() => (store.user ? store.user.email : "未登录"));
 
@@ -57,8 +62,8 @@ onMounted(() => {
 
       <div class="sidebar-card">
         <div class="mini-icon"><BarChart3 :size="18" /></div>
-        <strong>{{ store.averageRate }}%</strong>
-        <span>当前综合得分率</span>
+        <strong>{{ sidebarScore }}</strong>
+        <span>{{ sidebarHint }}</span>
       </div>
     </aside>
 

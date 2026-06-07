@@ -18,7 +18,7 @@ const mistake = computed(() => store.mistakes.find((item) => item.id === route.p
         <div>
           <p class="eyebrow">{{ store.subjectName(mistake.subjectId) }}</p>
           <h2>{{ mistake.title }}</h2>
-          <span>{{ mistake.knowledgePoint || "未填写知识点" }} / {{ mistake.status }}</span>
+          <span>{{ mistake.knowledgePoint || "未填写知识点" }}</span>
         </div>
       </div>
       <MistakeForm :mistake="mistake" />

@@ -40,12 +40,6 @@ export const useTrackerStore = defineStore("tracker", () => {
   const syncError = ref("");
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
-  const totalScore = computed(() => records.value.reduce((sum, record) => sum + Number(record.score || 0), 0));
-  const averageRate = computed(() => {
-    const totalFull = records.value.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
-    return totalFull ? Math.round((totalScore.value / totalFull) * 1000) / 10 : 0;
-  });
-  const pendingMistakes = computed(() => mistakes.value.filter((item) => item.status !== "已掌握").length);
 
   async function load() {
     syncError.value = "";
@@ -291,8 +285,6 @@ export const useTrackerStore = defineStore("tracker", () => {
     syncMode,
     syncError,
     subjectMap,
-    averageRate,
-    pendingMistakes,
     load,
     login,
     register,
