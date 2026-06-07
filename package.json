@@ -1,11 +1,22 @@
 {
   "name": "11408-exam-tracker",
-  "version": "2.1.0",
-  "description": "11408 exam score tracker",
+  "version": "3.0.0",
+  "description": "Exam Tracker for scores, mistakes and review assets",
   "scripts": {
-    "start": "npx http-server public -p 5173"
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "start": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173"
   },
   "dependencies": {
-    "@vercel/blob": "^2.4.0"
+    "@lucide/vue": "^1.17.0",
+    "@vercel/blob": "^2.4.0",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "dexie": "^4.4.3",
+    "echarts": "^6.1.0",
+    "pinia": "^3.0.4",
+    "vite": "^8.0.16",
+    "vue": "^3.5.35",
+    "vue-router": "^4.6.4"
   }
 }

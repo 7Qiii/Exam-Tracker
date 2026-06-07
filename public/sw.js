@@ -1,14 +1,5 @@
-const CACHE_NAME = "exam-tracker-console-v10";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./reset.html",
-  "./db.js",
-  "./manifest.webmanifest",
-  "./icon.svg"
-];
+const CACHE_NAME = "exam-tracker-vue-cache-v1";
+const ASSETS = ["/", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
@@ -17,18 +8,11 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.map((key) => {
-      if (key !== CACHE_NAME) return caches.delete(key);
-      return undefined;
-    })))
+    caches.keys().then((keys) =>
+      Promise.all(keys.map((key) => (key === CACHE_NAME ? undefined : caches.delete(key))))
+    )
   );
   self.clients.claim();
-});
-
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
 });
 
 self.addEventListener("fetch", (event) => {

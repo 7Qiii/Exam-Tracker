@@ -1,12 +1,11 @@
 {
-  "name": "11408 备考分数本",
-  "short_name": "11408 分数本",
-  "description": "考研 11408 模考记录与分析工具",
-  "start_url": "./index.html",
+  "name": "Exam Tracker",
+  "short_name": "Exam Tracker",
+  "description": "成绩追踪、错题记录与图片复盘工具",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f7f4",
-  "theme_color": "#18212f",
-  "orientation": "portrait",
+  "background_color": "#f6f8fb",
+  "theme_color": "#101828",
   "lang": "zh-CN",
   "categories": ["education", "productivity"],
   "icons": [

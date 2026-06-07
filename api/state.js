@@ -74,5 +74,10 @@ async function readCloudState() {
 }
 
 function isValidState(value) {
-  return Boolean(value && Array.isArray(value.subjects) && Array.isArray(value.records));
+  return Boolean(
+    value &&
+      Array.isArray(value.subjects) &&
+      Array.isArray(value.records) &&
+      (!value.mistakes || Array.isArray(value.mistakes))
+  );
 }
