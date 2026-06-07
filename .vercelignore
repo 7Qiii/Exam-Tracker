@@ -1,0 +1,6 @@
+src
+public/legacy
+dist
+node_modules
+.claude
+.hvigor
