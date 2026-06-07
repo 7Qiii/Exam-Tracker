@@ -32,7 +32,6 @@ const reasonOptions = [
   { value: "time", label: "时间不足" }
 ];
 
-const statusOptions = ["待复盘", "已整理", "复盘中", "已掌握"];
 const relatedImages = computed(() => (props.mistake ? store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === props.mistake.id) : []));
 
 watch(
@@ -71,7 +70,7 @@ async function submit() {
 
 <template>
   <form class="form-grid" @submit.prevent="submit">
-    <div class="form-row">
+    <div class="form-row two">
       <label>
         科目
         <select v-model="form.subjectId" required>
@@ -79,13 +78,8 @@ async function submit() {
         </select>
       </label>
       <label>
-        关联成绩
-        <select v-model="form.sourceRecordId">
-          <option value="">不关联</option>
-          <option v-for="record in store.records" :key="record.id" :value="record.id">
-            {{ record.paperName }} / {{ record.date }}
-          </option>
-        </select>
+        知识点
+        <input v-model.trim="form.knowledgePoint" placeholder="例如：操作系统 / 调度算法" />
       </label>
     </div>
 
@@ -94,11 +88,7 @@ async function submit() {
       <input v-model.trim="form.title" required placeholder="例如：进程调度周转时间计算" />
     </label>
 
-    <div class="form-row">
-      <label>
-        知识点
-        <input v-model.trim="form.knowledgePoint" placeholder="例如：操作系统 / 调度算法" />
-      </label>
+    <div class="form-row two">
       <label>
         错因
         <select v-model="form.reason">
@@ -106,24 +96,14 @@ async function submit() {
         </select>
       </label>
       <label>
-        状态
-        <select v-model="form.status">
-          <option v-for="item in statusOptions" :key="item" :value="item">{{ item }}</option>
-        </select>
+        下次复盘日期
+        <input v-model="form.nextReviewAt" type="date" />
       </label>
     </div>
 
     <label>
-      题干摘录
-      <textarea v-model.trim="form.questionText" rows="3" placeholder="可以先贴关键条件，图片留给完整题面。"></textarea>
-    </label>
-    <label>
       解析与复盘
       <textarea v-model.trim="form.analysis" rows="4" placeholder="写清楚错在哪里、正确路径、下次识别信号。"></textarea>
-    </label>
-    <label>
-      下次复盘日期
-      <input v-model="form.nextReviewAt" type="date" />
     </label>
 
     <ImageUploader

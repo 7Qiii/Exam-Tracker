@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import { ImagePlus, Trash2 } from "@lucide/vue";
+import { ImagePlus, Maximize2, Trash2, X } from "@lucide/vue";
 
 const props = defineProps({
   images: { type: Array, default: () => [] },
@@ -9,6 +9,7 @@ const props = defineProps({
 
 const emit = defineEmits(["files", "remove"]);
 const pending = ref([]);
+const activeImage = ref(null);
 
 const previews = computed(() => [
   ...props.images.map((image) => ({
@@ -34,6 +35,14 @@ function onPick(event) {
   emit("files", files);
   event.target.value = "";
 }
+
+function openPreview(image) {
+  activeImage.value = image;
+}
+
+function closePreview() {
+  activeImage.value = null;
+}
 </script>
 
 <template>
@@ -47,7 +56,10 @@ function onPick(event) {
 
     <div v-if="previews.length" class="image-grid">
       <figure v-for="image in previews" :key="image.id" class="image-tile">
-        <img :src="image.url" :alt="image.name" />
+        <button class="image-preview-button" type="button" @click="openPreview(image)" :title="`查看 ${image.name}`">
+          <img :src="image.url" :alt="image.name" />
+          <span><Maximize2 :size="14" />查看大图</span>
+        </button>
         <figcaption>
           <span>{{ image.name }}</span>
           <button v-if="image.persisted" type="button" @click="emit('remove', image.id)" title="删除图片">
@@ -55,6 +67,16 @@ function onPick(event) {
           </button>
         </figcaption>
       </figure>
+    </div>
+
+    <div v-if="activeImage" class="lightbox" role="dialog" aria-modal="true" @click.self="closePreview">
+      <div class="lightbox-card">
+        <div class="lightbox-head">
+          <strong>{{ activeImage.name }}</strong>
+          <button type="button" @click="closePreview" title="关闭预览"><X :size="18" /></button>
+        </div>
+        <img :src="activeImage.url" :alt="activeImage.name" />
+      </div>
     </div>
   </div>
 </template>

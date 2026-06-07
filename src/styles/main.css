@@ -391,6 +391,10 @@ p {
   gap: 10px;
 }
 
+.form-row.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -652,6 +656,36 @@ td a,
   object-fit: cover;
 }
 
+.image-preview-button {
+  position: relative;
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.image-preview-button span {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  background: rgba(16, 24, 40, 0.76);
+  color: #ffffff;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.image-preview-button:hover span,
+.image-preview-button:focus-visible span {
+  opacity: 1;
+}
+
 .image-tile figcaption {
   min-height: 34px;
   display: flex;
@@ -669,6 +703,80 @@ td a,
   border: 0;
   background: transparent;
   color: var(--red);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 24, 40, 0.72);
+}
+
+.lightbox-card {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 48px);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.lightbox-head {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 12px;
+}
+
+.lightbox-head button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.lightbox-card > img {
+  width: 100%;
+  max-height: calc(100vh - 96px);
+  object-fit: contain;
+  background: #0b1220;
+}
+
+.account-pill {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 10px 0 4px;
+  font-weight: 800;
+}
+
+.avatar-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #eef2f7;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.avatar-dot.online {
+  background: #ecfdf3;
+  color: #067647;
 }
 
 .form-tip {

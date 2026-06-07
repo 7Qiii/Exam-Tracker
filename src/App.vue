@@ -29,6 +29,9 @@ const pageTitle = computed(() => {
   return matched?.label || "详情";
 });
 
+const userInitial = computed(() => (store.user?.email || "未").slice(0, 1).toUpperCase());
+const syncLabel = computed(() => (store.user ? store.user.email : "未登录"));
+
 onMounted(() => {
   store.load();
 });
@@ -70,10 +73,11 @@ onMounted(() => {
             <Search :size="17" />
             <span>按科目、知识点、卷名检索</span>
           </div>
-          <button class="ghost-button" type="button" title="云端同步">
+          <RouterLink class="account-pill" to="/login" :title="store.user ? '账号与同步' : '登录同步'">
+            <span class="avatar-dot" :class="{ online: store.user }">{{ userInitial }}</span>
+            <span>{{ syncLabel }}</span>
             <Cloud :size="17" />
-            <span>{{ store.user ? "云端同步" : "本地优先" }}</span>
-          </button>
+          </RouterLink>
           <button class="ghost-button icon-only" type="button" title="设置">
             <Settings :size="18" />
           </button>
