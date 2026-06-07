@@ -1,5 +1,5 @@
 {
-  "name": "11408-exam-tracker",
+  "name": "exam-tracker-console",
   "version": "3.0.0",
   "description": "Exam Tracker for scores, mistakes and review assets",
   "scripts": {

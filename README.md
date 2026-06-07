@@ -1,6 +1,6 @@
 # Exam Tracker
 
-面向 11408 备考的成绩追踪、错题记录与图片复盘工具。项目已从原生静态页面升级为 Vue3 控制台应用，适合后续持续扩展内容、分类和同步能力。
+Exam Tracker is a general-purpose exam review console for score tracking, mistake review, image-based notes, and cross-device sync. The project has been upgraded into a Vue3 console application designed for long-term extensibility.
 
 ## 使用
 

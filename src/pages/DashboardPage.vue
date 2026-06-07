@@ -62,9 +62,9 @@ async function onImport(event) {
   <div class="page-stack">
     <section class="hero-panel">
       <div>
-        <p class="eyebrow">Workspace</p>
-        <h2>把成绩、错题和图片复盘放在同一个工作台。</h2>
-        <p>本地优先存储，支持后续不断补充知识点、解析复盘和图片资料。</p>
+        <p class="eyebrow">Command Center</p>
+        <h2>A focused workspace for scores, mistakes, and visual review.</h2>
+        <p>Track exam performance, preserve review notes, and keep image-based evidence in one durable console.</p>
       </div>
       <div class="hero-actions">
         <RouterLink class="primary-button" to="/mistakes">

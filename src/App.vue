@@ -20,17 +20,17 @@ const store = useTrackerStore();
 const route = useRoute();
 
 const navItems = [
-  { to: "/", label: "总览", icon: Home },
-  { to: "/records", label: "成绩", icon: ClipboardList },
-  { to: "/mistakes", label: "错题", icon: BookOpenCheck },
-  { to: "/login", label: "同步", icon: LogIn },
-  { to: "/subjects", label: "科目", icon: Settings },
-  { to: "/backup", label: "备份", icon: Database }
+  { to: "/", label: "Overview", icon: Home },
+  { to: "/records", label: "Scores", icon: ClipboardList },
+  { to: "/mistakes", label: "Review Bank", icon: BookOpenCheck },
+  { to: "/login", label: "Sync", icon: LogIn },
+  { to: "/subjects", label: "Subjects", icon: Settings },
+  { to: "/backup", label: "Vault", icon: Database }
 ];
 
 const pageTitle = computed(() => {
   const matched = navItems.find((item) => item.to === route.path);
-  return matched?.label || "详情";
+  return matched?.label || "Detail";
 });
 
 const latestRecord = computed(() =>
@@ -71,7 +71,6 @@ onMounted(() => {
         <span class="brand-mark">ET</span>
         <span>
           <strong>Exam Tracker</strong>
-          <small>成绩与错题控制台</small>
         </span>
       </RouterLink>
 
@@ -92,7 +91,7 @@ onMounted(() => {
     <div class="workspace">
       <header class="topbar">
         <div>
-          <p class="eyebrow">11408 / Review OS</p>
+          <p class="eyebrow">Exam Intelligence Console</p>
           <h1>{{ pageTitle }}</h1>
         </div>
         <div class="topbar-tools">
