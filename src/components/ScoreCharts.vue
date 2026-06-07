@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import * as echarts from "echarts";
 import { useTrackerStore } from "../stores/tracker";
 
 const props = defineProps({
@@ -12,14 +11,16 @@ const trendRef = ref(null);
 const distributionRef = ref(null);
 let trendChart = null;
 let distributionChart = null;
+let echarts = null;
 
 const scopedRecords = computed(() => {
   const list = props.subjectId ? store.records.filter((record) => record.subjectId === props.subjectId) : store.records;
   return [...list].sort((a, b) => a.date.localeCompare(b.date));
 });
 
-function draw() {
+async function draw() {
   if (!trendRef.value || !distributionRef.value) return;
+  echarts ||= await import("echarts");
   trendChart ||= echarts.init(trendRef.value);
   distributionChart ||= echarts.init(distributionRef.value);
 

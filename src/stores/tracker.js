@@ -49,25 +49,25 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   async function load() {
     syncError.value = "";
+    const localData = await loadAllData();
+    subjects.value = localData.subjects;
+    records.value = localData.records;
+    mistakes.value = localData.mistakes;
+    images.value = localData.images;
+    syncMode.value = isSupabaseConfigured ? "signed-out" : "local";
+    isReady.value = true;
+    subscribeAuth();
+
     if (isSupabaseConfigured) {
       const session = await getSession();
       user.value = session?.user || null;
       if (user.value) {
-        await loadFromCloud();
-        subscribeAuth();
-        isReady.value = true;
-        return;
+        loadFromCloud().catch((error) => {
+          syncError.value = error.message || "云端同步失败";
+          console.error(error);
+        });
       }
     }
-
-    const data = await loadAllData();
-    subjects.value = data.subjects;
-    records.value = data.records;
-    mistakes.value = data.mistakes;
-    images.value = data.images;
-    syncMode.value = isSupabaseConfigured ? "signed-out" : "local";
-    isReady.value = true;
-    subscribeAuth();
   }
 
   let unsubscribeAuth = null;
