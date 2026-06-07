@@ -68,9 +68,8 @@ async function clearData() {
   <div class="page-stack">
     <section class="hero-panel compact-hero">
       <div>
-        <p class="eyebrow">Data Vault</p>
-        <h2>Protect the archive behind your progress.</h2>
-        <p>Export durable backups, restore from previous snapshots, and guard destructive operations with confirmation.</p>
+        <h2>备份中心。</h2>
+        <p>长期学习数据建议定期导出。导入支持合并和覆盖两种方式，清空操作需要二次确认。</p>
       </div>
       <button class="primary-button" type="button" @click="exportData">
         <Download :size="17" />

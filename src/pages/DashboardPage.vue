@@ -60,12 +60,7 @@ async function onImport(event) {
 
 <template>
   <div class="page-stack">
-    <section class="hero-panel">
-      <div>
-        <p class="eyebrow">Command Center</p>
-        <h2>A focused workspace for scores, mistakes, and visual review.</h2>
-        <p>Track exam performance, preserve review notes, and keep image-based evidence in one durable console.</p>
-      </div>
+    <section class="hero-panel quick-actions-panel">
       <div class="hero-actions">
         <RouterLink class="primary-button" to="/mistakes">
           <FilePlus2 :size="17" />

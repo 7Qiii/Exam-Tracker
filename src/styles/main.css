@@ -348,6 +348,12 @@ p {
     var(--surface);
 }
 
+.quick-actions-panel {
+  min-height: 72px;
+  justify-content: flex-end;
+  padding: 14px 16px;
+}
+
 .hero-panel h2 {
   max-width: 620px;
   font-size: 26px;

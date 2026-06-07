@@ -91,9 +91,8 @@ async function remove(subject) {
   <div class="page-stack">
     <section class="hero-panel compact-hero">
       <div>
-        <p class="eyebrow">Subject Architecture</p>
-        <h2>Shape the exam structure around your plan.</h2>
-        <p>Pin your core subjects, reorder the workspace, and hide anything that should stay out of daily review.</p>
+        <h2>管理你的考试科目。</h2>
+        <p>默认科目按当前备考配置排序：数一、408、英一、政治。你也可以拖拽调整顺序，或隐藏暂时不用的科目。</p>
       </div>
     </section>
 

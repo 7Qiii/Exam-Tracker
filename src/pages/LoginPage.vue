@@ -73,8 +73,8 @@ async function syncNow() {
         <span class="brand-mark">ET</span>
         <strong>Exam Tracker Console</strong>
       </div>
-      <h2>Account Sync</h2>
-      <p>Supabase keeps identity and study data in sync, while Cloudflare R2 stores mistake images for every signed-in device.</p>
+      <h2>账号同步</h2>
+      <p>Supabase 负责账号和成绩/错题数据，Cloudflare R2 负责错题图片。登录后手机、平板、电脑会读取同一份云端数据。</p>
 
       <div class="sync-state" :class="{ online: store.user }">
         <Database :size="18" />

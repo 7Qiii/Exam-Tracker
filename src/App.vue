@@ -20,17 +20,17 @@ const store = useTrackerStore();
 const route = useRoute();
 
 const navItems = [
-  { to: "/", label: "Overview", icon: Home },
-  { to: "/records", label: "Scores", icon: ClipboardList },
-  { to: "/mistakes", label: "Review Bank", icon: BookOpenCheck },
-  { to: "/login", label: "Sync", icon: LogIn },
-  { to: "/subjects", label: "Subjects", icon: Settings },
-  { to: "/backup", label: "Vault", icon: Database }
+  { to: "/", label: "总览", title: "Overview", icon: Home },
+  { to: "/records", label: "成绩", title: "Scores", icon: ClipboardList },
+  { to: "/mistakes", label: "错题", title: "Review Bank", icon: BookOpenCheck },
+  { to: "/login", label: "同步", title: "Sync", icon: LogIn },
+  { to: "/subjects", label: "科目", title: "Subjects", icon: Settings },
+  { to: "/backup", label: "备份", title: "Vault", icon: Database }
 ];
 
 const pageTitle = computed(() => {
   const matched = navItems.find((item) => item.to === route.path);
-  return matched?.label || "Detail";
+  return matched?.title || "Detail";
 });
 
 const latestRecord = computed(() =>
