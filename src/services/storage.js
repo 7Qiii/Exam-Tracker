@@ -87,10 +87,10 @@ export async function loadAllData() {
 export async function replaceAllData(payload) {
   await db.transaction("rw", db.subjects, db.records, db.mistakes, db.images, async () => {
     await Promise.all([db.subjects.clear(), db.records.clear(), db.mistakes.clear(), db.images.clear()]);
-    await db.subjects.bulkPut(normalizeSubjects(payload.subjects || defaultSubjects));
-    await db.records.bulkPut(payload.records || []);
-    await db.mistakes.bulkPut(payload.mistakes || []);
-    await db.images.bulkPut(payload.images || []);
+    await db.subjects.bulkPut(normalizeSubjects(toPlainEntries(payload.subjects || defaultSubjects)));
+    await db.records.bulkPut(toPlainEntries(payload.records || []));
+    await db.mistakes.bulkPut(toPlainEntries(payload.mistakes || []));
+    await db.images.bulkPut(toPlainEntries(payload.images || []));
   });
 }
 
@@ -117,7 +117,7 @@ export async function addImages(ownerType, ownerId, files) {
 
 export async function addImageEntries(entries) {
   if (entries.length) {
-    await db.images.bulkPut(entries);
+    await db.images.bulkPut(toPlainEntries(entries));
   }
   return entries;
 }
@@ -127,7 +127,7 @@ export async function exportPortableData() {
   const images = await Promise.all(
     data.images.map(async (image) => ({
       ...image,
-      blob: await blobToDataUrl(image.blob)
+      blob: image.blob ? await blobToDataUrl(image.blob) : null
     }))
   );
   return { ...data, images, exportedAt: new Date().toISOString(), version: 3 };
@@ -137,15 +137,15 @@ export async function importPortableData(payload, merge = true) {
   const images = await Promise.all(
     (payload.images || []).map(async (image) => ({
       ...image,
-      blob: typeof image.blob === "string" ? await dataUrlToBlob(image.blob) : image.blob
+      blob: typeof image.blob === "string" ? await dataUrlToBlob(image.blob) : image.blob || null
     }))
   );
 
   const normalized = {
     subjects: normalizeSubjects(payload.subjects || []),
-    records: payload.records || [],
-    mistakes: payload.mistakes || [],
-    images
+    records: toPlainEntries(payload.records || []),
+    mistakes: toPlainEntries(payload.mistakes || []),
+    images: toPlainEntries(images)
   };
 
   if (!merge) {
@@ -192,6 +192,18 @@ function sampleMistake(subjectId, title, knowledgePoint, reason, status) {
     createdAt: now,
     updatedAt: now
   };
+}
+
+function toPlainEntries(entries) {
+  return entries.map((entry) => {
+    const plain = {};
+    Object.entries(entry || {}).forEach(([key, value]) => {
+      if (value !== undefined) {
+        plain[key] = value;
+      }
+    });
+    return plain;
+  });
 }
 
 function blobToDataUrl(blob) {
