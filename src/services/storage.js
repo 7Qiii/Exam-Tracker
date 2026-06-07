@@ -10,17 +10,37 @@ db.version(1).stores({
 });
 
 export const defaultSubjects = [
-  { id: "math1", name: "数学一", fullScore: 150, color: "#177ddc" },
-  { id: "english1", name: "英语一", fullScore: 100, color: "#12b76a" },
-  { id: "politics", name: "政治", fullScore: 100, color: "#f79009" },
-  { id: "cs408", name: "408", fullScore: 150, color: "#7a5af8" }
+  { id: "math1", name: "数一", fullScore: 150, color: "#177ddc" },
+  { id: "cs408", name: "408", fullScore: 150, color: "#7a5af8" },
+  { id: "english1", name: "英语", fullScore: 100, color: "#12b76a" },
+  { id: "politics", name: "政治", fullScore: 100, color: "#f79009" }
 ];
+
+const subjectBlueprints = new Map(defaultSubjects.map((subject, index) => [subject.id, { ...subject, order: index }]));
+
+export function normalizeSubjects(subjects = []) {
+  const merged = new Map(defaultSubjects.map((subject) => [subject.id, { ...subject }]));
+
+  subjects.forEach((subject) => {
+    const blueprint = subjectBlueprints.get(subject.id);
+    merged.set(subject.id, {
+      ...subject,
+      ...(blueprint ? { name: blueprint.name, fullScore: blueprint.fullScore, color: subject.color || blueprint.color } : {})
+    });
+  });
+
+  return [...merged.values()].sort((a, b) => {
+    const left = subjectBlueprints.get(a.id)?.order ?? Number.MAX_SAFE_INTEGER;
+    const right = subjectBlueprints.get(b.id)?.order ?? Number.MAX_SAFE_INTEGER;
+    return left - right || a.name.localeCompare(b.name, "zh-Hans-CN");
+  });
+}
 
 export function createDemoRecords() {
   return [
     sampleRecord("cs408", "408 综合模拟 01", -8, 86, 150, "操作系统和计网选择题丢分明显。"),
-    sampleRecord("math1", "数学一 模拟 01", -6, 92, 150, "后两道大题节奏偏慢。"),
-    sampleRecord("english1", "英语一 阅读专项", -4, 68, 100, "阅读细节题需要标定位句。"),
+    sampleRecord("math1", "数一 模拟 01", -6, 92, 150, "后两道大题节奏偏慢。"),
+    sampleRecord("english1", "英语 阅读专项", -4, 68, 100, "阅读细节题需要标定位句。"),
     sampleRecord("politics", "政治 选择题套卷", -2, 63, 100, "马原概念要回炉。")
   ];
 }
@@ -36,6 +56,8 @@ export async function seedIfEmpty() {
   const subjectCount = await db.subjects.count();
   if (!subjectCount) {
     await db.subjects.bulkPut(defaultSubjects);
+  } else {
+    await db.subjects.bulkPut(normalizeSubjects(await db.subjects.toArray()));
   }
 
   const recordCount = await db.records.count();
@@ -57,13 +79,13 @@ export async function loadAllData() {
     db.mistakes.toArray(),
     db.images.toArray()
   ]);
-  return { subjects, records, mistakes, images };
+  return { subjects: normalizeSubjects(subjects), records, mistakes, images };
 }
 
 export async function replaceAllData(payload) {
   await db.transaction("rw", db.subjects, db.records, db.mistakes, db.images, async () => {
     await Promise.all([db.subjects.clear(), db.records.clear(), db.mistakes.clear(), db.images.clear()]);
-    await db.subjects.bulkPut(payload.subjects || defaultSubjects);
+    await db.subjects.bulkPut(normalizeSubjects(payload.subjects || defaultSubjects));
     await db.records.bulkPut(payload.records || []);
     await db.mistakes.bulkPut(payload.mistakes || []);
     await db.images.bulkPut(payload.images || []);
@@ -118,7 +140,7 @@ export async function importPortableData(payload, merge = true) {
   );
 
   const normalized = {
-    subjects: payload.subjects || [],
+    subjects: normalizeSubjects(payload.subjects || []),
     records: payload.records || [],
     mistakes: payload.mistakes || [],
     images

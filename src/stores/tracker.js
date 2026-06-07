@@ -7,6 +7,7 @@ import {
   exportPortableData,
   importPortableData,
   loadAllData,
+  normalizeSubjects,
   replaceAllData
 } from "../services/storage";
 import { compressImage } from "../services/imageTools";
@@ -44,7 +45,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function load() {
     syncError.value = "";
     const localData = await loadAllData();
-    subjects.value = localData.subjects;
+    subjects.value = normalizeSubjects(localData.subjects);
     records.value = localData.records;
     mistakes.value = localData.mistakes;
     images.value = localData.images;
@@ -74,7 +75,7 @@ export const useTrackerStore = defineStore("tracker", () => {
         await loadFromCloud();
       } else {
         const data = await loadAllData();
-        subjects.value = data.subjects;
+        subjects.value = normalizeSubjects(data.subjects);
         records.value = data.records;
         mistakes.value = data.mistakes;
         images.value = data.images;
@@ -87,7 +88,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     const data = await loadCloudData();
     if (!data) return;
     user.value = data.user;
-    subjects.value = data.subjects.length ? data.subjects : subjects.value;
+    subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
     records.value = data.records;
     mistakes.value = data.mistakes;
     images.value = data.images;
@@ -202,9 +203,10 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function saveSubjects(nextSubjects) {
-    await db.subjects.bulkPut(nextSubjects);
-    await Promise.all(nextSubjects.map((subject) => safeCloud(() => upsertSubject(subject))));
-    subjects.value = nextSubjects;
+    const normalizedSubjects = normalizeSubjects(nextSubjects);
+    await db.subjects.bulkPut(normalizedSubjects);
+    await Promise.all(normalizedSubjects.map((subject) => safeCloud(() => upsertSubject(subject))));
+    subjects.value = normalizedSubjects;
   }
 
   async function exportData() {
