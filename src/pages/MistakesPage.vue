@@ -1,12 +1,13 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { Image, Trash2 } from "@lucide/vue";
+import { Image, Search, Trash2, X } from "@lucide/vue";
 import MistakeForm from "../components/MistakeForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
 const filters = reactive({ keyword: "", subjectId: "" });
+const draftFilters = reactive({ keyword: "", subjectId: "" });
 const showForm = ref(true);
 
 const filteredMistakes = computed(() => {
@@ -27,6 +28,17 @@ function imageCount(id) {
   return store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === id).length;
 }
 
+function applyFilters() {
+  filters.keyword = draftFilters.keyword;
+  filters.subjectId = draftFilters.subjectId;
+}
+
+function clearFilters() {
+  draftFilters.keyword = "";
+  draftFilters.subjectId = "";
+  applyFilters();
+}
+
 function normalizeSearch(value) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
@@ -42,13 +54,21 @@ function normalizeSearch(value) {
           <button class="secondary-button compact" type="button" @click="showForm = !showForm">{{ showForm ? "收起表单" : "新增错题" }}</button>
         </div>
       </div>
-      <div class="filter-bar">
-        <input v-model="filters.keyword" placeholder="搜索标题、知识点、解析" />
-        <select v-model="filters.subjectId">
+      <form class="filter-bar with-actions" @submit.prevent="applyFilters">
+        <input v-model="draftFilters.keyword" placeholder="搜索标题、知识点、解析" />
+        <select v-model="draftFilters.subjectId">
           <option value="">全部科目</option>
           <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
-      </div>
+        <button class="primary-button" type="submit">
+          <Search :size="16" />
+          搜索
+        </button>
+        <button class="secondary-button" type="button" @click="clearFilters">
+          <X :size="16" />
+          清空
+        </button>
+      </form>
     </section>
 
     <section class="content-grid">

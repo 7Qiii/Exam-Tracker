@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { ChevronLeft, ChevronRight, Trash2 } from "@lucide/vue";
+import { ChevronLeft, ChevronRight, Search, Trash2, X } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -9,6 +9,7 @@ const store = useTrackerStore();
 const page = ref(1);
 const pageSize = 8;
 const filters = reactive({ keyword: "", subjectId: "" });
+const draftFilters = reactive({ keyword: "", subjectId: "" });
 
 const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
@@ -40,6 +41,18 @@ watch(() => [filters.keyword, filters.subjectId], () => {
   page.value = 1;
 });
 
+function applyFilters() {
+  filters.keyword = draftFilters.keyword;
+  filters.subjectId = draftFilters.subjectId;
+  page.value = 1;
+}
+
+function clearFilters() {
+  draftFilters.keyword = "";
+  draftFilters.subjectId = "";
+  applyFilters();
+}
+
 function normalizeSearch(value) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
@@ -52,13 +65,21 @@ function normalizeSearch(value) {
         <h2>成绩筛选</h2>
         <span class="section-meta">{{ filteredRecords.length }} 条结果</span>
       </div>
-      <div class="filter-bar">
-        <input v-model="filters.keyword" placeholder="搜索试卷、备注、科目" @input="page = 1" />
-        <select v-model="filters.subjectId" @change="page = 1">
+      <form class="filter-bar with-actions" @submit.prevent="applyFilters">
+        <input v-model="draftFilters.keyword" placeholder="搜索试卷、备注、科目" />
+        <select v-model="draftFilters.subjectId">
           <option value="">全部科目</option>
           <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
-      </div>
+        <button class="primary-button" type="submit">
+          <Search :size="16" />
+          搜索
+        </button>
+        <button class="secondary-button" type="button" @click="clearFilters">
+          <X :size="16" />
+          清空
+        </button>
+      </form>
     </section>
 
     <section class="content-grid">

@@ -516,6 +516,10 @@ textarea:focus {
   gap: 10px;
 }
 
+.filter-bar.with-actions {
+  grid-template-columns: minmax(220px, 1fr) 170px auto auto;
+}
+
 .subject-card,
 .list-card,
 .mistake-card,
