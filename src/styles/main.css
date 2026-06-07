@@ -23,12 +23,14 @@
 
 html {
   min-width: 320px;
+  overflow-x: hidden;
   background: var(--bg);
 }
 
 body {
   margin: 0;
   color: var(--ink);
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, #eef5ff 0, rgba(246, 248, 251, 0) 220px),
     var(--bg);
@@ -79,6 +81,32 @@ p {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.sidebar-head {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+.drawer-close,
+.menu-button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: none;
+  place-items: center;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.drawer-close {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .brand,
@@ -163,6 +191,7 @@ p {
 
 .workspace {
   min-width: 0;
+  width: 100%;
   padding: 18px 24px 36px;
 }
 
@@ -173,6 +202,13 @@ p {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
+}
+
+.topbar-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .eyebrow {
@@ -1128,23 +1164,62 @@ td a,
   }
 
   .sidebar {
-    position: static;
-    height: auto;
-    flex-direction: row;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: min(286px, calc(100vw - 44px));
+    height: 100dvh;
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+    box-shadow: 24px 0 48px rgba(16, 24, 40, 0.2);
+    overflow-y: auto;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-head {
+    display: flex;
     align-items: center;
-    overflow-x: auto;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .desktop-brand {
+    display: none;
+  }
+
+  .drawer-close,
+  .menu-button {
+    display: inline-grid;
+    flex: 0 0 auto;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    display: block;
+    border: 0;
+    background: rgba(16, 24, 40, 0.42);
+    backdrop-filter: blur(2px);
   }
 
   .nav-list {
-    display: flex;
+    display: grid;
   }
 
   .sidebar-card {
-    display: none;
+    margin-top: auto;
   }
 
   .workspace {
     padding: 16px;
+  }
+
+  .topbar {
+    align-items: flex-start;
   }
 }
 
@@ -1186,6 +1261,17 @@ td a,
 
   .topbar-tools {
     justify-content: flex-start;
+    width: 100%;
+  }
+
+  .account-pill {
+    max-width: 100%;
+  }
+
+  .account-pill > span:not(.avatar-dot) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -1195,13 +1281,43 @@ td a,
   }
 
   .sidebar {
-    padding: 10px;
+    width: min(292px, calc(100vw - 28px));
+    padding: 14px 12px;
   }
 
   .brand small,
-  .topbar-tools span,
-  .nav-item span {
+  .account-pill > span:not(.avatar-dot),
+  .sync-pill span {
     display: none;
+  }
+
+  .topbar {
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .topbar-title {
+    width: 100%;
+  }
+
+  .topbar h1 {
+    font-size: 22px;
+  }
+
+  .topbar-tools {
+    display: grid;
+    grid-template-columns: auto auto auto;
+    align-items: center;
+  }
+
+  .account-pill {
+    min-width: 38px;
+    padding: 0 4px;
+  }
+
+  .sync-pill {
+    width: 38px;
+    padding: 0;
   }
 
   .panel,

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import {
   BarChart3,
@@ -9,15 +9,18 @@ import {
   Database,
   Home,
   LogIn,
+  Menu,
   RefreshCw,
   Search,
   Settings,
-  Upload
+  Upload,
+  X
 } from "@lucide/vue";
 import { useTrackerStore } from "./stores/tracker";
 
 const store = useTrackerStore();
 const route = useRoute();
+const isSidebarOpen = ref(false);
 
 const navItems = [
   { to: "/", label: "总览", title: "Overview", icon: Home },
@@ -59,6 +62,21 @@ async function syncNow() {
   }
 }
 
+function toggleSidebar() {
+  isSidebarOpen.value = !isSidebarOpen.value;
+}
+
+function closeSidebar() {
+  isSidebarOpen.value = false;
+}
+
+watch(
+  () => route.fullPath,
+  () => {
+    closeSidebar();
+  }
+);
+
 onMounted(() => {
   store.load();
 });
@@ -66,8 +84,28 @@ onMounted(() => {
 
 <template>
   <div class="app-shell">
-    <aside class="sidebar">
-      <RouterLink class="brand" to="/">
+    <button
+      v-if="isSidebarOpen"
+      class="sidebar-backdrop"
+      type="button"
+      aria-label="关闭导航"
+      @click="closeSidebar"
+    />
+
+    <aside class="sidebar" :class="{ open: isSidebarOpen }">
+      <div class="sidebar-head">
+        <RouterLink class="brand" to="/" @click="closeSidebar">
+          <span class="brand-mark">ET</span>
+          <span>
+            <strong>Exam Tracker</strong>
+          </span>
+        </RouterLink>
+        <button class="drawer-close" type="button" aria-label="关闭导航" @click="closeSidebar">
+          <X :size="18" />
+        </button>
+      </div>
+
+      <RouterLink class="brand desktop-brand" to="/">
         <span class="brand-mark">ET</span>
         <span>
           <strong>Exam Tracker</strong>
@@ -75,7 +113,14 @@ onMounted(() => {
       </RouterLink>
 
       <nav class="nav-list" aria-label="主导航">
-        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" class="nav-item" :aria-label="item.label">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.to"
+          :to="item.to"
+          class="nav-item"
+          :aria-label="item.label"
+          @click="closeSidebar"
+        >
           <component :is="item.icon" :size="18" />
           <span>{{ item.label }}</span>
         </RouterLink>
@@ -90,9 +135,14 @@ onMounted(() => {
 
     <div class="workspace">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">Exam Intelligence Console</p>
-          <h1>{{ pageTitle }}</h1>
+        <div class="topbar-title">
+          <button class="menu-button" type="button" aria-label="打开导航" @click="toggleSidebar">
+            <Menu :size="20" />
+          </button>
+          <div>
+            <p class="eyebrow">Exam Intelligence Console</p>
+            <h1>{{ pageTitle }}</h1>
+          </div>
         </div>
         <div class="topbar-tools">
           <div class="search-box">
