@@ -24,6 +24,7 @@ npm run build
 - 错题记录、分类检索、解析复盘
 - 科目管理，支持默认科目排序与自定义科目扩展
 - 错题图片多图上传，图片 Blob 本地保存到 IndexedDB
+- 备份中心，支持导出、合并导入、覆盖恢复和清空确认
 - Supabase Auth/Postgres 多设备同步入口
 - Cloudflare R2 预签名上传，图片压缩后存对象存储
 - 数据导入导出，导出时会把图片转为可迁移 Data URL

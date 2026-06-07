@@ -22,7 +22,7 @@ const latestRecords = computed(() =>
 );
 
 const subjectStats = computed(() =>
-  store.subjects.map((subject) => {
+  store.visibleSubjects.map((subject) => {
     const records = store.records.filter((record) => record.subjectId === subject.id);
     const latest = [...records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0];
     return {
@@ -104,7 +104,7 @@ async function onImport(event) {
           <h2>科目状态</h2>
           <select v-model="selectedSubject">
             <option value="">全部科目</option>
-            <option v-for="subject in store.subjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+            <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
           </select>
         </div>
         <div class="subject-list">

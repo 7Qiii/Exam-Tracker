@@ -6,8 +6,10 @@ import {
   BookOpenCheck,
   ClipboardList,
   Cloud,
+  Database,
   Home,
   LogIn,
+  RefreshCw,
   Search,
   Settings,
   Upload
@@ -22,7 +24,8 @@ const navItems = [
   { to: "/records", label: "成绩", icon: ClipboardList },
   { to: "/mistakes", label: "错题", icon: BookOpenCheck },
   { to: "/login", label: "同步", icon: LogIn },
-  { to: "/subjects", label: "科目", icon: Settings }
+  { to: "/subjects", label: "科目", icon: Settings },
+  { to: "/backup", label: "备份", icon: Database }
 ];
 
 const pageTitle = computed(() => {
@@ -37,6 +40,24 @@ const sidebarScore = computed(() => (latestRecord.value ? `${latestRecord.value.
 const sidebarHint = computed(() => (latestRecord.value ? latestRecord.value.paperName : "还没有成绩记录"));
 const userInitial = computed(() => (store.user?.email || "未").slice(0, 1).toUpperCase());
 const syncLabel = computed(() => (store.user ? store.user.email : "未登录"));
+const syncStateText = computed(() => {
+  if (store.syncError) return "同步失败";
+  if (store.user) return store.lastSyncedAt ? "已同步" : "已登录";
+  return store.syncMode === "local" ? "本地模式" : "未登录";
+});
+const syncStateTitle = computed(() => {
+  if (store.syncError) return store.syncError;
+  if (store.lastSyncedAt) return `最后同步：${new Date(store.lastSyncedAt).toLocaleString("zh-CN")}`;
+  return store.user ? "可手动同步云端数据" : "登录后开启多设备同步";
+});
+
+async function syncNow() {
+  try {
+    await store.syncNow();
+  } catch (error) {
+    store.syncError = error.message || "同步失败";
+  }
+}
 
 onMounted(() => {
   store.load();
@@ -84,6 +105,17 @@ onMounted(() => {
             <span>{{ syncLabel }}</span>
             <Cloud :size="17" />
           </RouterLink>
+          <button
+            class="sync-pill"
+            :class="{ online: store.user && !store.syncError, danger: store.syncError }"
+            type="button"
+            :title="syncStateTitle"
+            :disabled="store.isSyncing || !store.user"
+            @click="syncNow"
+          >
+            <RefreshCw :size="15" :class="{ spinning: store.isSyncing }" />
+            <span>{{ syncStateText }}</span>
+          </button>
           <RouterLink class="ghost-button icon-only" to="/subjects" title="科目管理">
             <Settings :size="18" />
           </RouterLink>

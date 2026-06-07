@@ -28,10 +28,10 @@ const form = reactive({
 const relatedImages = computed(() => (props.mistake ? store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === props.mistake.id) : []));
 
 watch(
-  () => [store.subjects, props.mistake],
+  () => [store.visibleSubjects, props.mistake],
   () => {
     const source = props.mistake || {};
-    form.subjectId = source.subjectId || store.subjects[0]?.id || "";
+    form.subjectId = source.subjectId || store.visibleSubjects[0]?.id || "";
     form.title = source.title || "";
     form.knowledgePoint = source.knowledgePoint || "";
     form.reason = source.reason || "concept";
@@ -67,7 +67,7 @@ async function submit() {
       <label>
         科目
         <select v-model="form.subjectId" required>
-          <option v-for="subject in store.subjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+          <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
       </label>
       <label>

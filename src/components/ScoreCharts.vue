@@ -52,7 +52,7 @@ async function draw() {
     ]
   });
 
-  const latestBySubject = store.subjects
+  const latestBySubject = store.visibleSubjects
     .map((subject) => {
       const latest = [...records]
         .filter((record) => record.subjectId === subject.id)

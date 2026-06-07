@@ -40,8 +40,21 @@ export const useTrackerStore = defineStore("tracker", () => {
   const user = ref(null);
   const syncMode = ref(isSupabaseConfigured ? "cloud-ready" : "local");
   const syncError = ref("");
+  const isSyncing = ref(false);
+  const lastSyncedAt = ref("");
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
+  const visibleSubjects = computed(() => subjects.value.filter((subject) => !subject.hidden));
+  const imageStorageStats = computed(() => {
+    const totalBytes = images.value.reduce((sum, image) => sum + Number(image.size || image.blob?.size || 0), 0);
+    const cloudCount = images.value.filter((image) => image.url || image.storageKey).length;
+    return {
+      count: images.value.length,
+      cloudCount,
+      totalBytes,
+      label: formatBytes(totalBytes)
+    };
+  });
 
   async function load() {
     syncError.value = "";
@@ -86,20 +99,34 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function loadFromCloud() {
-    const data = await loadCloudData();
-    if (!data) return;
-    user.value = data.user;
-    subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
-    records.value = data.records;
-    mistakes.value = data.mistakes;
-    images.value = data.images;
-    syncMode.value = "cloud";
-    await replaceAllData({
-      subjects: subjects.value,
-      records: records.value,
-      mistakes: mistakes.value,
-      images: images.value
-    });
+    isSyncing.value = true;
+    try {
+      const data = await loadCloudData();
+      if (!data) return;
+      user.value = data.user;
+      subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
+      records.value = data.records;
+      mistakes.value = data.mistakes;
+      images.value = data.images;
+      syncMode.value = "cloud";
+      lastSyncedAt.value = new Date().toISOString();
+      await replaceAllData({
+        subjects: subjects.value,
+        records: records.value,
+        mistakes: mistakes.value,
+        images: images.value
+      });
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
+  async function syncNow() {
+    if (!user.value || !supabase) {
+      throw new Error("请先登录账号后再同步。");
+    }
+    syncError.value = "";
+    await loadFromCloud();
   }
 
   async function login(email, password) {
@@ -216,6 +243,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       name: payload.name.trim(),
       fullScore: Number(payload.fullScore),
       color: payload.color || "#177ddc",
+      hidden: false,
+      sortOrder: nextSubjectOrder(),
       createdAt: new Date().toISOString()
     };
     await saveSubjects([...subjects.value, subject]);
@@ -229,10 +258,21 @@ export const useTrackerStore = defineStore("tracker", () => {
             ...subject,
             ...patch,
             name: String(patch.name || subject.name).trim(),
-            fullScore: Number(patch.fullScore ?? subject.fullScore)
+            fullScore: Number(patch.fullScore ?? subject.fullScore),
+            hidden: Boolean(patch.hidden ?? subject.hidden),
+            sortOrder: Number.isFinite(Number(patch.sortOrder)) ? Number(patch.sortOrder) : subject.sortOrder
           }
         : subject
     );
+    await saveSubjects(nextSubjects);
+  }
+
+  async function reorderSubjects(ids) {
+    const orderMap = new Map(ids.map((id, index) => [id, index]));
+    const nextSubjects = subjects.value.map((subject, index) => ({
+      ...subject,
+      sortOrder: orderMap.has(subject.id) ? orderMap.get(subject.id) : ids.length + index
+    }));
     await saveSubjects(nextSubjects);
   }
 
@@ -256,6 +296,11 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function clearAll() {
+    await Promise.all([
+      ...images.value.map((image) => safeCloud(() => deleteMistakeImageCloud(image.id))),
+      ...mistakes.value.map((mistake) => safeCloud(() => deleteMistakeCloud(mistake.id))),
+      ...records.value.map((record) => safeCloud(() => deleteRecordCloud(record.id)))
+    ]);
     await replaceAllData({ subjects: subjects.value, records: [], mistakes: [], images: [] });
     records.value = [];
     mistakes.value = [];
@@ -268,6 +313,22 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   function subjectColor(id) {
     return subjectMap.value.get(id)?.color || "#177ddc";
+  }
+
+  function nextSubjectOrder() {
+    return subjects.value.reduce((max, subject) => Math.max(max, Number(subject.sortOrder ?? -1)), -1) + 1;
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    let value = bytes;
+    let index = 0;
+    while (value >= 1024 && index < units.length - 1) {
+      value /= 1024;
+      index += 1;
+    }
+    return `${value >= 10 || index === 0 ? Math.round(value) : value.toFixed(1)} ${units[index]}`;
   }
 
   async function saveMistakeImages(mistakeId, files) {
@@ -323,12 +384,17 @@ export const useTrackerStore = defineStore("tracker", () => {
     user,
     syncMode,
     syncError,
+    isSyncing,
+    lastSyncedAt,
     subjectMap,
+    visibleSubjects,
+    imageStorageStats,
     load,
     login,
     register,
     logout,
     loadFromCloud,
+    syncNow,
     addRecord,
     updateRecord,
     removeRecord,
@@ -339,6 +405,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     saveSubjects,
     addSubject,
     updateSubject,
+    reorderSubjects,
     removeSubject,
     exportData,
     importData,

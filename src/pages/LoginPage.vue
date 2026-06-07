@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
-import { Cloud, Database, KeyRound, LogOut, Mail, UserPlus } from "@lucide/vue";
+import { Cloud, Database, KeyRound, LogOut, Mail, RefreshCw, UserPlus } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
 import { isSupabaseConfigured } from "../services/supabase";
 
@@ -23,9 +23,11 @@ onMounted(() => {
 
 const statusText = computed(() => {
   if (!isSupabaseConfigured) return "还没有配置 Supabase 环境变量";
+  if (store.syncError) return `同步失败：${store.syncError}`;
   if (store.user) return `已登录：${store.user.email}`;
   return "可登录 / 注册后开启多设备同步";
 });
+const lastSyncText = computed(() => (store.lastSyncedAt ? new Date(store.lastSyncedAt).toLocaleString("zh-CN") : "暂无同步记录"));
 
 async function submit() {
   isBusy.value = true;
@@ -48,6 +50,19 @@ async function submit() {
 async function logout() {
   await store.logout();
   message.value = "已退出登录，当前回到本地缓存模式";
+}
+
+async function syncNow() {
+  isBusy.value = true;
+  message.value = "";
+  try {
+    await store.syncNow();
+    message.value = "已重新同步云端数据";
+  } catch (error) {
+    message.value = error.message || "同步失败";
+  } finally {
+    isBusy.value = false;
+  }
 }
 </script>
 
@@ -91,10 +106,20 @@ async function logout() {
         </button>
       </form>
 
-      <button v-else class="secondary-button" type="button" @click="logout">
-        <LogOut :size="17" />
-        退出登录
-      </button>
+      <div v-else class="action-stack">
+        <div class="sync-state online">
+          <RefreshCw :size="17" />
+          <span>最后同步：{{ lastSyncText }}</span>
+        </div>
+        <button class="primary-button" type="button" :disabled="isBusy || store.isSyncing" @click="syncNow">
+          <RefreshCw :size="17" :class="{ spinning: store.isSyncing }" />
+          立即同步
+        </button>
+        <button class="secondary-button" type="button" @click="logout">
+          <LogOut :size="17" />
+          退出登录
+        </button>
+      </div>
 
       <p v-if="message" class="dialog-hint">{{ message }}</p>
       <div class="login-note">

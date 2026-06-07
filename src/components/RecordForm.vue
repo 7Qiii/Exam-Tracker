@@ -15,13 +15,13 @@ const form = reactive({
   note: ""
 });
 
-const selectedSubject = computed(() => store.subjects.find((subject) => subject.id === form.subjectId));
+const selectedSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === form.subjectId));
 
 watch(
-  () => store.subjects,
+  () => store.visibleSubjects,
   () => {
-    if (!form.subjectId && store.subjects.length) {
-      form.subjectId = store.subjects[0].id;
+    if ((!form.subjectId || !selectedSubject.value) && store.visibleSubjects.length) {
+      form.subjectId = store.visibleSubjects[0].id;
     }
   },
   { immediate: true }
@@ -54,7 +54,7 @@ async function submit() {
     <label>
       科目
       <select v-model="form.subjectId" required>
-        <option v-for="subject in store.subjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+        <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
       </select>
     </label>
     <label>

@@ -32,13 +32,16 @@ function imageCount(id) {
     <section class="panel">
       <div class="section-head">
         <h2>错题检索</h2>
-        <button class="secondary-button compact" type="button" @click="showForm = !showForm">{{ showForm ? "收起表单" : "新增错题" }}</button>
+        <div class="topbar-tools">
+          <span class="section-meta">{{ store.imageStorageStats.count }} 张图 / {{ store.imageStorageStats.label }}</span>
+          <button class="secondary-button compact" type="button" @click="showForm = !showForm">{{ showForm ? "收起表单" : "新增错题" }}</button>
+        </div>
       </div>
       <div class="filter-bar">
         <input v-model="filters.keyword" placeholder="搜索标题、知识点、解析" />
         <select v-model="filters.subjectId">
           <option value="">全部科目</option>
-          <option v-for="subject in store.subjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+          <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
       </div>
     </section>

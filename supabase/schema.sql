@@ -7,9 +7,14 @@ create table if not exists public.subjects (
   full_score numeric not null,
   target_score numeric not null,
   color text not null default '#177ddc',
+  display_order integer not null default 0,
+  hidden boolean not null default false,
   created_at timestamptz not null default now(),
   primary key (user_id, id)
 );
+
+alter table public.subjects add column if not exists display_order integer not null default 0;
+alter table public.subjects add column if not exists hidden boolean not null default false;
 
 create table if not exists public.records (
   id uuid primary key default gen_random_uuid(),

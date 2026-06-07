@@ -10,13 +10,13 @@ db.version(1).stores({
 });
 
 export const defaultSubjects = [
-  { id: "math1", name: "数一", fullScore: 150, color: "#177ddc" },
-  { id: "cs408", name: "408", fullScore: 150, color: "#7a5af8" },
-  { id: "english1", name: "英一", fullScore: 100, color: "#12b76a" },
-  { id: "politics", name: "政治", fullScore: 100, color: "#f79009" }
+  { id: "math1", name: "数一", fullScore: 150, color: "#177ddc", sortOrder: 0, hidden: false },
+  { id: "cs408", name: "408", fullScore: 150, color: "#7a5af8", sortOrder: 1, hidden: false },
+  { id: "english1", name: "英一", fullScore: 100, color: "#12b76a", sortOrder: 2, hidden: false },
+  { id: "politics", name: "政治", fullScore: 100, color: "#f79009", sortOrder: 3, hidden: false }
 ];
 
-const subjectBlueprints = new Map(defaultSubjects.map((subject, index) => [subject.id, { ...subject, order: index }]));
+const subjectBlueprints = new Map(defaultSubjects.map((subject) => [subject.id, { ...subject }]));
 
 export function isDefaultSubject(id) {
   return subjectBlueprints.has(id);
@@ -29,15 +29,13 @@ export function normalizeSubjects(subjects = []) {
     const blueprint = subjectBlueprints.get(subject.id);
     merged.set(subject.id, {
       ...subject,
+      sortOrder: Number.isFinite(Number(subject.sortOrder)) ? Number(subject.sortOrder) : blueprint?.sortOrder ?? Number.MAX_SAFE_INTEGER,
+      hidden: Boolean(subject.hidden),
       ...(blueprint ? { name: blueprint.name, fullScore: blueprint.fullScore, color: subject.color || blueprint.color } : {})
     });
   });
 
-  return [...merged.values()].sort((a, b) => {
-    const left = subjectBlueprints.get(a.id)?.order ?? Number.MAX_SAFE_INTEGER;
-    const right = subjectBlueprints.get(b.id)?.order ?? Number.MAX_SAFE_INTEGER;
-    return left - right || a.name.localeCompare(b.name, "zh-Hans-CN");
-  });
+  return [...merged.values()].sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder) || a.name.localeCompare(b.name, "zh-Hans-CN"));
 }
 
 export function createDemoRecords() {

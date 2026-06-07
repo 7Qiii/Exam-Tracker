@@ -1,12 +1,13 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
-import { Palette, Plus, Save, Trash2 } from "@lucide/vue";
+import { GripVertical, Palette, Plus, Save, Trash2 } from "@lucide/vue";
 import { defaultSubjects, isDefaultSubject } from "../services/storage";
 import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
 const message = ref("");
 const error = ref("");
+const draggingId = ref("");
 
 const form = reactive({
   name: "",
@@ -24,6 +25,7 @@ const rows = computed(() =>
     mistakeCount: store.mistakes.filter((mistake) => mistake.subjectId === subject.id).length
   }))
 );
+const visibleCount = computed(() => rows.value.filter((subject) => !subject.hidden).length);
 
 async function add() {
   error.value = "";
@@ -42,9 +44,31 @@ async function save(subject) {
   await store.updateSubject(subject.id, {
     name: subject.name,
     fullScore: subject.fullScore,
-    color: subject.color
+    color: subject.color,
+    hidden: subject.hidden
   });
   message.value = "科目已保存。";
+}
+
+async function moveSubject(fromId, toId) {
+  if (!fromId || fromId === toId) return;
+  const ids = rows.value.map((subject) => subject.id);
+  const fromIndex = ids.indexOf(fromId);
+  const toIndex = ids.indexOf(toId);
+  if (fromIndex < 0 || toIndex < 0) return;
+  const [item] = ids.splice(fromIndex, 1);
+  ids.splice(toIndex, 0, item);
+  await store.reorderSubjects(ids);
+  message.value = "科目顺序已更新。";
+}
+
+function onDragStart(subject) {
+  draggingId.value = subject.id;
+}
+
+async function onDrop(subject) {
+  await moveSubject(draggingId.value, subject.id);
+  draggingId.value = "";
 }
 
 async function remove(subject) {
@@ -69,7 +93,7 @@ async function remove(subject) {
       <div>
         <p class="eyebrow">Subjects</p>
         <h2>管理你的考试科目。</h2>
-        <p>默认科目按当前备考配置固定排序：数一、408、英一、政治。自定义科目会排在默认科目之后。</p>
+        <p>默认科目按当前备考配置排序：数一、408、英一、政治。你也可以拖拽调整顺序，或隐藏暂时不用的科目。</p>
       </div>
     </section>
 
@@ -107,13 +131,22 @@ async function remove(subject) {
       <div class="panel panel-wide">
         <div class="section-head">
           <h2>科目列表</h2>
-          <span class="section-meta">{{ rows.length }} 个科目</span>
+          <span class="section-meta">{{ visibleCount }} / {{ rows.length }} 个可见</span>
         </div>
         <div v-if="message || error" class="inline-alert" :class="{ danger: error }">
           {{ error || message }}
         </div>
         <div class="subject-manager">
-          <article v-for="subject in rows" :key="subject.id" class="subject-editor">
+          <article
+            v-for="subject in rows"
+            :key="subject.id"
+            class="subject-editor"
+            draggable="true"
+            @dragstart="onDragStart(subject)"
+            @dragover.prevent
+            @drop.prevent="onDrop(subject)"
+          >
+            <span class="drag-handle" title="拖拽排序"><GripVertical :size="16" /></span>
             <span class="subject-swatch" :style="{ background: subject.color }"></span>
             <label>
               名称
@@ -134,6 +167,10 @@ async function remove(subject) {
               <i>{{ subject.locked ? "默认" : "自定义" }}</i>
               <span>{{ subject.recordCount }} 条成绩 / {{ subject.mistakeCount }} 条错题</span>
             </div>
+            <label class="switch-row">
+              <input v-model="subject.hidden" type="checkbox" />
+              隐藏
+            </label>
             <div class="subject-editor-actions">
               <button class="secondary-button compact" type="button" @click="save(subject)">
                 <Save :size="15" />
@@ -153,7 +190,7 @@ async function remove(subject) {
         </div>
         <p class="form-tip">
           <Palette :size="16" />
-          删除仅允许用于没有成绩和错题记录的自定义科目，避免历史数据找不到归属。
+          拖拽可以调整所有科目的显示顺序；隐藏只影响新增和筛选入口，不会删除历史记录。
         </p>
       </div>
     </section>

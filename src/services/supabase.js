@@ -74,7 +74,13 @@ export async function loadCloudData() {
 export async function upsertSubject(subject) {
   if (!supabase) return;
   const { error } = await supabase.from("subjects").upsert(toSubjectRow(subject));
-  if (error) throw error;
+  if (!error) return;
+  if (isMissingSubjectSettingsColumn(error)) {
+    const { error: legacyError } = await supabase.from("subjects").upsert(toLegacySubjectRow(subject));
+    if (legacyError) throw legacyError;
+    return;
+  }
+  throw error;
 }
 
 export async function upsertRecord(record) {
@@ -131,11 +137,21 @@ function fromSubjectRow(row) {
     name: row.name,
     fullScore: row.full_score,
     color: row.color,
+    hidden: Boolean(row.hidden),
+    sortOrder: Number.isFinite(Number(row.display_order)) ? Number(row.display_order) : undefined,
     createdAt: row.created_at
   };
 }
 
 function toSubjectRow(subject) {
+  return {
+    ...toLegacySubjectRow(subject),
+    display_order: Number(subject.sortOrder ?? 0),
+    hidden: Boolean(subject.hidden)
+  };
+}
+
+function toLegacySubjectRow(subject) {
   return {
     id: subject.id,
     name: subject.name,
@@ -143,6 +159,10 @@ function toSubjectRow(subject) {
     target_score: Number(subject.fullScore),
     color: subject.color
   };
+}
+
+function isMissingSubjectSettingsColumn(error) {
+  return /display_order|hidden/i.test(`${error.message || ""} ${error.details || ""}`);
 }
 
 function fromRecordRow(row) {
