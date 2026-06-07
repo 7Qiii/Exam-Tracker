@@ -27,6 +27,10 @@ const form = reactive({
 
 const relatedImages = computed(() => (props.mistake ? store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === props.mistake.id) : []));
 
+function setFiles(nextFiles) {
+  files.value = nextFiles;
+}
+
 watch(
   () => [store.visibleSubjects, props.mistake],
   () => {
@@ -89,7 +93,7 @@ async function submit() {
     <ImageUploader
       :images="relatedImages"
       :reset-key="uploaderResetKey"
-      @files="files.push(...$event)"
+      @files="setFiles"
       @remove="store.removeImage"
     />
 

@@ -863,6 +863,7 @@ td a,
   border: 0;
   padding: 0;
   background: transparent;
+  overflow: hidden;
 }
 
 .image-preview-button span {
@@ -903,7 +904,7 @@ td a,
   white-space: nowrap;
 }
 
-.image-tile button {
+.image-tile figcaption button {
   width: 26px;
   height: 26px;
   border: 0;

@@ -65,11 +65,29 @@ function addPickedFiles(picked) {
   warning.value = ignored ? `${ignored} 个非图片文件已忽略。` : "";
   if (!files.length) return;
   pending.value.push(...files.map((file) => ({ id: crypto.randomUUID(), name: file.name, url: URL.createObjectURL(file), size: file.size, file })));
-  emit("files", files);
+  emitPendingFiles();
 }
 
 function openPreview(index) {
   activeIndex.value = index;
+}
+
+function removePreview(image, index) {
+  if (image.persisted) {
+    emit("remove", image.id);
+    return;
+  }
+
+  const persistedCount = props.images.length;
+  const pendingIndex = index - persistedCount;
+  const [removed] = pending.value.splice(pendingIndex, 1);
+  if (removed?.url) URL.revokeObjectURL(removed.url);
+  if (activeIndex.value >= previews.value.length) activeIndex.value = previews.value.length - 1;
+  emitPendingFiles();
+}
+
+function emitPendingFiles() {
+  emit("files", pending.value.map((item) => item.file));
 }
 
 function closePreview() {
@@ -120,7 +138,7 @@ function formatBytes(bytes) {
         <figcaption>
           <span>{{ image.name }}</span>
           <small>{{ formatBytes(image.size) }}</small>
-          <button v-if="image.persisted" type="button" @click="emit('remove', image.id)" title="删除图片">
+          <button type="button" @click="removePreview(image, index)" :title="image.persisted ? '删除图片' : '取消上传'">
             <Trash2 :size="15" />
           </button>
         </figcaption>
