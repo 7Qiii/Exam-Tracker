@@ -22,6 +22,7 @@ npm run build
 - Vue3 + Vite + Pinia + Vue Router 控制台架构
 - 成绩记录、筛选、分页、详情页与 ECharts 统计图
 - 错题记录、分类检索、解析复盘
+- 科目管理，支持默认科目排序与自定义科目扩展
 - 错题图片多图上传，图片 Blob 本地保存到 IndexedDB
 - Supabase Auth/Postgres 多设备同步入口
 - Cloudflare R2 预签名上传，图片压缩后存对象存储

@@ -89,6 +89,12 @@ export async function deleteRecordCloud(id) {
   if (error) throw error;
 }
 
+export async function deleteSubjectCloud(id) {
+  if (!supabase) return;
+  const { error } = await supabase.from("subjects").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function upsertMistake(mistake) {
   if (!supabase) return;
   const { error } = await supabase.from("mistakes").upsert(toMistakeRow(mistake));

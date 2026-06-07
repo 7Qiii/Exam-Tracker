@@ -5,6 +5,7 @@ import RecordDetailPage from "../pages/RecordDetailPage.vue";
 import MistakesPage from "../pages/MistakesPage.vue";
 import MistakeDetailPage from "../pages/MistakeDetailPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
+import SubjectsPage from "../pages/SubjectsPage.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -14,7 +15,8 @@ const router = createRouter({
     { path: "/records", name: "records", component: RecordsPage },
     { path: "/records/:id", name: "record-detail", component: RecordDetailPage },
     { path: "/mistakes", name: "mistakes", component: MistakesPage },
-    { path: "/mistakes/:id", name: "mistake-detail", component: MistakeDetailPage }
+    { path: "/mistakes/:id", name: "mistake-detail", component: MistakeDetailPage },
+    { path: "/subjects", name: "subjects", component: SubjectsPage }
   ]
 });
 

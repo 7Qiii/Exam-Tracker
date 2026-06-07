@@ -16,6 +16,7 @@ import {
   deleteMistakeCloud,
   deleteMistakeImageCloud,
   deleteRecordCloud,
+  deleteSubjectCloud,
   getSession,
   isSupabaseConfigured,
   loadCloudData,
@@ -209,6 +210,42 @@ export const useTrackerStore = defineStore("tracker", () => {
     subjects.value = normalizedSubjects;
   }
 
+  async function addSubject(payload) {
+    const subject = {
+      id: `subject-${crypto.randomUUID()}`,
+      name: payload.name.trim(),
+      fullScore: Number(payload.fullScore),
+      color: payload.color || "#177ddc",
+      createdAt: new Date().toISOString()
+    };
+    await saveSubjects([...subjects.value, subject]);
+    return subject;
+  }
+
+  async function updateSubject(id, patch) {
+    const nextSubjects = subjects.value.map((subject) =>
+      subject.id === id
+        ? {
+            ...subject,
+            ...patch,
+            name: String(patch.name || subject.name).trim(),
+            fullScore: Number(patch.fullScore ?? subject.fullScore)
+          }
+        : subject
+    );
+    await saveSubjects(nextSubjects);
+  }
+
+  async function removeSubject(id) {
+    const isUsed = records.value.some((record) => record.subjectId === id) || mistakes.value.some((mistake) => mistake.subjectId === id);
+    if (isUsed) {
+      throw new Error("这个科目已有成绩或错题记录，不能删除。");
+    }
+    await db.subjects.delete(id);
+    await safeCloud(() => deleteSubjectCloud(id));
+    subjects.value = normalizeSubjects(subjects.value.filter((subject) => subject.id !== id));
+  }
+
   async function exportData() {
     return exportPortableData();
   }
@@ -300,6 +337,9 @@ export const useTrackerStore = defineStore("tracker", () => {
     removeMistake,
     removeImage,
     saveSubjects,
+    addSubject,
+    updateSubject,
+    removeSubject,
     exportData,
     importData,
     clearAll,

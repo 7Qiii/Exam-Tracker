@@ -21,7 +21,8 @@ const navItems = [
   { to: "/", label: "总览", icon: Home },
   { to: "/records", label: "成绩", icon: ClipboardList },
   { to: "/mistakes", label: "错题", icon: BookOpenCheck },
-  { to: "/login", label: "同步", icon: LogIn }
+  { to: "/login", label: "同步", icon: LogIn },
+  { to: "/subjects", label: "科目", icon: Settings }
 ];
 
 const pageTitle = computed(() => {
@@ -83,9 +84,9 @@ onMounted(() => {
             <span>{{ syncLabel }}</span>
             <Cloud :size="17" />
           </RouterLink>
-          <button class="ghost-button icon-only" type="button" title="设置">
+          <RouterLink class="ghost-button icon-only" to="/subjects" title="科目管理">
             <Settings :size="18" />
-          </button>
+          </RouterLink>
         </div>
       </header>
 

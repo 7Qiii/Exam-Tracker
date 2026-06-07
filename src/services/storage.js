@@ -12,11 +12,15 @@ db.version(1).stores({
 export const defaultSubjects = [
   { id: "math1", name: "数一", fullScore: 150, color: "#177ddc" },
   { id: "cs408", name: "408", fullScore: 150, color: "#7a5af8" },
-  { id: "english1", name: "英语", fullScore: 100, color: "#12b76a" },
+  { id: "english1", name: "英一", fullScore: 100, color: "#12b76a" },
   { id: "politics", name: "政治", fullScore: 100, color: "#f79009" }
 ];
 
 const subjectBlueprints = new Map(defaultSubjects.map((subject, index) => [subject.id, { ...subject, order: index }]));
+
+export function isDefaultSubject(id) {
+  return subjectBlueprints.has(id);
+}
 
 export function normalizeSubjects(subjects = []) {
   const merged = new Map(defaultSubjects.map((subject) => [subject.id, { ...subject }]));
@@ -40,7 +44,7 @@ export function createDemoRecords() {
   return [
     sampleRecord("cs408", "408 综合模拟 01", -8, 86, 150, "操作系统和计网选择题丢分明显。"),
     sampleRecord("math1", "数一 模拟 01", -6, 92, 150, "后两道大题节奏偏慢。"),
-    sampleRecord("english1", "英语 阅读专项", -4, 68, 100, "阅读细节题需要标定位句。"),
+    sampleRecord("english1", "英一 阅读专项", -4, 68, 100, "阅读细节题需要标定位句。"),
     sampleRecord("politics", "政治 选择题套卷", -2, 63, 100, "马原概念要回炉。")
   ];
 }
