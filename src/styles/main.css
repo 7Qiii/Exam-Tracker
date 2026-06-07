@@ -810,6 +810,13 @@ td a,
   text-align: center;
   gap: 6px;
   cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.upload-drop.dragging {
+  border-color: var(--blue);
+  background: #eff8ff;
+  box-shadow: 0 0 0 3px rgba(23, 125, 220, 0.1);
 }
 
 .upload-drop input,

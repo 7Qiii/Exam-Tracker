@@ -11,6 +11,7 @@ const emit = defineEmits(["files", "remove"]);
 const pending = ref([]);
 const activeIndex = ref(-1);
 const warning = ref("");
+const isDragging = ref(false);
 
 const previews = computed(() => [
   ...props.images.map((image) => ({
@@ -38,12 +39,33 @@ watch(
 
 function onPick(event) {
   const picked = [...event.target.files || []];
+  addPickedFiles(picked);
+  event.target.value = "";
+}
+
+function onDrop(event) {
+  isDragging.value = false;
+  const picked = [...event.dataTransfer?.files || []];
+  addPickedFiles(picked);
+}
+
+function onDragEnter() {
+  isDragging.value = true;
+}
+
+function onDragLeave(event) {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    isDragging.value = false;
+  }
+}
+
+function addPickedFiles(picked) {
   const files = picked.filter((file) => file.type.startsWith("image/"));
   const ignored = picked.length - files.length;
   warning.value = ignored ? `${ignored} 个非图片文件已忽略。` : "";
+  if (!files.length) return;
   pending.value.push(...files.map((file) => ({ id: crypto.randomUUID(), name: file.name, url: URL.createObjectURL(file), size: file.size, file })));
   emit("files", files);
-  event.target.value = "";
 }
 
 function openPreview(index) {
@@ -74,10 +96,17 @@ function formatBytes(bytes) {
 
 <template>
   <div class="uploader">
-    <label class="upload-drop">
+    <label
+      class="upload-drop"
+      :class="{ dragging: isDragging }"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent="isDragging = true"
+      @dragleave.prevent="onDragLeave"
+      @drop.prevent="onDrop"
+    >
       <ImagePlus :size="24" />
       <span>上传题目截图、解析图或草稿图</span>
-      <small>{{ previews.length ? summary : "支持多张图片，优先保存在本地 IndexedDB" }}</small>
+      <small>{{ previews.length ? summary : "点击选择，或在 PC 端拖拽图片到这里" }}</small>
       <input type="file" accept="image/*" multiple @change="onPick" />
     </label>
     <p v-if="warning" class="form-tip danger-text">{{ warning }}</p>
