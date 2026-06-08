@@ -22,6 +22,8 @@ const filteredRecords = computed(() => {
         subject,
         record.score,
         record.fullScore,
+        record.durationMinutes,
+        formatDuration(record.durationMinutes),
         record.date,
         `${record.score}/${record.fullScore}`,
         `${record.score} / ${record.fullScore}`
@@ -55,6 +57,15 @@ function clearFilters() {
 
 function normalizeSearch(value) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function formatDuration(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return "未记录";
+  const hours = Math.floor(value / 60);
+  const rest = value % 60;
+  if (!hours) return `${value} 分钟`;
+  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
 </script>
 
@@ -101,6 +112,7 @@ function normalizeSearch(value) {
                 <th>试卷</th>
                 <th>科目</th>
                 <th>得分</th>
+                <th>用时</th>
                 <th>日期</th>
                 <th></th>
               </tr>
@@ -110,6 +122,7 @@ function normalizeSearch(value) {
                 <td><RouterLink :to="`/records/${record.id}`">{{ record.paperName }}</RouterLink></td>
                 <td>{{ store.subjectName(record.subjectId) }}</td>
                 <td>{{ record.score }} / {{ record.fullScore }}</td>
+                <td>{{ formatDuration(record.durationMinutes) }}</td>
                 <td>{{ record.date }}</td>
                 <td>
                   <button class="icon-button danger" type="button" @click="store.removeRecord(record.id)">
@@ -118,7 +131,7 @@ function normalizeSearch(value) {
                 </td>
               </tr>
               <tr v-if="!pagedRecords.length">
-                <td colspan="5" class="empty-cell">没有找到匹配的成绩。</td>
+                <td colspan="6" class="empty-cell">没有找到匹配的成绩。</td>
               </tr>
             </tbody>
           </table>

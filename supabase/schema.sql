@@ -23,10 +23,13 @@ create table if not exists public.records (
   paper_name text not null,
   score numeric not null,
   full_score numeric not null,
+  duration_minutes integer,
   date date not null,
   note text not null default '',
   created_at timestamptz not null default now()
 );
+
+alter table public.records add column if not exists duration_minutes integer;
 
 create table if not exists public.mistakes (
   id uuid primary key default gen_random_uuid(),

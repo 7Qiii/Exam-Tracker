@@ -86,7 +86,13 @@ export async function upsertSubject(subject) {
 export async function upsertRecord(record) {
   if (!supabase) return;
   const { error } = await supabase.from("records").upsert(toRecordRow(record));
-  if (error) throw error;
+  if (!error) return;
+  if (isMissingRecordDurationColumn(error)) {
+    const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
+    if (legacyError) throw legacyError;
+    return;
+  }
+  throw error;
 }
 
 export async function deleteRecordCloud(id) {
@@ -165,6 +171,10 @@ function isMissingSubjectSettingsColumn(error) {
   return /display_order|hidden/i.test(`${error.message || ""} ${error.details || ""}`);
 }
 
+function isMissingRecordDurationColumn(error) {
+  return /duration_minutes/i.test(`${error.message || ""} ${error.details || ""}`);
+}
+
 function fromRecordRow(row) {
   return {
     id: row.id,
@@ -172,6 +182,7 @@ function fromRecordRow(row) {
     paperName: row.paper_name,
     score: row.score,
     fullScore: row.full_score,
+    durationMinutes: row.duration_minutes == null ? "" : Number(row.duration_minutes),
     date: row.date,
     note: row.note || "",
     createdAt: row.created_at
@@ -179,6 +190,13 @@ function fromRecordRow(row) {
 }
 
 function toRecordRow(record) {
+  return {
+    ...toLegacyRecordRow(record),
+    duration_minutes: toDurationValue(record.durationMinutes)
+  };
+}
+
+function toLegacyRecordRow(record) {
   return {
     id: record.id,
     subject_id: record.subjectId,
@@ -189,6 +207,12 @@ function toRecordRow(record) {
     note: record.note || "",
     created_at: record.createdAt
   };
+}
+
+function toDurationValue(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const minutes = Number(value);
+  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : null;
 }
 
 function fromMistakeRow(row) {

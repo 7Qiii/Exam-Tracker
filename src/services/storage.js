@@ -40,10 +40,10 @@ export function normalizeSubjects(subjects = []) {
 
 export function createDemoRecords() {
   return [
-    sampleRecord("cs408", "408 综合模拟 01", -8, 86, 150, "操作系统和计网选择题丢分明显。"),
-    sampleRecord("math1", "数一 模拟 01", -6, 92, 150, "后两道大题节奏偏慢。"),
-    sampleRecord("english1", "英一 阅读专项", -4, 68, 100, "阅读细节题需要标定位句。"),
-    sampleRecord("politics", "政治 选择题套卷", -2, 63, 100, "马原概念要回炉。")
+    sampleRecord("cs408", "408 综合模拟 01", -8, 86, 150, 180, "操作系统和计网选择题丢分明显。"),
+    sampleRecord("math1", "数一 模拟 01", -6, 92, 150, 170, "后两道大题节奏偏慢。"),
+    sampleRecord("english1", "英一 阅读专项", -4, 68, 100, 70, "阅读细节题需要标定位句。"),
+    sampleRecord("politics", "政治 选择题套卷", -2, 63, 100, 60, "马原概念要回炉。")
   ];
 }
 
@@ -161,7 +161,7 @@ export async function importPortableData(payload, merge = true) {
   });
 }
 
-function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, note) {
+function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, durationMinutes, note) {
   const date = new Date();
   date.setDate(date.getDate() + daysAgo);
   return {
@@ -170,6 +170,7 @@ function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, note) {
     paperName,
     score,
     fullScore,
+    durationMinutes,
     date: date.toISOString().slice(0, 10),
     note,
     createdAt: date.toISOString()

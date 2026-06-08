@@ -1164,7 +1164,14 @@ td a,
   color: var(--muted);
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1180px) {
+  .content-grid,
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1080px), (max-width: 1366px) and (pointer: coarse), (max-width: 1366px) and (hover: none) {
   .app-shell {
     grid-template-columns: 1fr;
   }

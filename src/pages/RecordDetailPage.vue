@@ -16,6 +16,15 @@ async function remove() {
   await store.removeRecord(record.value.id);
   router.push("/records");
 }
+
+function formatDuration(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return "未记录";
+  const hours = Math.floor(value / 60);
+  const rest = value % 60;
+  if (!hours) return `${value} 分钟`;
+  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
+}
 </script>
 
 <template>
@@ -32,6 +41,7 @@ async function remove() {
       </div>
       <div class="detail-metrics">
         <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
+        <article><span>用时</span><strong>{{ formatDuration(record.durationMinutes) }}</strong></article>
         <article><span>科目</span><strong>{{ store.subjectName(record.subjectId) }}</strong></article>
       </div>
       <div class="note-block">

@@ -56,6 +56,15 @@ async function onImport(event) {
   await store.importData(payload, true);
   event.target.value = "";
 }
+
+function formatDuration(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return "未记录";
+  const hours = Math.floor(value / 60);
+  const rest = value % 60;
+  if (!hours) return `${value} 分钟`;
+  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
+}
 </script>
 
 <template>
@@ -129,6 +138,7 @@ async function onImport(event) {
               <th>试卷</th>
               <th>科目</th>
               <th>得分</th>
+              <th>用时</th>
               <th>日期</th>
             </tr>
           </thead>
@@ -137,6 +147,7 @@ async function onImport(event) {
               <td><RouterLink :to="`/records/${record.id}`">{{ record.paperName }}</RouterLink></td>
               <td>{{ store.subjectName(record.subjectId) }}</td>
               <td>{{ record.score }} / {{ record.fullScore }}</td>
+              <td>{{ formatDuration(record.durationMinutes) }}</td>
               <td>{{ record.date }}</td>
             </tr>
           </tbody>

@@ -160,6 +160,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       ...payload,
       score: Number(payload.score),
       fullScore: Number(payload.fullScore),
+      durationMinutes: normalizeDuration(payload.durationMinutes),
       createdAt: new Date().toISOString()
     };
     await db.records.put(record);
@@ -169,7 +170,14 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function updateRecord(id, patch) {
-    const next = { ...patch, score: Number(patch.score), fullScore: Number(patch.fullScore) };
+    const next = {
+      ...patch,
+      score: Number(patch.score),
+      fullScore: Number(patch.fullScore)
+    };
+    if ("durationMinutes" in patch) {
+      next.durationMinutes = normalizeDuration(patch.durationMinutes);
+    }
     await db.records.update(id, next);
     records.value = records.value.map((record) => (record.id === id ? { ...record, ...next } : record));
     const record = records.value.find((item) => item.id === id);
@@ -329,6 +337,12 @@ export const useTrackerStore = defineStore("tracker", () => {
       index += 1;
     }
     return `${value >= 10 || index === 0 ? Math.round(value) : value.toFixed(1)} ${units[index]}`;
+  }
+
+  function normalizeDuration(value) {
+    if (value === "" || value === null || value === undefined) return "";
+    const minutes = Number(value);
+    return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
   }
 
   async function saveMistakeImages(mistakeId, files) {

@@ -11,6 +11,7 @@ const form = reactive({
   paperName: "",
   score: "",
   fullScore: "",
+  durationMinutes: "",
   date: new Date().toISOString().slice(0, 10),
   note: ""
 });
@@ -39,9 +40,11 @@ watch(
 
 async function submit() {
   if (Number(form.score) > Number(form.fullScore)) return;
+  if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) return;
   await store.addRecord({ ...form });
   form.paperName = "";
   form.score = "";
+  form.durationMinutes = "";
   form.note = "";
   form.date = new Date().toISOString().slice(0, 10);
   form.fullScore = selectedSubject.value?.fullScore || "";
@@ -61,7 +64,7 @@ async function submit() {
       试卷名称
       <input v-model.trim="form.paperName" required placeholder="例如：408 真题模拟 01" />
     </label>
-    <div class="form-row">
+    <div class="form-row two">
       <label>
         得分
         <input v-model="form.score" type="number" min="0" step="0.5" required />
@@ -69,6 +72,12 @@ async function submit() {
       <label>
         满分
         <input v-model="form.fullScore" type="number" min="1" step="1" required />
+      </label>
+    </div>
+    <div class="form-row two">
+      <label>
+        用时（分钟）
+        <input v-model="form.durationMinutes" type="number" min="0" step="1" placeholder="例如：180" />
       </label>
       <label>
         日期
