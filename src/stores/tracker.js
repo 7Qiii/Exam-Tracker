@@ -44,6 +44,9 @@ export const useTrackerStore = defineStore("tracker", () => {
   const notifications = ref([]);
   let lastCloudSignature = "";
   let cloudLoadPromise = null;
+  let autoSyncTimer = null;
+  let autoSyncStarted = false;
+  let lastAutoSyncAt = 0;
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
   const visibleSubjects = computed(() => subjects.value.filter((subject) => !subject.hidden));
@@ -73,6 +76,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       const session = await getSession();
       user.value = session?.user || null;
       if (user.value) {
+        startAutoSync();
+        retryPendingImageUploads();
         loadFromCloud().catch((error) => {
           syncError.value = error.message || "云端同步失败";
           console.error(error);
@@ -89,8 +94,11 @@ export const useTrackerStore = defineStore("tracker", () => {
       if (event === "INITIAL_SESSION") return;
       user.value = session?.user || null;
       if (user.value) {
+        startAutoSync();
+        retryPendingImageUploads();
         await loadFromCloud();
       } else {
+        stopAutoSync();
         const data = await loadAllData();
         subjects.value = normalizeSubjects(data.subjects);
         records.value = data.records;
@@ -120,7 +128,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
       records.value = data.records;
       mistakes.value = data.mistakes;
-      images.value = data.images;
+      images.value = mergeCloudImages(data.images);
       syncMode.value = "cloud";
       lastSyncedAt.value = new Date().toISOString();
       const signature = dataSignature({ subjects: subjects.value, records: records.value, mistakes: mistakes.value, images: images.value });
@@ -150,6 +158,8 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function login(email, password) {
     const session = await signInWithPassword(email, password);
     user.value = session?.user || null;
+    startAutoSync();
+    retryPendingImageUploads();
     await loadFromCloud();
   }
 
@@ -157,7 +167,9 @@ export const useTrackerStore = defineStore("tracker", () => {
     const session = await signUpWithPassword(email, password);
     user.value = session?.user || null;
     if (user.value) {
+      startAutoSync();
       await seedCloudDefaults();
+      retryPendingImageUploads();
       await loadFromCloud();
     }
   }
@@ -166,6 +178,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     await signOut();
     user.value = null;
     syncMode.value = "signed-out";
+    stopAutoSync();
   }
 
   async function seedCloudDefaults() {
@@ -373,24 +386,25 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function saveMistakeImages(mistakeId, files) {
-    const entries = [];
-    for (const original of files) {
-      const compressed = await compressImage(original);
-      entries.push({
-        id: crypto.randomUUID(),
-        ownerType: "mistake",
-        ownerId: mistakeId,
-        name: compressed.file.name,
-        type: compressed.file.type,
-        size: compressed.file.size,
-        blob: compressed.file,
-        width: compressed.width,
-        height: compressed.height,
-        pendingUpload: Boolean(user.value && supabase),
-        uploadError: "",
-        createdAt: new Date().toISOString()
-      });
-    }
+    const entries = await Promise.all(
+      [...files].map(async (original) => {
+        const compressed = await compressImage(original);
+        return {
+          id: crypto.randomUUID(),
+          ownerType: "mistake",
+          ownerId: mistakeId,
+          name: compressed.file.name,
+          type: compressed.file.type,
+          size: compressed.file.size,
+          blob: compressed.file,
+          width: compressed.width,
+          height: compressed.height,
+          pendingUpload: Boolean(user.value && supabase),
+          uploadError: "",
+          createdAt: new Date().toISOString()
+        };
+      })
+    );
 
     await addImageEntries(entries);
 
@@ -415,9 +429,10 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function uploadImageInBackground(entry, mistakeId, token) {
+    let next = null;
     try {
       const upload = await uploadMistakeImage(entry.blob, mistakeId, token, entry.id);
-      const next = {
+      next = {
         ...entry,
         id: upload.imageId,
         storageKey: upload.storageKey,
@@ -425,13 +440,21 @@ export const useTrackerStore = defineStore("tracker", () => {
         pendingUpload: false,
         uploadError: ""
       };
+      await upsertMistakeImage(next);
+      syncError.value = "";
       await db.images.put(next);
       images.value = images.value.map((image) => (image.id === entry.id ? next : image));
-      await safeCloud(() => upsertMistakeImage(next));
       notify("图片已同步到云端。", "success");
+      scheduleAutoSync(1500);
     } catch (error) {
       const uploadError = error.message || "图片上传失败";
-      await markImagesUploadFailed([entry], uploadError);
+      if (next) {
+        const failed = { ...next, pendingUpload: false, uploadError };
+        await db.images.put(failed);
+        images.value = images.value.map((image) => (image.id === entry.id ? failed : image));
+      } else {
+        await markImagesUploadFailed([entry], uploadError);
+      }
       notify(`图片已本地保存，但云端上传失败：${uploadError}`, "error", 7000);
     }
   }
@@ -472,6 +495,65 @@ export const useTrackerStore = defineStore("tracker", () => {
     });
   }
 
+  function mergeCloudImages(cloudImages) {
+    const cloudIds = new Set(cloudImages.map((image) => image.id));
+    const localPending = images.value.filter((image) => isLocalPendingImage(image) && !cloudIds.has(image.id));
+    return [...cloudImages, ...localPending];
+  }
+
+  function isLocalPendingImage(image) {
+    return Boolean(image.blob && (image.pendingUpload || image.uploadError || !image.url));
+  }
+
+  async function retryPendingImageUploads() {
+    if (!user.value || !supabase) return;
+    const pending = images.value.filter((image) => image.blob && (image.pendingUpload || image.uploadError));
+    if (!pending.length) return;
+    const session = await getSession();
+    const token = session?.access_token;
+    if (!token) return;
+    pending.forEach((image) => {
+      uploadImageInBackground({ ...image, pendingUpload: true, uploadError: "" }, image.ownerId, token);
+    });
+  }
+
+  function startAutoSync() {
+    if (!isSupabaseConfigured || autoSyncStarted || typeof window === "undefined") return;
+    autoSyncStarted = true;
+    autoSyncTimer = window.setInterval(() => scheduleAutoSync(), 15000);
+    window.addEventListener("focus", scheduleAutoSync);
+    window.addEventListener("online", scheduleAutoSync);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+  }
+
+  function stopAutoSync() {
+    if (!autoSyncStarted || typeof window === "undefined") return;
+    autoSyncStarted = false;
+    if (autoSyncTimer) window.clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
+    window.removeEventListener("focus", scheduleAutoSync);
+    window.removeEventListener("online", scheduleAutoSync);
+    document.removeEventListener("visibilitychange", syncWhenVisible);
+  }
+
+  function syncWhenVisible() {
+    if (!document.hidden) scheduleAutoSync();
+  }
+
+  function scheduleAutoSync(delay = 0) {
+    if (!user.value || isSyncing.value) return;
+    window.setTimeout(() => {
+      if (!user.value || isSyncing.value || document.hidden) return;
+      const now = Date.now();
+      if (now - lastAutoSyncAt < 6000) return;
+      lastAutoSyncAt = now;
+      loadFromCloud().catch((error) => {
+        syncError.value = error.message || "自动同步失败";
+        console.error(error);
+      });
+    }, delay);
+  }
+
   return {
     subjects,
     records,
@@ -492,6 +574,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     register,
     logout,
     loadFromCloud,
+    startAutoSync,
+    retryPendingImageUploads,
     syncNow,
     addRecord,
     updateRecord,
