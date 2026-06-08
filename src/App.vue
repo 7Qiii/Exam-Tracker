@@ -59,6 +59,7 @@ async function syncNow() {
     await store.syncNow();
   } catch (error) {
     store.syncError = error.message || "同步失败";
+    store.notify(store.syncError, "error", 6000);
   }
 }
 
@@ -178,6 +179,19 @@ onMounted(() => {
         </div>
         <RouterView v-else />
       </main>
+    </div>
+
+    <div class="toast-stack" aria-live="polite">
+      <button
+        v-for="item in store.notifications"
+        :key="item.id"
+        class="toast"
+        :class="item.type"
+        type="button"
+        @click="store.removeNotification(item.id)"
+      >
+        {{ item.message }}
+      </button>
     </div>
   </div>
 </template>

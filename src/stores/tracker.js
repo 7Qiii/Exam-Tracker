@@ -2,7 +2,6 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import {
   addImageEntries,
-  addImages,
   db,
   exportPortableData,
   importPortableData,
@@ -42,6 +41,9 @@ export const useTrackerStore = defineStore("tracker", () => {
   const syncError = ref("");
   const isSyncing = ref(false);
   const lastSyncedAt = ref("");
+  const notifications = ref([]);
+  let lastCloudSignature = "";
+  let cloudLoadPromise = null;
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
   const visibleSubjects = computed(() => subjects.value.filter((subject) => !subject.hidden));
@@ -83,7 +85,8 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   function subscribeAuth() {
     if (unsubscribeAuth || !isSupabaseConfigured) return;
-    unsubscribeAuth = onAuthStateChange(async (session) => {
+    unsubscribeAuth = onAuthStateChange(async (session, event) => {
+      if (event === "INITIAL_SESSION") return;
       user.value = session?.user || null;
       if (user.value) {
         await loadFromCloud();
@@ -99,6 +102,16 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function loadFromCloud() {
+    if (cloudLoadPromise) return cloudLoadPromise;
+    cloudLoadPromise = runCloudLoad();
+    try {
+      return await cloudLoadPromise;
+    } finally {
+      cloudLoadPromise = null;
+    }
+  }
+
+  async function runCloudLoad() {
     isSyncing.value = true;
     try {
       const data = await loadCloudData();
@@ -110,12 +123,16 @@ export const useTrackerStore = defineStore("tracker", () => {
       images.value = data.images;
       syncMode.value = "cloud";
       lastSyncedAt.value = new Date().toISOString();
-      await replaceAllData({
-        subjects: subjects.value,
-        records: records.value,
-        mistakes: mistakes.value,
-        images: images.value
-      });
+      const signature = dataSignature({ subjects: subjects.value, records: records.value, mistakes: mistakes.value, images: images.value });
+      if (signature !== lastCloudSignature) {
+        await replaceAllData({
+          subjects: subjects.value,
+          records: records.value,
+          mistakes: mistakes.value,
+          images: images.value
+        });
+        lastCloudSignature = signature;
+      }
     } finally {
       isSyncing.value = false;
     }
@@ -127,6 +144,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     }
     syncError.value = "";
     await loadFromCloud();
+    notify("已同步云端数据。", "success");
   }
 
   async function login(email, password) {
@@ -166,6 +184,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     await db.records.put(record);
     await safeCloud(() => upsertRecord(record));
     records.value.push(record);
+    notify("成绩已保存。", "success");
     return record;
   }
 
@@ -182,12 +201,14 @@ export const useTrackerStore = defineStore("tracker", () => {
     records.value = records.value.map((record) => (record.id === id ? { ...record, ...next } : record));
     const record = records.value.find((item) => item.id === id);
     if (record) await safeCloud(() => upsertRecord(record));
+    notify("成绩已更新。", "success");
   }
 
   async function removeRecord(id) {
     await db.records.delete(id);
     await safeCloud(() => deleteRecordCloud(id));
     records.value = records.value.filter((record) => record.id !== id);
+    notify("成绩已删除。", "success");
   }
 
   async function addMistake(payload, files = []) {
@@ -207,6 +228,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       const saved = await saveMistakeImages(mistake.id, files);
       images.value.push(...saved);
     }
+    notify(files.length ? "错题已保存，图片正在后台同步。" : "错题已保存。", "success");
     return mistake;
   }
 
@@ -220,6 +242,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       const saved = await saveMistakeImages(id, files);
       images.value.push(...saved);
     }
+    notify(files.length ? "错题已保存，新增图片正在后台同步。" : "错题已保存。", "success");
   }
 
   async function removeMistake(id) {
@@ -230,12 +253,14 @@ export const useTrackerStore = defineStore("tracker", () => {
     await safeCloud(() => deleteMistakeCloud(id));
     mistakes.value = mistakes.value.filter((mistake) => mistake.id !== id);
     images.value = images.value.filter((image) => !(image.ownerType === "mistake" && image.ownerId === id));
+    notify("错题已删除。", "success");
   }
 
   async function removeImage(id) {
     await safeCloud(() => deleteMistakeImageCloud(id));
     await db.images.delete(id);
     images.value = images.value.filter((image) => image.id !== id);
+    notify("图片已删除。", "success");
   }
 
   async function saveSubjects(nextSubjects) {
@@ -243,6 +268,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     await db.subjects.bulkPut(normalizedSubjects);
     await Promise.all(normalizedSubjects.map((subject) => safeCloud(() => upsertSubject(subject))));
     subjects.value = normalizedSubjects;
+    notify("科目已保存。", "success");
   }
 
   async function addSubject(payload) {
@@ -313,6 +339,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     records.value = [];
     mistakes.value = [];
     images.value = [];
+    notify("数据已清空。", "success");
   }
 
   function subjectName(id) {
@@ -346,36 +373,73 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function saveMistakeImages(mistakeId, files) {
-    if (!user.value || !supabase) {
-      return addImages("mistake", mistakeId, files);
-    }
-
-    const session = await getSession();
-    const token = session?.access_token;
-    if (!token) return addImages("mistake", mistakeId, files);
-
     const entries = [];
     for (const original of files) {
       const compressed = await compressImage(original);
-      const upload = await uploadMistakeImage(compressed.file, mistakeId, token);
-      const entry = {
-        id: upload.imageId,
+      entries.push({
+        id: crypto.randomUUID(),
         ownerType: "mistake",
         ownerId: mistakeId,
         name: compressed.file.name,
         type: compressed.file.type,
         size: compressed.file.size,
-        storageKey: upload.storageKey,
-        url: upload.publicUrl,
+        blob: compressed.file,
         width: compressed.width,
         height: compressed.height,
+        pendingUpload: Boolean(user.value && supabase),
+        uploadError: "",
         createdAt: new Date().toISOString()
-      };
-      entries.push(entry);
-      await safeCloud(() => upsertMistakeImage(entry));
+      });
     }
+
     await addImageEntries(entries);
+
+    if (!user.value || !supabase) {
+      return entries;
+    }
+
+    const session = await getSession();
+    const token = session?.access_token;
+    if (!token) {
+      await markImagesUploadFailed(entries, "登录状态已过期，请重新登录后再同步。");
+      return entries.map((entry) => ({ ...entry, pendingUpload: false, uploadError: "登录状态已过期，请重新登录后再同步。" }));
+    }
+
+    window.setTimeout(() => {
+      entries.forEach((entry) => {
+        uploadImageInBackground(entry, mistakeId, token);
+      });
+    });
+
     return entries;
+  }
+
+  async function uploadImageInBackground(entry, mistakeId, token) {
+    try {
+      const upload = await uploadMistakeImage(entry.blob, mistakeId, token, entry.id);
+      const next = {
+        ...entry,
+        id: upload.imageId,
+        storageKey: upload.storageKey,
+        url: upload.publicUrl,
+        pendingUpload: false,
+        uploadError: ""
+      };
+      await db.images.put(next);
+      images.value = images.value.map((image) => (image.id === entry.id ? next : image));
+      await safeCloud(() => upsertMistakeImage(next));
+      notify("图片已同步到云端。", "success");
+    } catch (error) {
+      const uploadError = error.message || "图片上传失败";
+      await markImagesUploadFailed([entry], uploadError);
+      notify(`图片已本地保存，但云端上传失败：${uploadError}`, "error", 7000);
+    }
+  }
+
+  async function markImagesUploadFailed(entries, uploadError) {
+    await Promise.all(entries.map((entry) => db.images.update(entry.id, { pendingUpload: false, uploadError })));
+    const ids = new Set(entries.map((entry) => entry.id));
+    images.value = images.value.map((image) => (ids.has(image.id) ? { ...image, pendingUpload: false, uploadError } : image));
   }
 
   async function safeCloud(action) {
@@ -389,6 +453,25 @@ export const useTrackerStore = defineStore("tracker", () => {
     }
   }
 
+  function notify(message, type = "info", timeout = 3200) {
+    const id = crypto.randomUUID();
+    notifications.value.push({ id, message, type });
+    window.setTimeout(() => removeNotification(id), timeout);
+  }
+
+  function removeNotification(id) {
+    notifications.value = notifications.value.filter((item) => item.id !== id);
+  }
+
+  function dataSignature(data) {
+    return JSON.stringify({
+      subjects: data.subjects.map((item) => [item.id, item.name, item.fullScore, item.color, item.hidden, item.sortOrder]),
+      records: data.records.map((item) => [item.id, item.subjectId, item.paperName, item.score, item.fullScore, item.durationMinutes, item.date, item.note, item.createdAt]),
+      mistakes: data.mistakes.map((item) => [item.id, item.subjectId, item.title, item.knowledgePoint, item.analysis, item.updatedAt]),
+      images: data.images.map((item) => [item.id, item.ownerId, item.name, item.size, item.storageKey, item.url, item.pendingUpload, item.uploadError])
+    });
+  }
+
   return {
     subjects,
     records,
@@ -400,6 +483,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     syncError,
     isSyncing,
     lastSyncedAt,
+    notifications,
     subjectMap,
     visibleSubjects,
     imageStorageStats,
@@ -425,6 +509,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     importData,
     clearAll,
     subjectName,
-    subjectColor
+    subjectColor,
+    notify,
+    removeNotification
   };
 });

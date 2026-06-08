@@ -1,4 +1,4 @@
-export async function uploadMistakeImage(file, mistakeId, authToken) {
+export async function uploadMistakeImage(file, mistakeId, authToken, imageId = "") {
   const response = await fetch("/api/r2-upload", {
     method: "POST",
     headers: {
@@ -7,6 +7,7 @@ export async function uploadMistakeImage(file, mistakeId, authToken) {
     },
     body: JSON.stringify({
       mistakeId,
+      imageId,
       fileName: file.name,
       contentType: file.type,
       size: file.size

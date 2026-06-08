@@ -1,10 +1,11 @@
 <script setup>
-import { computed, reactive, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { Save } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
 
 const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
+const isSaving = ref(false);
 
 const form = reactive({
   subjectId: "",
@@ -41,14 +42,21 @@ watch(
 async function submit() {
   if (Number(form.score) > Number(form.fullScore)) return;
   if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) return;
-  await store.addRecord({ ...form });
-  form.paperName = "";
-  form.score = "";
-  form.durationMinutes = "";
-  form.note = "";
-  form.date = new Date().toISOString().slice(0, 10);
-  form.fullScore = selectedSubject.value?.fullScore || "";
-  emit("saved");
+  isSaving.value = true;
+  try {
+    await store.addRecord({ ...form });
+    form.paperName = "";
+    form.score = "";
+    form.durationMinutes = "";
+    form.note = "";
+    form.date = new Date().toISOString().slice(0, 10);
+    form.fullScore = selectedSubject.value?.fullScore || "";
+    emit("saved");
+  } catch (error) {
+    store.notify(error.message || "成绩保存失败。", "error", 6000);
+  } finally {
+    isSaving.value = false;
+  }
 }
 </script>
 
@@ -88,9 +96,9 @@ async function submit() {
       复盘备注
       <textarea v-model.trim="form.note" rows="3" placeholder="这套卷暴露了什么？下次先补哪里？"></textarea>
     </label>
-    <button class="primary-button" type="submit">
+    <button class="primary-button" type="submit" :disabled="isSaving">
       <Save :size="17" />
-      保存成绩
+      {{ isSaving ? "保存中..." : "保存成绩" }}
     </button>
   </form>
 </template>

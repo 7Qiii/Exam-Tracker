@@ -12,6 +12,7 @@ const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
 const files = ref([]);
 const uploaderResetKey = ref(0);
+const isSaving = ref(false);
 
 const form = reactive({
   subjectId: "",
@@ -49,19 +50,26 @@ watch(
 );
 
 async function submit() {
-  if (props.mistake) {
-    await store.updateMistake(props.mistake.id, { ...form }, files.value);
-  } else {
-    await store.addMistake({ ...form }, files.value);
-    form.title = "";
-    form.knowledgePoint = "";
-    form.questionText = "";
-    form.analysis = "";
-    form.nextReviewAt = "";
+  isSaving.value = true;
+  try {
+    if (props.mistake) {
+      await store.updateMistake(props.mistake.id, { ...form }, files.value);
+    } else {
+      await store.addMistake({ ...form }, files.value);
+      form.title = "";
+      form.knowledgePoint = "";
+      form.questionText = "";
+      form.analysis = "";
+      form.nextReviewAt = "";
+    }
+    files.value = [];
+    uploaderResetKey.value += 1;
+    emit("saved");
+  } catch (error) {
+    store.notify(error.message || "错题保存失败。", "error", 6000);
+  } finally {
+    isSaving.value = false;
   }
-  files.value = [];
-  uploaderResetKey.value += 1;
-  emit("saved");
 }
 </script>
 
@@ -97,9 +105,9 @@ async function submit() {
       @remove="store.removeImage"
     />
 
-    <button class="primary-button" type="submit">
+    <button class="primary-button" type="submit" :disabled="isSaving">
       <Save :size="17" />
-      {{ props.mistake ? "保存错题" : "新增错题" }}
+      {{ isSaving ? "保存中..." : props.mistake ? "保存错题" : "新增错题" }}
     </button>
     <p class="form-tip">
       <BookOpenCheck :size="16" />

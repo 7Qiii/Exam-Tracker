@@ -2,7 +2,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
 
-const maxFileSize = 2 * 1024 * 1024;
+const maxFileSize = 4 * 1024 * 1024;
 
 export default async function handler(request, response) {
   if (request.method !== "POST") {
@@ -35,7 +35,7 @@ export default async function handler(request, response) {
     return;
   }
 
-  const { mistakeId, fileName, contentType, size } = request.body || {};
+  const { mistakeId, imageId: requestedImageId, fileName, contentType, size } = request.body || {};
   if (!mistakeId || !fileName || !contentType?.startsWith("image/")) {
     response.status(400).json({ error: "Invalid upload request" });
     return;
@@ -55,7 +55,7 @@ export default async function handler(request, response) {
   }
 
   const extension = contentType.includes("webp") ? "webp" : "jpg";
-  const imageId = crypto.randomUUID();
+  const imageId = isUuid(requestedImageId) ? requestedImageId : crypto.randomUUID();
   const key = `users/${data.user.id}/mistakes/${mistakeId}/${imageId}.${extension}`;
   const client = new S3Client({
     region: "auto",
@@ -79,4 +79,8 @@ export default async function handler(request, response) {
     uploadUrl,
     publicUrl: `${publicBaseUrl.replace(/\/$/, "")}/${key}`
   });
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || "");
 }

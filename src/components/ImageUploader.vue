@@ -19,6 +19,8 @@ const previews = computed(() => [
     name: image.name,
     url: image.url || URL.createObjectURL(image.blob),
     size: image.size || image.blob?.size || 0,
+    pendingUpload: Boolean(image.pendingUpload),
+    uploadError: image.uploadError || "",
     persisted: true
   })),
   ...pending.value
@@ -110,6 +112,12 @@ function formatBytes(bytes) {
   }
   return `${value >= 10 || index === 0 ? Math.round(value) : value.toFixed(1)} ${units[index]}`;
 }
+
+function imageStatus(image) {
+  if (image.uploadError) return "云端失败";
+  if (image.pendingUpload) return "同步中";
+  return formatBytes(image.size);
+}
 </script>
 
 <template>
@@ -137,7 +145,7 @@ function formatBytes(bytes) {
         </button>
         <figcaption>
           <span>{{ image.name }}</span>
-          <small>{{ formatBytes(image.size) }}</small>
+          <small :class="{ 'danger-text': image.uploadError }">{{ imageStatus(image) }}</small>
           <button type="button" @click="removePreview(image, index)" :title="image.persisted ? '删除图片' : '取消上传'">
             <Trash2 :size="15" />
           </button>

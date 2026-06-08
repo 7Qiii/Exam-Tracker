@@ -304,6 +304,15 @@ p {
   opacity: 0.72;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.ghost-button:disabled,
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
+}
+
 .spinning {
   animation: spin 900ms linear infinite;
 }
@@ -1164,6 +1173,38 @@ td a,
   color: var(--muted);
 }
 
+.toast-stack {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 70;
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--blue);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  padding: 10px 12px;
+  text-align: left;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+
+.toast.success {
+  border-left-color: var(--green);
+}
+
+.toast.error {
+  border-left-color: var(--red);
+}
+
 @media (max-width: 1180px) {
   .content-grid,
   .chart-grid {
@@ -1348,5 +1389,13 @@ td a,
   .hero-actions > * {
     width: 100%;
     min-width: 0;
+  }
+
+  .toast-stack {
+    top: auto;
+    right: 12px;
+    bottom: 14px;
+    left: 12px;
+    width: auto;
   }
 }
