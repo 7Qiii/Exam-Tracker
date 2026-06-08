@@ -70,7 +70,7 @@ async function submit() {
     </label>
     <label>
       试卷名称
-      <input v-model.trim="form.paperName" required placeholder="例如：408 真题模拟 01" />
+      <input v-model.trim="form.paperName" required />
     </label>
     <div class="form-row two">
       <label>
@@ -85,7 +85,7 @@ async function submit() {
     <div class="form-row two">
       <label>
         用时（分钟）
-        <input v-model="form.durationMinutes" type="number" min="0" step="1" placeholder="例如：180" />
+        <input v-model="form.durationMinutes" type="number" min="0" step="1" />
       </label>
       <label>
         日期
@@ -94,7 +94,7 @@ async function submit() {
     </div>
     <label>
       复盘备注
-      <textarea v-model.trim="form.note" rows="3" placeholder="这套卷暴露了什么？下次先补哪里？"></textarea>
+      <textarea v-model.trim="form.note" rows="3"></textarea>
     </label>
     <button class="primary-button" type="submit" :disabled="isSaving">
       <Save :size="17" />
