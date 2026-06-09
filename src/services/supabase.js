@@ -137,6 +137,51 @@ export function onAuthStateChange(callback) {
   return () => data.subscription.unsubscribe();
 }
 
+export function subscribeCloudChanges(userId, handlers = {}) {
+  if (!supabase || !userId) return () => {};
+
+  const channel = supabase
+    .channel(`exam-tracker-sync:${userId}`)
+    .on("postgres_changes", realtimeOptions("subjects", userId), (payload) => {
+      dispatchRealtimePayload(payload, fromSubjectRow, handlers.subjects);
+    })
+    .on("postgres_changes", realtimeOptions("records", userId), (payload) => {
+      dispatchRealtimePayload(payload, fromRecordRow, handlers.records);
+    })
+    .on("postgres_changes", realtimeOptions("mistakes", userId), (payload) => {
+      dispatchRealtimePayload(payload, fromMistakeRow, handlers.mistakes);
+    })
+    .on("postgres_changes", realtimeOptions("mistake_images", userId), (payload) => {
+      dispatchRealtimePayload(payload, fromImageRow, handlers.images);
+    })
+    .subscribe((status, error) => {
+      handlers.onStatus?.(status, error);
+    });
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+function realtimeOptions(table, userId) {
+  return {
+    event: "*",
+    schema: "public",
+    table,
+    filter: `user_id=eq.${userId}`
+  };
+}
+
+function dispatchRealtimePayload(payload, mapRow, handlers = {}) {
+  if (payload.eventType === "DELETE") {
+    handlers.delete?.(payload.old?.id, payload.old, payload);
+    return;
+  }
+  if (payload.new) {
+    handlers.upsert?.(mapRow(payload.new), payload);
+  }
+}
+
 function fromSubjectRow(row) {
   return {
     id: row.id,

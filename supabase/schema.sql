@@ -85,3 +85,41 @@ create policy "mistake images owner access" on public.mistake_images
 create index if not exists records_user_date_idx on public.records(user_id, date desc);
 create index if not exists mistakes_user_updated_idx on public.mistakes(user_id, updated_at desc);
 create index if not exists mistake_images_mistake_idx on public.mistake_images(mistake_id);
+
+alter table public.subjects replica identity full;
+alter table public.records replica identity full;
+alter table public.mistakes replica identity full;
+alter table public.mistake_images replica identity full;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'subjects'
+    ) then
+      alter publication supabase_realtime add table public.subjects;
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'records'
+    ) then
+      alter publication supabase_realtime add table public.records;
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'mistakes'
+    ) then
+      alter publication supabase_realtime add table public.mistakes;
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'mistake_images'
+    ) then
+      alter publication supabase_realtime add table public.mistake_images;
+    end if;
+  end if;
+end $$;

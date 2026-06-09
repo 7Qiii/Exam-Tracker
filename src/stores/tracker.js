@@ -23,12 +23,16 @@ import {
   signInWithPassword,
   signOut,
   signUpWithPassword,
+  subscribeCloudChanges,
   supabase,
   upsertMistake,
   upsertMistakeImage,
   upsertRecord,
   upsertSubject
 } from "../services/supabase";
+
+const FALLBACK_SYNC_INTERVAL = 5 * 60 * 1000;
+const ACTIVE_FALLBACK_THROTTLE = 60 * 1000;
 
 export const useTrackerStore = defineStore("tracker", () => {
   const subjects = ref([]);
@@ -41,6 +45,8 @@ export const useTrackerStore = defineStore("tracker", () => {
   const syncError = ref("");
   const isSyncing = ref(false);
   const lastSyncedAt = ref("");
+  const realtimeStatus = ref("idle");
+  const realtimeError = ref("");
   const notifications = ref([]);
   const deviceId = ref(getOrCreateDeviceId());
   const deviceName = ref(getDeviceName());
@@ -50,6 +56,9 @@ export const useTrackerStore = defineStore("tracker", () => {
   let autoSyncTimer = null;
   let autoSyncStarted = false;
   let lastAutoSyncAt = 0;
+  let pendingFallbackTimer = null;
+  let unsubscribeRealtime = null;
+  let realtimeReconnectTimer = null;
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
   const visibleSubjects = computed(() => subjects.value.filter((subject) => !subject.hidden));
@@ -65,7 +74,14 @@ export const useTrackerStore = defineStore("tracker", () => {
   });
   const pendingImages = computed(() => images.value.filter((image) => image.pendingUpload));
   const failedImages = computed(() => images.value.filter((image) => image.uploadError));
-  const autoSyncState = computed(() => (autoSyncStarted ? "自动同步已开启" : user.value ? "自动同步待启动" : "未登录"));
+  const autoSyncState = computed(() => {
+    if (!user.value) return "未登录";
+    if (!isSupabaseConfigured) return "本地模式";
+    if (realtimeStatus.value === "connected") return "实时同步已连接";
+    if (realtimeStatus.value === "connecting") return "实时同步连接中";
+    if (realtimeStatus.value === "error") return "实时同步异常，低频校准中";
+    return autoSyncStarted ? "后台同步已开启" : "同步待启动";
+  });
 
   async function load() {
     syncError.value = "";
@@ -470,8 +486,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       syncError.value = "";
       await db.images.put(next);
       images.value = images.value.map((image) => (image.id === entry.id ? next : image));
+      markSyncHeartbeat();
       notify("图片已同步到云端。", "success");
-      scheduleAutoSync(1500);
     } catch (error) {
       const uploadError = error.message || "图片上传失败";
       if (next) {
@@ -496,6 +512,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     try {
       await action();
       syncError.value = "";
+      markSyncHeartbeat();
       return true;
     } catch (error) {
       syncError.value = error.message || "云端同步失败";
@@ -577,7 +594,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function isLocalPendingImage(image) {
-    return Boolean(image.blob && (image.pendingUpload || image.uploadError || !image.url));
+    return Boolean(image?.blob && (image.pendingUpload || image.uploadError || !image.url));
   }
 
   async function retryPendingImageUploads() {
@@ -597,40 +614,259 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function startAutoSync() {
-    if (!isSupabaseConfigured || autoSyncStarted || typeof window === "undefined") return;
+    if (!isSupabaseConfigured || typeof window === "undefined") return;
+    startRealtimeSync();
+    if (autoSyncStarted) return;
     autoSyncStarted = true;
-    autoSyncTimer = window.setInterval(() => scheduleAutoSync(), 15000);
-    window.addEventListener("focus", scheduleAutoSync);
-    window.addEventListener("online", scheduleAutoSync);
+    autoSyncTimer = window.setInterval(() => scheduleAutoSync(0, true), FALLBACK_SYNC_INTERVAL);
+    window.addEventListener("focus", syncWhenActive);
+    window.addEventListener("online", syncWhenOnline);
     document.addEventListener("visibilitychange", syncWhenVisible);
   }
 
   function stopAutoSync() {
-    if (!autoSyncStarted || typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      stopRealtimeSync();
+      return;
+    }
+    if (!autoSyncStarted) {
+      stopRealtimeSync();
+      return;
+    }
     autoSyncStarted = false;
     if (autoSyncTimer) window.clearInterval(autoSyncTimer);
+    if (pendingFallbackTimer) window.clearTimeout(pendingFallbackTimer);
     autoSyncTimer = null;
-    window.removeEventListener("focus", scheduleAutoSync);
-    window.removeEventListener("online", scheduleAutoSync);
+    pendingFallbackTimer = null;
+    window.removeEventListener("focus", syncWhenActive);
+    window.removeEventListener("online", syncWhenOnline);
     document.removeEventListener("visibilitychange", syncWhenVisible);
+    stopRealtimeSync();
   }
 
   function syncWhenVisible() {
-    if (!document.hidden) scheduleAutoSync();
+    if (!document.hidden) syncWhenActive();
   }
 
-  function scheduleAutoSync(delay = 0) {
+  function syncWhenActive() {
+    retryUnsyncedData();
+    scheduleAutoSync();
+  }
+
+  function syncWhenOnline() {
+    retryUnsyncedData();
+    retryPendingImageUploads();
+    scheduleAutoSync(1000, true);
+  }
+
+  function scheduleAutoSync(delay = 0, force = false) {
     if (!user.value || isSyncing.value) return;
-    window.setTimeout(() => {
+    if (pendingFallbackTimer) window.clearTimeout(pendingFallbackTimer);
+    pendingFallbackTimer = window.setTimeout(() => {
+      pendingFallbackTimer = null;
       if (!user.value || isSyncing.value || document.hidden) return;
       const now = Date.now();
-      if (now - lastAutoSyncAt < 6000) return;
+      if (!force && now - lastAutoSyncAt < ACTIVE_FALLBACK_THROTTLE) return;
       lastAutoSyncAt = now;
       loadFromCloud().catch((error) => {
-        syncError.value = error.message || "自动同步失败";
+        syncError.value = error.message || "兜底同步失败";
         console.error(error);
       });
     }, delay);
+  }
+
+  function startRealtimeSync() {
+    if (!user.value?.id || unsubscribeRealtime || !supabase) return;
+    realtimeStatus.value = "connecting";
+    realtimeError.value = "";
+    unsubscribeRealtime = subscribeCloudChanges(user.value.id, {
+      subjects: {
+        upsert: (subject) => applyRealtimeSubject(subject),
+        delete: (id) => removeRealtimeSubject(id)
+      },
+      records: {
+        upsert: (record) => applyRealtimeRecord(record),
+        delete: (id) => removeRealtimeRecord(id)
+      },
+      mistakes: {
+        upsert: (mistake) => applyRealtimeMistake(mistake),
+        delete: (id) => removeRealtimeMistake(id)
+      },
+      images: {
+        upsert: (image) => applyRealtimeImage(image),
+        delete: (id) => removeRealtimeImage(id)
+      },
+      onStatus: (status, error) => {
+        if (status === "SUBSCRIBED") {
+          realtimeStatus.value = "connected";
+          realtimeError.value = "";
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          realtimeStatus.value = "error";
+          realtimeError.value = error?.message || "Realtime 连接失败";
+          scheduleAutoSync(1500, true);
+          reconnectRealtimeSoon();
+          return;
+        }
+        if (status === "CLOSED") {
+          realtimeStatus.value = "idle";
+        }
+      }
+    });
+  }
+
+  function stopRealtimeSync() {
+    if (unsubscribeRealtime) {
+      unsubscribeRealtime();
+      unsubscribeRealtime = null;
+    }
+    if (realtimeReconnectTimer && typeof window !== "undefined") {
+      window.clearTimeout(realtimeReconnectTimer);
+      realtimeReconnectTimer = null;
+    }
+    realtimeStatus.value = "idle";
+    realtimeError.value = "";
+  }
+
+  function reconnectRealtimeSoon() {
+    if (realtimeReconnectTimer || typeof window === "undefined") return;
+    realtimeReconnectTimer = window.setTimeout(() => {
+      realtimeReconnectTimer = null;
+      if (!user.value?.id) return;
+      if (unsubscribeRealtime) {
+        unsubscribeRealtime();
+        unsubscribeRealtime = null;
+      }
+      startRealtimeSync();
+    }, 5000);
+  }
+
+  async function applyRealtimeSubject(subject) {
+    const nextSubjects = normalizeSubjects([...subjects.value.filter((item) => item.id !== subject.id), subject]);
+    subjects.value = nextSubjects;
+    await db.subjects.bulkPut(nextSubjects);
+    markSyncHeartbeat();
+  }
+
+  async function removeRealtimeSubject(id) {
+    if (!id) return;
+    const nextSubjects = normalizeSubjects(subjects.value.filter((subject) => subject.id !== id));
+    subjects.value = nextSubjects;
+    await db.transaction("rw", db.subjects, async () => {
+      await db.subjects.delete(id);
+      await db.subjects.bulkPut(nextSubjects);
+    });
+    markSyncHeartbeat();
+  }
+
+  async function applyRealtimeRecord(record) {
+    const incoming = { ...record, pendingSync: false };
+    const local = records.value.find((item) => item.id === incoming.id);
+    if (local?.pendingSync && !isSameRecord(local, incoming)) return;
+    const nextRecord = local?.pendingSync ? { ...local, pendingSync: false } : incoming;
+    records.value = sortRecords(upsertById(records.value, nextRecord));
+    await db.records.put(nextRecord);
+    markSyncHeartbeat();
+  }
+
+  async function removeRealtimeRecord(id) {
+    if (!id) return;
+    const local = records.value.find((item) => item.id === id);
+    if (local?.pendingSync) return;
+    records.value = records.value.filter((record) => record.id !== id);
+    await db.records.delete(id);
+    markSyncHeartbeat();
+  }
+
+  async function applyRealtimeMistake(mistake) {
+    const incoming = { ...mistake, pendingSync: false };
+    const local = mistakes.value.find((item) => item.id === incoming.id);
+    if (local?.pendingSync && !isSameMistake(local, incoming)) return;
+    const nextMistake = local?.pendingSync ? { ...local, pendingSync: false } : incoming;
+    mistakes.value = sortMistakes(upsertById(mistakes.value, nextMistake));
+    await db.mistakes.put(nextMistake);
+    markSyncHeartbeat();
+  }
+
+  async function removeRealtimeMistake(id) {
+    if (!id) return;
+    const local = mistakes.value.find((item) => item.id === id);
+    if (local?.pendingSync) return;
+    mistakes.value = mistakes.value.filter((mistake) => mistake.id !== id);
+    images.value = images.value.filter((image) => image.ownerId !== id);
+    await db.transaction("rw", db.mistakes, db.images, async () => {
+      await db.mistakes.delete(id);
+      await db.images.where({ ownerType: "mistake", ownerId: id }).delete();
+    });
+    markSyncHeartbeat();
+  }
+
+  async function applyRealtimeImage(image) {
+    const incoming = { ...image, pendingUpload: false, uploadError: "" };
+    const local = images.value.find((item) => item.id === incoming.id);
+    const nextImage = local?.blob ? { ...local, ...incoming, blob: local.blob } : incoming;
+    images.value = sortImages(upsertById(images.value, nextImage));
+    await db.images.put(nextImage);
+    markSyncHeartbeat();
+  }
+
+  async function removeRealtimeImage(id) {
+    if (!id) return;
+    const local = images.value.find((item) => item.id === id);
+    if (isLocalPendingImage(local)) return;
+    images.value = images.value.filter((image) => image.id !== id);
+    await db.images.delete(id);
+    markSyncHeartbeat();
+  }
+
+  function markSyncHeartbeat() {
+    lastSyncedAt.value = new Date().toISOString();
+    if (user.value) syncMode.value = "cloud";
+  }
+
+  function upsertById(entries, entry) {
+    const exists = entries.some((item) => item.id === entry.id);
+    return exists ? entries.map((item) => (item.id === entry.id ? entry : item)) : [entry, ...entries];
+  }
+
+  function sortRecords(entries) {
+    return [...entries].sort((a, b) => {
+      const dateDiff = new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+      if (dateDiff) return dateDiff;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+  }
+
+  function sortMistakes(entries) {
+    return [...entries].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+  }
+
+  function sortImages(entries) {
+    return [...entries].sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+  }
+
+  function isSameRecord(a, b) {
+    return (
+      a.subjectId === b.subjectId &&
+      a.paperName === b.paperName &&
+      Number(a.score) === Number(b.score) &&
+      Number(a.fullScore) === Number(b.fullScore) &&
+      String(a.durationMinutes ?? "") === String(b.durationMinutes ?? "") &&
+      a.date === b.date &&
+      (a.note || "") === (b.note || "")
+    );
+  }
+
+  function isSameMistake(a, b) {
+    return (
+      a.subjectId === b.subjectId &&
+      a.title === b.title &&
+      (a.knowledgePoint || "") === (b.knowledgePoint || "") &&
+      (a.analysis || "") === (b.analysis || "") &&
+      (a.sourceRecordId || "") === (b.sourceRecordId || "") &&
+      (a.questionText || "") === (b.questionText || "")
+    );
   }
 
   function getOrCreateDeviceId() {
@@ -676,6 +912,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     syncError,
     isSyncing,
     lastSyncedAt,
+    realtimeStatus,
+    realtimeError,
     notifications,
     deviceId,
     deviceName,
