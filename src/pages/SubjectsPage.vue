@@ -105,7 +105,7 @@ async function remove(subject) {
         <form class="form-grid" @submit.prevent="add">
           <label>
             科目名称
-            <input v-model.trim="form.name" required placeholder="例如：西综 / 333 教育综合" />
+            <input v-model.trim="form.name" required />
           </label>
           <div class="form-row two">
             <label>

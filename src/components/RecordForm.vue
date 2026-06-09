@@ -137,7 +137,7 @@ async function submit() {
     <template v-else>
       <label>
         习题册名称
-        <input v-model.trim="form.exerciseBookName" list="exercise-book-options" placeholder="输入或选择习题册" required />
+        <input v-model.trim="form.exerciseBookName" list="exercise-book-options" required />
         <datalist id="exercise-book-options">
           <option v-for="book in exerciseBooks" :key="book" :value="book" />
         </datalist>
@@ -145,11 +145,11 @@ async function submit() {
       <div class="form-row two">
         <label>
           页码
-          <input v-model.trim="form.exercisePage" inputmode="numeric" placeholder="例如 36" />
+          <input v-model.trim="form.exercisePage" inputmode="numeric" />
         </label>
         <label>
           题号
-          <input v-model.trim="form.exerciseQuestion" placeholder="例如 12 / 例3 / 选择 8" />
+          <input v-model.trim="form.exerciseQuestion" />
         </label>
       </div>
     </template>

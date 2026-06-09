@@ -211,7 +211,6 @@ onBeforeUnmount(() => {
             <input
               v-model="globalSearch"
               type="search"
-              placeholder="搜索成绩、错题、科目"
               @focus="isGlobalSearchOpen = true"
               @input="isGlobalSearchOpen = true"
             />

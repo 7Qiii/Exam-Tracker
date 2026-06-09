@@ -128,7 +128,7 @@ function formatDuration(minutes) {
         </div>
       </div>
       <form class="filter-bar with-actions" @submit.prevent="applyFilters">
-        <input v-model="draftFilters.keyword" placeholder="搜索记录、习题册、备注、科目" />
+        <input v-model="draftFilters.keyword" />
         <select v-model="draftFilters.subjectId">
           <option value="">全部科目</option>
           <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>

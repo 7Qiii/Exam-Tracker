@@ -95,13 +95,13 @@ async function submit() {
       </label>
       <label>
         知识点
-        <input v-model.trim="form.knowledgePoint" placeholder="例如：操作系统 / 调度算法" />
+        <input v-model.trim="form.knowledgePoint" />
       </label>
     </div>
 
     <label>
       错题标题
-      <input v-model.trim="form.title" required placeholder="例如：进程调度周转时间计算" />
+      <input v-model.trim="form.title" required />
     </label>
 
     <p v-if="sourceRecord" class="form-tip">
@@ -111,7 +111,7 @@ async function submit() {
 
     <label>
       解析与复盘
-      <textarea v-model.trim="form.analysis" rows="4" placeholder="写清楚错在哪里、正确路径、下次识别信号。"></textarea>
+      <textarea v-model.trim="form.analysis" rows="4"></textarea>
     </label>
 
     <ImageUploader
