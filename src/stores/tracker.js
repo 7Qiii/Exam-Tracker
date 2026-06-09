@@ -42,6 +42,9 @@ export const useTrackerStore = defineStore("tracker", () => {
   const isSyncing = ref(false);
   const lastSyncedAt = ref("");
   const notifications = ref([]);
+  const deviceId = ref(getOrCreateDeviceId());
+  const deviceName = ref(getDeviceName());
+  const lastBackupAt = ref(readLocalValue("exam-tracker-last-backup", ""));
   let lastCloudSignature = "";
   let cloudLoadPromise = null;
   let autoSyncTimer = null;
@@ -60,6 +63,9 @@ export const useTrackerStore = defineStore("tracker", () => {
       label: formatBytes(totalBytes)
     };
   });
+  const pendingImages = computed(() => images.value.filter((image) => image.pendingUpload));
+  const failedImages = computed(() => images.value.filter((image) => image.uploadError));
+  const autoSyncState = computed(() => (autoSyncStarted ? "自动同步已开启" : user.value ? "自动同步待启动" : "未登录"));
 
   async function load() {
     syncError.value = "";
@@ -124,10 +130,12 @@ export const useTrackerStore = defineStore("tracker", () => {
     try {
       const data = await loadCloudData();
       if (!data) return;
+      const localRecords = records.value;
+      const localMistakes = mistakes.value;
       user.value = data.user;
       subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
-      records.value = data.records;
-      mistakes.value = data.mistakes;
+      records.value = mergeCloudEntries(data.records, localRecords, "createdAt");
+      mistakes.value = mergeCloudEntries(data.mistakes, localMistakes, "updatedAt");
       images.value = mergeCloudImages(data.images);
       syncMode.value = "cloud";
       lastSyncedAt.value = new Date().toISOString();
@@ -141,6 +149,7 @@ export const useTrackerStore = defineStore("tracker", () => {
         });
         lastCloudSignature = signature;
       }
+      retryUnsyncedData();
     } finally {
       isSyncing.value = false;
     }
@@ -153,6 +162,12 @@ export const useTrackerStore = defineStore("tracker", () => {
     syncError.value = "";
     await loadFromCloud();
     notify("已同步云端数据。", "success");
+  }
+
+  function markBackupExported() {
+    lastBackupAt.value = new Date().toISOString();
+    writeLocalValue("exam-tracker-last-backup", lastBackupAt.value);
+    notify("备份时间已记录。", "success");
   }
 
   async function login(email, password) {
@@ -192,11 +207,13 @@ export const useTrackerStore = defineStore("tracker", () => {
       score: Number(payload.score),
       fullScore: Number(payload.fullScore),
       durationMinutes: normalizeDuration(payload.durationMinutes),
+      pendingSync: true,
       createdAt: new Date().toISOString()
     };
     await db.records.put(record);
-    await safeCloud(() => upsertRecord(record));
     records.value.push(record);
+    const synced = await safeCloud(() => upsertRecord(record));
+    if (synced) await markRecordSynced(record.id);
     notify("成绩已保存。", "success");
     return record;
   }
@@ -210,10 +227,14 @@ export const useTrackerStore = defineStore("tracker", () => {
     if ("durationMinutes" in patch) {
       next.durationMinutes = normalizeDuration(patch.durationMinutes);
     }
+    next.pendingSync = true;
     await db.records.update(id, next);
     records.value = records.value.map((record) => (record.id === id ? { ...record, ...next } : record));
     const record = records.value.find((item) => item.id === id);
-    if (record) await safeCloud(() => upsertRecord(record));
+    if (record) {
+      const synced = await safeCloud(() => upsertRecord(record));
+      if (synced) await markRecordSynced(id);
+    }
     notify("成绩已更新。", "success");
   }
 
@@ -231,12 +252,14 @@ export const useTrackerStore = defineStore("tracker", () => {
       ...payload,
       sourceRecordId: payload.sourceRecordId || "",
       nextReviewAt: payload.nextReviewAt || "",
+      pendingSync: true,
       createdAt: now,
       updatedAt: now
     };
     await db.mistakes.put(mistake);
-    await safeCloud(() => upsertMistake(mistake));
     mistakes.value.unshift(mistake);
+    const synced = await safeCloud(() => upsertMistake(mistake));
+    if (synced) await markMistakeSynced(mistake.id);
     if (files.length) {
       const saved = await saveMistakeImages(mistake.id, files);
       images.value.push(...saved);
@@ -246,11 +269,14 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function updateMistake(id, patch, files = []) {
-    const next = { ...patch, updatedAt: new Date().toISOString() };
+    const next = { ...patch, pendingSync: true, updatedAt: new Date().toISOString() };
     await db.mistakes.update(id, next);
     mistakes.value = mistakes.value.map((mistake) => (mistake.id === id ? { ...mistake, ...next } : mistake));
     const mistake = mistakes.value.find((item) => item.id === id);
-    if (mistake) await safeCloud(() => upsertMistake(mistake));
+    if (mistake) {
+      const synced = await safeCloud(() => upsertMistake(mistake));
+      if (synced) await markMistakeSynced(id);
+    }
     if (files.length) {
       const saved = await saveMistakeImages(id, files);
       images.value.push(...saved);
@@ -466,19 +492,21 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function safeCloud(action) {
-    if (!user.value || !supabase) return;
+    if (!user.value || !supabase) return false;
     try {
       await action();
       syncError.value = "";
+      return true;
     } catch (error) {
       syncError.value = error.message || "云端同步失败";
       console.error(error);
+      return false;
     }
   }
 
   function notify(message, type = "info", timeout = 3200) {
     const id = crypto.randomUUID();
-    notifications.value.push({ id, message, type });
+    notifications.value.push({ id, message, type, timeout });
     window.setTimeout(() => removeNotification(id), timeout);
   }
 
@@ -501,6 +529,53 @@ export const useTrackerStore = defineStore("tracker", () => {
     return [...cloudImages, ...localPending];
   }
 
+  function mergeCloudEntries(cloudEntries, localEntries, stampField) {
+    const merged = new Map(cloudEntries.map((entry) => [entry.id, { ...entry, pendingSync: false }]));
+    localEntries.forEach((entry) => {
+      const cloudEntry = merged.get(entry.id);
+      if (!cloudEntry) {
+        merged.set(entry.id, { ...entry, pendingSync: Boolean(user.value && supabase) });
+        return;
+      }
+      if (entry.pendingSync && isNewerEntry(entry, cloudEntry, stampField)) {
+        merged.set(entry.id, entry);
+      }
+    });
+    return [...merged.values()];
+  }
+
+  function isNewerEntry(localEntry, cloudEntry, stampField) {
+    const localTime = new Date(localEntry[stampField] || localEntry.createdAt || 0).getTime();
+    const cloudTime = new Date(cloudEntry[stampField] || cloudEntry.createdAt || 0).getTime();
+    return localTime >= cloudTime;
+  }
+
+  function retryUnsyncedData() {
+    if (!user.value || !supabase) return;
+    const recordQueue = records.value.filter((record) => record.pendingSync);
+    const mistakeQueue = mistakes.value.filter((mistake) => mistake.pendingSync);
+    recordQueue.forEach((record) => {
+      safeCloud(() => upsertRecord(record)).then((synced) => {
+        if (synced) markRecordSynced(record.id);
+      });
+    });
+    mistakeQueue.forEach((mistake) => {
+      safeCloud(() => upsertMistake(mistake)).then((synced) => {
+        if (synced) markMistakeSynced(mistake.id);
+      });
+    });
+  }
+
+  async function markRecordSynced(id) {
+    await db.records.update(id, { pendingSync: false });
+    records.value = records.value.map((record) => (record.id === id ? { ...record, pendingSync: false } : record));
+  }
+
+  async function markMistakeSynced(id) {
+    await db.mistakes.update(id, { pendingSync: false });
+    mistakes.value = mistakes.value.map((mistake) => (mistake.id === id ? { ...mistake, pendingSync: false } : mistake));
+  }
+
   function isLocalPendingImage(image) {
     return Boolean(image.blob && (image.pendingUpload || image.uploadError || !image.url));
   }
@@ -512,6 +587,10 @@ export const useTrackerStore = defineStore("tracker", () => {
     const session = await getSession();
     const token = session?.access_token;
     if (!token) return;
+    await Promise.all(pending.map((image) => db.images.update(image.id, { pendingUpload: true, uploadError: "" })));
+    const pendingIds = new Set(pending.map((image) => image.id));
+    images.value = images.value.map((image) => (pendingIds.has(image.id) ? { ...image, pendingUpload: true, uploadError: "" } : image));
+    notify(`正在重试 ${pending.length} 张图片同步。`, "info");
     pending.forEach((image) => {
       uploadImageInBackground({ ...image, pendingUpload: true, uploadError: "" }, image.ownerId, token);
     });
@@ -554,6 +633,38 @@ export const useTrackerStore = defineStore("tracker", () => {
     }, delay);
   }
 
+  function getOrCreateDeviceId() {
+    const key = "exam-tracker-device-id";
+    const existing = readLocalValue(key, "");
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    writeLocalValue(key, id);
+    return id;
+  }
+
+  function getDeviceName() {
+    const saved = readLocalValue("exam-tracker-device-name", "");
+    if (saved) return saved;
+    const platform = navigator.userAgentData?.platform || navigator.platform || "";
+    const touch = navigator.maxTouchPoints > 1;
+    if (/iPad|MacIntel/i.test(platform) && touch) return "iPad";
+    if (/iPhone/i.test(platform)) return "iPhone";
+    if (/Win/i.test(platform)) return "Windows";
+    if (/Mac/i.test(platform)) return "Mac";
+    if (/Android/i.test(navigator.userAgent)) return "Android";
+    return "当前设备";
+  }
+
+  function readLocalValue(key, fallback) {
+    if (typeof localStorage === "undefined") return fallback;
+    return localStorage.getItem(key) || fallback;
+  }
+
+  function writeLocalValue(key, value) {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, value);
+  }
+
   return {
     subjects,
     records,
@@ -566,16 +677,21 @@ export const useTrackerStore = defineStore("tracker", () => {
     isSyncing,
     lastSyncedAt,
     notifications,
+    deviceId,
+    deviceName,
+    lastBackupAt,
     subjectMap,
     visibleSubjects,
     imageStorageStats,
+    pendingImages,
+    failedImages,
+    autoSyncState,
     load,
     login,
     register,
     logout,
     loadFromCloud,
     startAutoSync,
-    retryPendingImageUploads,
     syncNow,
     addRecord,
     updateRecord,
@@ -592,9 +708,11 @@ export const useTrackerStore = defineStore("tracker", () => {
     exportData,
     importData,
     clearAll,
+    markBackupExported,
     subjectName,
     subjectColor,
     notify,
-    removeNotification
+    removeNotification,
+    retryPendingImageUploads
   };
 });

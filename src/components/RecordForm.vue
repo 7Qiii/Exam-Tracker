@@ -3,6 +3,9 @@ import { computed, reactive, ref, watch } from "vue";
 import { Save } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
 
+const props = defineProps({
+  record: { type: Object, default: null }
+});
 const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
 const isSaving = ref(false);
@@ -18,10 +21,21 @@ const form = reactive({
 });
 
 const selectedSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === form.subjectId));
+const isEditing = computed(() => Boolean(props.record));
 
 watch(
-  () => store.visibleSubjects,
+  () => [store.visibleSubjects, props.record],
   () => {
+    if (props.record) {
+      form.subjectId = props.record.subjectId || "";
+      form.paperName = props.record.paperName || "";
+      form.score = props.record.score ?? "";
+      form.fullScore = props.record.fullScore ?? "";
+      form.durationMinutes = props.record.durationMinutes ?? "";
+      form.date = props.record.date || new Date().toISOString().slice(0, 10);
+      form.note = props.record.note || "";
+      return;
+    }
     if ((!form.subjectId || !selectedSubject.value) && store.visibleSubjects.length) {
       form.subjectId = store.visibleSubjects[0].id;
     }
@@ -32,7 +46,7 @@ watch(
 watch(
   () => form.subjectId,
   () => {
-    if (selectedSubject.value) {
+    if (selectedSubject.value && !props.record) {
       form.fullScore = selectedSubject.value.fullScore;
     }
   },
@@ -44,13 +58,17 @@ async function submit() {
   if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) return;
   isSaving.value = true;
   try {
-    await store.addRecord({ ...form });
-    form.paperName = "";
-    form.score = "";
-    form.durationMinutes = "";
-    form.note = "";
-    form.date = new Date().toISOString().slice(0, 10);
-    form.fullScore = selectedSubject.value?.fullScore || "";
+    if (props.record) {
+      await store.updateRecord(props.record.id, { ...form });
+    } else {
+      await store.addRecord({ ...form });
+      form.paperName = "";
+      form.score = "";
+      form.durationMinutes = "";
+      form.note = "";
+      form.date = new Date().toISOString().slice(0, 10);
+      form.fullScore = selectedSubject.value?.fullScore || "";
+    }
     emit("saved");
   } catch (error) {
     store.notify(error.message || "成绩保存失败。", "error", 6000);
@@ -98,7 +116,7 @@ async function submit() {
     </label>
     <button class="primary-button" type="submit" :disabled="isSaving">
       <Save :size="17" />
-      {{ isSaving ? "保存中..." : "保存成绩" }}
+      {{ isSaving ? "保存中..." : isEditing ? "保存修改" : "保存成绩" }}
     </button>
   </form>
 </template>

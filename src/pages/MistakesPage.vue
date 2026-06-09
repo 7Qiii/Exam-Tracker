@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { Image, Search, Trash2, X } from "@lucide/vue";
+import ImageSyncQueue from "../components/ImageSyncQueue.vue";
 import MistakeForm from "../components/MistakeForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -70,6 +71,8 @@ function normalizeSearch(value) {
         </button>
       </form>
     </section>
+
+    <ImageSyncQueue />
 
     <section class="content-grid">
       <div v-if="showForm" class="panel">

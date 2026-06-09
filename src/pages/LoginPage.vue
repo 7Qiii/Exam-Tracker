@@ -28,6 +28,10 @@ const statusText = computed(() => {
   return "可登录 / 注册后开启多设备同步";
 });
 const lastSyncText = computed(() => (store.lastSyncedAt ? new Date(store.lastSyncedAt).toLocaleString("zh-CN") : "暂无同步记录"));
+const imageSyncText = computed(() => {
+  if (!store.pendingImages.length && !store.failedImages.length) return "图片队列正常";
+  return `图片：${store.pendingImages.length} 张同步中 / ${store.failedImages.length} 张失败`;
+});
 
 async function submit() {
   isBusy.value = true;
@@ -79,6 +83,11 @@ async function syncNow() {
       <div class="sync-state" :class="{ online: store.user }">
         <Database :size="18" />
         <span>{{ statusText }}</span>
+      </div>
+
+      <div class="sync-state">
+        <Cloud :size="18" />
+        <span>{{ store.deviceName }} · {{ store.autoSyncState }} · {{ imageSyncText }}</span>
       </div>
 
       <form v-if="!store.user" class="form-grid" @submit.prevent="submit">

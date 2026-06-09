@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { BookOpenCheck, Save } from "@lucide/vue";
 import ImageUploader from "./ImageUploader.vue";
 import { useTrackerStore } from "../stores/tracker";
@@ -10,6 +11,7 @@ const props = defineProps({
 
 const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
+const route = useRoute();
 const files = ref([]);
 const uploaderResetKey = ref(0);
 const isSaving = ref(false);
@@ -27,24 +29,33 @@ const form = reactive({
 });
 
 const relatedImages = computed(() => (props.mistake ? store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === props.mistake.id) : []));
+const sourceRecord = computed(() => {
+  const id = props.mistake?.sourceRecordId || route.query.recordId || form.sourceRecordId;
+  return store.records.find((record) => record.id === id) || null;
+});
 
 function setFiles(nextFiles) {
   files.value = nextFiles;
 }
 
 watch(
-  () => [store.visibleSubjects, props.mistake],
+  () => [store.visibleSubjects, props.mistake, route.query.recordId, store.records.length],
   () => {
     const source = props.mistake || {};
+    const queryRecord = !props.mistake && route.query.recordId ? store.records.find((record) => record.id === route.query.recordId) : null;
     form.subjectId = source.subjectId || store.visibleSubjects[0]?.id || "";
     form.title = source.title || "";
     form.knowledgePoint = source.knowledgePoint || "";
     form.reason = source.reason || "concept";
     form.status = source.status || "待复盘";
-    form.sourceRecordId = source.sourceRecordId || "";
+    form.sourceRecordId = source.sourceRecordId || queryRecord?.id || "";
     form.questionText = source.questionText || "";
     form.analysis = source.analysis || "";
     form.nextReviewAt = source.nextReviewAt || "";
+    if (queryRecord) {
+      form.subjectId = queryRecord.subjectId;
+      form.title = queryRecord.paperName ? `${queryRecord.paperName} 错题` : form.title;
+    }
   },
   { immediate: true, deep: true }
 );
@@ -92,6 +103,11 @@ async function submit() {
       错题标题
       <input v-model.trim="form.title" required placeholder="例如：进程调度周转时间计算" />
     </label>
+
+    <p v-if="sourceRecord" class="form-tip">
+      <BookOpenCheck :size="16" />
+      关联成绩：{{ sourceRecord.paperName }} · {{ sourceRecord.score }} / {{ sourceRecord.fullScore }}
+    </p>
 
     <label>
       解析与复盘

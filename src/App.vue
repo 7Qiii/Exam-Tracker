@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import { RouterLink, RouterView, useRoute } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import {
   BarChart3,
   BookOpenCheck,
@@ -20,7 +20,11 @@ import { useTrackerStore } from "./stores/tracker";
 
 const store = useTrackerStore();
 const route = useRoute();
+const router = useRouter();
 const isSidebarOpen = ref(false);
+const isOnline = ref(typeof navigator === "undefined" ? true : navigator.onLine);
+const globalSearch = ref("");
+const isGlobalSearchOpen = ref(false);
 
 const navItems = [
   { to: "/", label: "总览", title: "Overview", icon: Home },
@@ -50,8 +54,39 @@ const syncStateText = computed(() => {
 });
 const syncStateTitle = computed(() => {
   if (store.syncError) return store.syncError;
-  if (store.lastSyncedAt) return `最后同步：${new Date(store.lastSyncedAt).toLocaleString("zh-CN")}`;
+  if (store.lastSyncedAt) return `${store.deviceName} · ${store.autoSyncState} · 最后同步：${new Date(store.lastSyncedAt).toLocaleString("zh-CN")}`;
   return store.user ? "可手动同步云端数据" : "登录后开启多设备同步";
+});
+const globalSearchResults = computed(() => {
+  const keyword = normalizeSearch(globalSearch.value);
+  if (!keyword) return [];
+  const recordResults = store.records
+    .filter((record) => {
+      const haystack = normalizeSearch([record.paperName, record.note, store.subjectName(record.subjectId), record.score, record.fullScore, record.date].join(" "));
+      return haystack.includes(keyword);
+    })
+    .slice(0, 4)
+    .map((record) => ({
+      id: `record-${record.id}`,
+      type: "成绩",
+      title: record.paperName,
+      meta: `${store.subjectName(record.subjectId)} · ${record.score}/${record.fullScore}`,
+      to: `/records/${record.id}`
+    }));
+  const mistakeResults = store.mistakes
+    .filter((mistake) => {
+      const haystack = normalizeSearch([mistake.title, mistake.knowledgePoint, mistake.analysis, store.subjectName(mistake.subjectId)].join(" "));
+      return haystack.includes(keyword);
+    })
+    .slice(0, 4)
+    .map((mistake) => ({
+      id: `mistake-${mistake.id}`,
+      type: "错题",
+      title: mistake.title,
+      meta: `${store.subjectName(mistake.subjectId)} · ${mistake.knowledgePoint || "未分类"}`,
+      to: `/mistakes/${mistake.id}`
+    }));
+  return [...recordResults, ...mistakeResults].slice(0, 6);
 });
 
 async function syncNow() {
@@ -71,15 +106,39 @@ function closeSidebar() {
   isSidebarOpen.value = false;
 }
 
+function normalizeSearch(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function openGlobalResult(item = globalSearchResults.value[0]) {
+  if (!item) return;
+  router.push(item.to);
+  globalSearch.value = "";
+  isGlobalSearchOpen.value = false;
+}
+
 watch(
   () => route.fullPath,
   () => {
     closeSidebar();
+    isGlobalSearchOpen.value = false;
   }
 );
 
+function updateOnlineState() {
+  isOnline.value = navigator.onLine;
+  store.notify(isOnline.value ? "网络已恢复。" : "当前离线，操作会先保存在本地。", isOnline.value ? "success" : "info");
+}
+
 onMounted(() => {
   store.load();
+  window.addEventListener("online", updateOnlineState);
+  window.addEventListener("offline", updateOnlineState);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("online", updateOnlineState);
+  window.removeEventListener("offline", updateOnlineState);
 });
 </script>
 
@@ -135,6 +194,7 @@ onMounted(() => {
     </aside>
 
     <div class="workspace">
+      <div v-if="!isOnline" class="offline-banner">当前离线，新增内容会先保存在本地。</div>
       <header class="topbar">
         <div class="topbar-title">
           <button class="menu-button" type="button" aria-label="打开导航" @click="toggleSidebar">
@@ -146,10 +206,29 @@ onMounted(() => {
           </div>
         </div>
         <div class="topbar-tools">
-          <div class="search-box">
+          <form class="search-box global-search" @submit.prevent="openGlobalResult()">
             <Search :size="17" />
-            <span>按科目、知识点、卷名检索</span>
-          </div>
+            <input
+              v-model="globalSearch"
+              type="search"
+              placeholder="搜索成绩、错题、科目"
+              @focus="isGlobalSearchOpen = true"
+              @input="isGlobalSearchOpen = true"
+            />
+            <div v-if="isGlobalSearchOpen && globalSearch" class="global-search-popover">
+              <button
+                v-for="item in globalSearchResults"
+                :key="item.id"
+                type="button"
+                class="global-search-result"
+                @mousedown.prevent="openGlobalResult(item)"
+              >
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.type }} · {{ item.meta }}</span>
+              </button>
+              <div v-if="!globalSearchResults.length" class="global-search-empty">没有匹配结果</div>
+            </div>
+          </form>
           <RouterLink class="account-pill" to="/login" :title="store.user ? '账号与同步' : '登录同步'">
             <span class="avatar-dot" :class="{ online: store.user }">{{ userInitial }}</span>
             <span>{{ syncLabel }}</span>
@@ -181,12 +260,20 @@ onMounted(() => {
       </main>
     </div>
 
+    <nav class="bottom-nav" aria-label="移动端导航">
+      <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" class="bottom-nav-item">
+        <component :is="item.icon" :size="18" />
+        <span>{{ item.label }}</span>
+      </RouterLink>
+    </nav>
+
     <div class="toast-stack" aria-live="polite">
       <button
         v-for="item in store.notifications"
         :key="item.id"
         class="toast"
         :class="item.type"
+        :style="{ '--toast-duration': `${item.timeout || 3200}ms` }"
         type="button"
         @click="store.removeNotification(item.id)"
       >

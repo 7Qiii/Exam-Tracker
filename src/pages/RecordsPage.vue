@@ -1,15 +1,18 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
-import { ChevronLeft, ChevronRight, Search, Trash2, X } from "@lucide/vue";
+import { RouterLink, useRouter } from "vue-router";
+import { BookOpenCheck, ChevronLeft, ChevronRight, Edit3, Plus, Search, Trash2, X } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
+const router = useRouter();
 const page = ref(1);
 const pageSize = 8;
 const filters = reactive({ keyword: "", subjectId: "" });
 const draftFilters = reactive({ keyword: "", subjectId: "" });
+const showForm = ref(false);
+const editingRecordId = ref("");
 
 const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
@@ -38,6 +41,8 @@ const filteredRecords = computed(() => {
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)));
 const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1) * pageSize, page.value * pageSize));
+const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
+const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId));
 
 watch(() => [filters.keyword, filters.subjectId], () => {
   page.value = 1;
@@ -47,12 +52,37 @@ function applyFilters() {
   filters.keyword = draftFilters.keyword;
   filters.subjectId = draftFilters.subjectId;
   page.value = 1;
+  showForm.value = false;
+  editingRecordId.value = "";
 }
 
 function clearFilters() {
   draftFilters.keyword = "";
   draftFilters.subjectId = "";
   applyFilters();
+}
+
+function startCreate() {
+  editingRecordId.value = "";
+  showForm.value = true;
+}
+
+function startEdit(record) {
+  editingRecordId.value = record.id;
+  showForm.value = true;
+}
+
+function closeForm() {
+  showForm.value = false;
+  editingRecordId.value = "";
+}
+
+function onFormSaved() {
+  closeForm();
+}
+
+function createMistakeFromRecord(record) {
+  router.push({ path: "/mistakes", query: { recordId: record.id } });
 }
 
 function normalizeSearch(value) {
@@ -74,7 +104,13 @@ function formatDuration(minutes) {
     <section class="panel">
       <div class="section-head">
         <h2>成绩筛选</h2>
-        <span class="section-meta">{{ filteredRecords.length }} 条结果</span>
+        <div class="topbar-tools">
+          <span class="section-meta">{{ filteredRecords.length }} 条结果</span>
+          <button class="secondary-button compact" type="button" @click="startCreate">
+            <Plus :size="15" />
+            新增成绩
+          </button>
+        </div>
       </div>
       <form class="filter-bar with-actions" @submit.prevent="applyFilters">
         <input v-model="draftFilters.keyword" placeholder="搜索试卷、备注、科目" />
@@ -93,14 +129,29 @@ function formatDuration(minutes) {
       </form>
     </section>
 
-    <section class="content-grid">
-      <div class="panel">
-        <div class="section-head">
-          <h2>新增成绩</h2>
-        </div>
-        <RecordForm />
+    <section v-if="showForm" class="panel">
+      <div class="section-head">
+        <h2>{{ editingRecord ? "编辑成绩" : "新增成绩" }}</h2>
+        <button class="secondary-button compact" type="button" @click="closeForm">
+          <X :size="15" />
+          关闭
+        </button>
       </div>
-      <div class="panel panel-wide">
+      <RecordForm :record="editingRecord" @saved="onFormSaved" />
+    </section>
+
+    <section class="content-grid records-content-grid">
+      <div v-if="!hasActiveFilters && !showForm" class="panel record-create-hint">
+        <div class="section-head">
+          <h2>快速录入</h2>
+          <span class="section-meta">独立模块</span>
+        </div>
+        <button class="primary-button" type="button" @click="startCreate">
+          <Plus :size="17" />
+          新增成绩
+        </button>
+      </div>
+      <div class="panel panel-wide" :class="{ 'full-span': hasActiveFilters || showForm }">
         <div class="section-head">
           <h2>成绩列表</h2>
           <span class="section-meta">分页展示</span>
@@ -114,6 +165,7 @@ function formatDuration(minutes) {
                 <th>得分</th>
                 <th>用时</th>
                 <th>日期</th>
+                <th>状态</th>
                 <th></th>
               </tr>
             </thead>
@@ -124,14 +176,21 @@ function formatDuration(minutes) {
                 <td>{{ record.score }} / {{ record.fullScore }}</td>
                 <td>{{ formatDuration(record.durationMinutes) }}</td>
                 <td>{{ record.date }}</td>
-                <td>
-                  <button class="icon-button danger" type="button" @click="store.removeRecord(record.id)">
+                <td>{{ record.pendingSync ? "待同步" : "已同步" }}</td>
+                <td class="table-actions">
+                  <button class="icon-button" type="button" title="编辑成绩" @click="startEdit(record)">
+                    <Edit3 :size="15" />
+                  </button>
+                  <button class="icon-button" type="button" title="基于本成绩新增错题" @click="createMistakeFromRecord(record)">
+                    <BookOpenCheck :size="15" />
+                  </button>
+                  <button class="icon-button danger" type="button" title="删除成绩" @click="store.removeRecord(record.id)">
                     <Trash2 :size="15" />
                   </button>
                 </td>
               </tr>
               <tr v-if="!pagedRecords.length">
-                <td colspan="6" class="empty-cell">没有找到匹配的成绩。</td>
+                <td colspan="8" class="empty-cell">没有找到匹配的成绩。</td>
               </tr>
             </tbody>
           </table>

@@ -16,6 +16,18 @@ const totals = computed(() => [
   { label: "错题", value: store.mistakes.length },
   { label: "图片", value: `${store.imageStorageStats.count} / ${store.imageStorageStats.label}` }
 ]);
+const hasData = computed(() => Boolean(store.records.length || store.mistakes.length || store.images.length));
+const backupAgeDays = computed(() => {
+  if (!store.lastBackupAt) return Number.POSITIVE_INFINITY;
+  return Math.floor((Date.now() - new Date(store.lastBackupAt).getTime()) / 86400000);
+});
+const backupHint = computed(() => {
+  if (!hasData.value) return "暂无需要备份的数据。";
+  if (!store.lastBackupAt) return "还没有导出过备份，建议先生成一份。";
+  if (backupAgeDays.value >= 7) return `上次备份已是 ${backupAgeDays.value} 天前，建议更新。`;
+  return `上次备份：${new Date(store.lastBackupAt).toLocaleString("zh-CN")}`;
+});
+const shouldBackup = computed(() => hasData.value && (backupAgeDays.value >= 7 || !store.lastBackupAt));
 
 async function exportData() {
   const data = await store.exportData();
@@ -26,6 +38,7 @@ async function exportData() {
   link.download = `exam-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   URL.revokeObjectURL(url);
+  store.markBackupExported();
   message.value = "备份文件已生成。";
   error.value = "";
 }
@@ -69,13 +82,17 @@ async function clearData() {
     <section class="hero-panel compact-hero">
       <div>
         <h2>备份中心。</h2>
-        <p>长期学习数据建议定期导出。导入支持合并和覆盖两种方式，清空操作需要二次确认。</p>
+        <p>{{ backupHint }}</p>
       </div>
       <button class="primary-button" type="button" @click="exportData">
         <Download :size="17" />
         导出备份
       </button>
     </section>
+
+    <div v-if="shouldBackup" class="inline-alert">
+      数据越多越值得定期备份。建议每周导出一次 JSON 文件，尤其是错题图片较多时。
+    </div>
 
     <section class="summary-grid">
       <article v-for="item in totals" :key="item.label" class="metric-card">

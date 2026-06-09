@@ -7,11 +7,14 @@ const props = defineProps({
 });
 
 const store = useTrackerStore();
+const rootRef = ref(null);
 const trendRef = ref(null);
 const distributionRef = ref(null);
+const isChartReady = ref(false);
 let trendChart = null;
 let distributionChart = null;
 let echarts = null;
+let observer = null;
 
 const scopedRecords = computed(() => {
   const list = props.subjectId ? store.records.filter((record) => record.subjectId === props.subjectId) : store.records;
@@ -20,6 +23,7 @@ const scopedRecords = computed(() => {
 
 async function draw() {
   if (!trendRef.value || !distributionRef.value) return;
+  isChartReady.value = true;
   echarts ||= await import("echarts");
   trendChart ||= echarts.init(trendRef.value);
   distributionChart ||= echarts.init(distributionRef.value);
@@ -93,35 +97,61 @@ function resize() {
   distributionChart?.resize();
 }
 
-onMounted(() => {
+function activateCharts() {
+  if (isChartReady.value) return;
   draw();
+}
+
+onMounted(() => {
+  if ("IntersectionObserver" in window && rootRef.value) {
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer?.disconnect();
+          observer = null;
+          activateCharts();
+        }
+      },
+      { rootMargin: "180px" }
+    );
+    observer.observe(rootRef.value);
+  } else {
+    activateCharts();
+  }
   window.addEventListener("resize", resize);
 });
 
-watch(() => [store.records.length, props.subjectId], draw);
+watch(() => [store.records.length, props.subjectId], () => {
+  if (isChartReady.value) draw();
+});
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", resize);
+  observer?.disconnect();
   trendChart?.dispose();
   distributionChart?.dispose();
 });
 </script>
 
 <template>
-  <div class="chart-grid">
+  <div ref="rootRef" class="chart-grid">
     <section class="panel">
       <div class="section-head">
         <h2>历次考试趋势</h2>
         <span class="section-meta">悬停查看试卷与分数</span>
       </div>
-      <div ref="trendRef" class="chart-box"></div>
+      <div ref="trendRef" class="chart-box">
+        <span v-if="!isChartReady" class="chart-loading">图表准备中</span>
+      </div>
     </section>
     <section class="panel">
       <div class="section-head">
         <h2>各科最近成绩</h2>
         <span class="section-meta">按得分展示</span>
       </div>
-      <div ref="distributionRef" class="chart-box"></div>
+      <div ref="distributionRef" class="chart-box">
+        <span v-if="!isChartReady" class="chart-loading">图表准备中</span>
+      </div>
     </section>
   </div>
 </template>

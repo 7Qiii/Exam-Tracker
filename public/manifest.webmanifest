@@ -8,6 +8,21 @@
   "theme_color": "#101828",
   "lang": "zh-CN",
   "categories": ["education", "productivity"],
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "shortcuts": [
+    {
+      "name": "新增错题",
+      "short_name": "错题",
+      "url": "/mistakes",
+      "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "新增成绩",
+      "short_name": "成绩",
+      "url": "/records",
+      "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ],
   "icons": [
     {
       "src": "./icon.svg",
