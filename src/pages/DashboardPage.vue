@@ -65,6 +65,13 @@ function formatDuration(minutes) {
   if (!hours) return `${value} 分钟`;
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
+
+function recordTitle(record) {
+  if (record.recordType !== "exercise") return record.paperName;
+  return [record.exerciseBookName || record.paperName, record.exercisePage ? `P${record.exercisePage}` : "", record.exerciseQuestion ? `第 ${record.exerciseQuestion} 题` : ""]
+    .filter(Boolean)
+    .join(" · ");
+}
 </script>
 
 <template>
@@ -135,7 +142,7 @@ function formatDuration(minutes) {
         <table>
           <thead>
             <tr>
-              <th>试卷</th>
+              <th>记录</th>
               <th>科目</th>
               <th>得分</th>
               <th>用时</th>
@@ -144,7 +151,7 @@ function formatDuration(minutes) {
           </thead>
           <tbody>
             <tr v-for="record in latestRecords" :key="record.id">
-              <td><RouterLink :to="`/records/${record.id}`">{{ record.paperName }}</RouterLink></td>
+              <td><RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink></td>
               <td>{{ store.subjectName(record.subjectId) }}</td>
               <td>{{ record.score }} / {{ record.fullScore }}</td>
               <td>{{ formatDuration(record.durationMinutes) }}</td>

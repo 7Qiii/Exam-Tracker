@@ -12,7 +12,11 @@ const isSaving = ref(false);
 
 const form = reactive({
   subjectId: "",
+  recordType: "paper",
   paperName: "",
+  exerciseBookName: "",
+  exercisePage: "",
+  exerciseQuestion: "",
   score: "",
   fullScore: "",
   durationMinutes: "",
@@ -22,13 +26,25 @@ const form = reactive({
 
 const selectedSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === form.subjectId));
 const isEditing = computed(() => Boolean(props.record));
+const isMathSubject = computed(() => selectedSubject.value?.id === "math1");
+const exerciseBooks = computed(() => {
+  const books = store.records
+    .filter((record) => record.subjectId === "math1" && record.recordType === "exercise" && record.exerciseBookName)
+    .map((record) => record.exerciseBookName.trim())
+    .filter(Boolean);
+  return [...new Set(books)].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+});
 
 watch(
   () => [store.visibleSubjects, props.record],
   () => {
     if (props.record) {
       form.subjectId = props.record.subjectId || "";
+      form.recordType = props.record.recordType || "paper";
       form.paperName = props.record.paperName || "";
+      form.exerciseBookName = props.record.exerciseBookName || "";
+      form.exercisePage = props.record.exercisePage || "";
+      form.exerciseQuestion = props.record.exerciseQuestion || "";
       form.score = props.record.score ?? "";
       form.fullScore = props.record.fullScore ?? "";
       form.durationMinutes = props.record.durationMinutes ?? "";
@@ -49,20 +65,41 @@ watch(
     if (selectedSubject.value && !props.record) {
       form.fullScore = selectedSubject.value.fullScore;
     }
+    if (!isMathSubject.value) {
+      form.recordType = "paper";
+      form.exerciseBookName = "";
+      form.exercisePage = "";
+      form.exerciseQuestion = "";
+    }
   },
   { immediate: true }
+);
+
+watch(
+  () => form.recordType,
+  () => {
+    if (form.recordType === "paper") {
+      form.exerciseBookName = "";
+      form.exercisePage = "";
+      form.exerciseQuestion = "";
+    }
+  }
 );
 
 async function submit() {
   if (Number(form.score) > Number(form.fullScore)) return;
   if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) return;
+  if (form.recordType === "exercise" && !form.exerciseBookName.trim()) return;
   isSaving.value = true;
   try {
     if (props.record) {
       await store.updateRecord(props.record.id, { ...form });
     } else {
       await store.addRecord({ ...form });
+      form.recordType = isMathSubject.value ? form.recordType : "paper";
       form.paperName = "";
+      form.exercisePage = "";
+      form.exerciseQuestion = "";
       form.score = "";
       form.durationMinutes = "";
       form.note = "";
@@ -86,10 +123,36 @@ async function submit() {
         <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
       </select>
     </label>
-    <label>
+    <div v-if="isMathSubject" class="field-group">
+      <span>记录类型</span>
+      <div class="segmented">
+        <button type="button" :class="{ active: form.recordType === 'paper' }" @click="form.recordType = 'paper'">试卷</button>
+        <button type="button" :class="{ active: form.recordType === 'exercise' }" @click="form.recordType = 'exercise'">习题</button>
+      </div>
+    </div>
+    <label v-if="form.recordType === 'paper'">
       试卷名称
       <input v-model.trim="form.paperName" required />
     </label>
+    <template v-else>
+      <label>
+        习题册名称
+        <input v-model.trim="form.exerciseBookName" list="exercise-book-options" placeholder="输入或选择习题册" required />
+        <datalist id="exercise-book-options">
+          <option v-for="book in exerciseBooks" :key="book" :value="book" />
+        </datalist>
+      </label>
+      <div class="form-row two">
+        <label>
+          页码
+          <input v-model.trim="form.exercisePage" inputmode="numeric" placeholder="例如 36" />
+        </label>
+        <label>
+          题号
+          <input v-model.trim="form.exerciseQuestion" placeholder="例如 12 / 例3 / 选择 8" />
+        </label>
+      </div>
+    </template>
     <div class="form-row two">
       <label>
         得分

@@ -217,12 +217,13 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function addRecord(payload) {
+    const normalized = normalizeRecordPayload(payload);
     const record = {
       id: crypto.randomUUID(),
-      ...payload,
-      score: Number(payload.score),
-      fullScore: Number(payload.fullScore),
-      durationMinutes: normalizeDuration(payload.durationMinutes),
+      ...normalized,
+      score: Number(normalized.score),
+      fullScore: Number(normalized.fullScore),
+      durationMinutes: normalizeDuration(normalized.durationMinutes),
       pendingSync: true,
       createdAt: new Date().toISOString()
     };
@@ -235,13 +236,14 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function updateRecord(id, patch) {
+    const normalized = normalizeRecordPayload(patch);
     const next = {
-      ...patch,
-      score: Number(patch.score),
-      fullScore: Number(patch.fullScore)
+      ...normalized,
+      score: Number(normalized.score),
+      fullScore: Number(normalized.fullScore)
     };
-    if ("durationMinutes" in patch) {
-      next.durationMinutes = normalizeDuration(patch.durationMinutes);
+    if ("durationMinutes" in normalized) {
+      next.durationMinutes = normalizeDuration(normalized.durationMinutes);
     }
     next.pendingSync = true;
     await db.records.update(id, next);
@@ -427,6 +429,34 @@ export const useTrackerStore = defineStore("tracker", () => {
     return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
   }
 
+  function normalizeRecordPayload(payload) {
+    const recordType = payload.recordType === "exercise" ? "exercise" : "paper";
+    const exerciseBookName = cleanText(payload.exerciseBookName);
+    const exercisePage = cleanText(payload.exercisePage);
+    const exerciseQuestion = cleanText(payload.exerciseQuestion);
+    const paperName =
+      recordType === "exercise"
+        ? buildExerciseRecordName(exerciseBookName, exercisePage, exerciseQuestion)
+        : cleanText(payload.paperName);
+
+    return {
+      ...payload,
+      recordType,
+      paperName,
+      exerciseBookName: recordType === "exercise" ? exerciseBookName : "",
+      exercisePage: recordType === "exercise" ? exercisePage : "",
+      exerciseQuestion: recordType === "exercise" ? exerciseQuestion : ""
+    };
+  }
+
+  function buildExerciseRecordName(bookName, page, question) {
+    return [bookName, page ? `P${page}` : "", question ? `第 ${question} 题` : ""].filter(Boolean).join(" · ") || "数一习题";
+  }
+
+  function cleanText(value) {
+    return String(value ?? "").trim();
+  }
+
   async function saveMistakeImages(mistakeId, files) {
     const entries = await Promise.all(
       [...files].map(async (original) => {
@@ -534,7 +564,21 @@ export const useTrackerStore = defineStore("tracker", () => {
   function dataSignature(data) {
     return JSON.stringify({
       subjects: data.subjects.map((item) => [item.id, item.name, item.fullScore, item.color, item.hidden, item.sortOrder]),
-      records: data.records.map((item) => [item.id, item.subjectId, item.paperName, item.score, item.fullScore, item.durationMinutes, item.date, item.note, item.createdAt]),
+      records: data.records.map((item) => [
+        item.id,
+        item.subjectId,
+        item.recordType,
+        item.paperName,
+        item.exerciseBookName,
+        item.exercisePage,
+        item.exerciseQuestion,
+        item.score,
+        item.fullScore,
+        item.durationMinutes,
+        item.date,
+        item.note,
+        item.createdAt
+      ]),
       mistakes: data.mistakes.map((item) => [item.id, item.subjectId, item.title, item.knowledgePoint, item.analysis, item.updatedAt]),
       images: data.images.map((item) => [item.id, item.ownerId, item.name, item.size, item.storageKey, item.url, item.pendingUpload, item.uploadError])
     });
@@ -849,7 +893,11 @@ export const useTrackerStore = defineStore("tracker", () => {
   function isSameRecord(a, b) {
     return (
       a.subjectId === b.subjectId &&
+      (a.recordType || "paper") === (b.recordType || "paper") &&
       a.paperName === b.paperName &&
+      (a.exerciseBookName || "") === (b.exerciseBookName || "") &&
+      (a.exercisePage || "") === (b.exercisePage || "") &&
+      (a.exerciseQuestion || "") === (b.exerciseQuestion || "") &&
       Number(a.score) === Number(b.score) &&
       Number(a.fullScore) === Number(b.fullScore) &&
       String(a.durationMinutes ?? "") === String(b.durationMinutes ?? "") &&

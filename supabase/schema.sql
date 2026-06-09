@@ -23,6 +23,10 @@ create table if not exists public.records (
   paper_name text not null,
   score numeric not null,
   full_score numeric not null,
+  record_type text not null default 'paper',
+  exercise_book_name text not null default '',
+  exercise_page text not null default '',
+  exercise_question text not null default '',
   duration_minutes integer,
   date date not null,
   note text not null default '',
@@ -30,6 +34,10 @@ create table if not exists public.records (
 );
 
 alter table public.records add column if not exists duration_minutes integer;
+alter table public.records add column if not exists record_type text not null default 'paper';
+alter table public.records add column if not exists exercise_book_name text not null default '';
+alter table public.records add column if not exists exercise_page text not null default '';
+alter table public.records add column if not exists exercise_question text not null default '';
 
 create table if not exists public.mistakes (
   id uuid primary key default gen_random_uuid(),

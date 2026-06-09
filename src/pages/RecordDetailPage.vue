@@ -10,6 +10,18 @@ const store = useTrackerStore();
 
 const record = computed(() => store.records.find((item) => item.id === route.params.id));
 const relatedMistakes = computed(() => store.mistakes.filter((item) => item.sourceRecordId === route.params.id));
+const recordTitle = computed(() => {
+  if (!record.value) return "";
+  if (record.value.recordType !== "exercise") return record.value.paperName;
+  return [
+    record.value.exerciseBookName || record.value.paperName,
+    record.value.exercisePage ? `P${record.value.exercisePage}` : "",
+    record.value.exerciseQuestion ? `第 ${record.value.exerciseQuestion} 题` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+});
+const recordTypeText = computed(() => (record.value?.recordType === "exercise" ? "习题" : "试卷"));
 
 async function remove() {
   if (!record.value) return;
@@ -34,7 +46,7 @@ function formatDuration(minutes) {
       <div class="detail-head">
         <div>
           <p class="eyebrow">{{ store.subjectName(record.subjectId) }}</p>
-          <h2>{{ record.paperName }}</h2>
+          <h2>{{ recordTitle }}</h2>
           <span>{{ record.date }}</span>
         </div>
         <button class="secondary-button danger-text" type="button" @click="remove"><Trash2 :size="16" />删除</button>
@@ -42,7 +54,9 @@ function formatDuration(minutes) {
       <div class="detail-metrics">
         <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
         <article><span>用时</span><strong>{{ formatDuration(record.durationMinutes) }}</strong></article>
-        <article><span>科目</span><strong>{{ store.subjectName(record.subjectId) }}</strong></article>
+        <article><span>类型</span><strong>{{ recordTypeText }}</strong></article>
+        <article v-if="record.recordType === 'exercise'"><span>习题册</span><strong>{{ record.exerciseBookName || "未填写" }}</strong></article>
+        <article v-if="record.recordType === 'exercise'"><span>页码 / 题号</span><strong>{{ record.exercisePage || "--" }} / {{ record.exerciseQuestion || "--" }}</strong></article>
       </div>
       <div class="note-block">
         <h3>复盘备注</h3>

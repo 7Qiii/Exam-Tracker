@@ -590,6 +590,14 @@ label {
   font-weight: 800;
 }
 
+.field-group {
+  display: grid;
+  gap: 6px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 input,
 select,
 textarea {

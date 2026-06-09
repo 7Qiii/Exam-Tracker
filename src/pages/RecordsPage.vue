@@ -21,6 +21,10 @@ const filteredRecords = computed(() => {
       const subject = store.subjectName(record.subjectId);
       const haystack = normalizeSearch([
         record.paperName,
+        record.recordType === "exercise" ? "习题" : "试卷",
+        record.exerciseBookName,
+        record.exercisePage,
+        record.exerciseQuestion,
         record.note,
         subject,
         record.score,
@@ -85,6 +89,17 @@ function createMistakeFromRecord(record) {
   router.push({ path: "/mistakes", query: { recordId: record.id } });
 }
 
+function recordTitle(record) {
+  if (record.recordType !== "exercise") return record.paperName;
+  return [record.exerciseBookName || record.paperName, record.exercisePage ? `P${record.exercisePage}` : "", record.exerciseQuestion ? `第 ${record.exerciseQuestion} 题` : ""]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function recordTypeLabel(record) {
+  return record.recordType === "exercise" ? "习题" : "试卷";
+}
+
 function normalizeSearch(value) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
@@ -113,7 +128,7 @@ function formatDuration(minutes) {
         </div>
       </div>
       <form class="filter-bar with-actions" @submit.prevent="applyFilters">
-        <input v-model="draftFilters.keyword" placeholder="搜索试卷、备注、科目" />
+        <input v-model="draftFilters.keyword" placeholder="搜索记录、习题册、备注、科目" />
         <select v-model="draftFilters.subjectId">
           <option value="">全部科目</option>
           <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
@@ -160,8 +175,9 @@ function formatDuration(minutes) {
           <table>
             <thead>
               <tr>
-                <th>试卷</th>
+                <th>记录</th>
                 <th>科目</th>
+                <th>类型</th>
                 <th>得分</th>
                 <th>用时</th>
                 <th>日期</th>
@@ -171,8 +187,9 @@ function formatDuration(minutes) {
             </thead>
             <tbody>
               <tr v-for="record in pagedRecords" :key="record.id">
-                <td><RouterLink :to="`/records/${record.id}`">{{ record.paperName }}</RouterLink></td>
+                <td><RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink></td>
                 <td>{{ store.subjectName(record.subjectId) }}</td>
+                <td>{{ recordTypeLabel(record) }}</td>
                 <td>{{ record.score }} / {{ record.fullScore }}</td>
                 <td>{{ formatDuration(record.durationMinutes) }}</td>
                 <td>{{ record.date }}</td>

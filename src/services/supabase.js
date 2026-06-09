@@ -87,7 +87,7 @@ export async function upsertRecord(record) {
   if (!supabase) return;
   const { error } = await supabase.from("records").upsert(toRecordRow(record));
   if (!error) return;
-  if (isMissingRecordDurationColumn(error)) {
+  if (isMissingRecordDurationColumn(error) || isMissingRecordSourceColumn(error)) {
     const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
     if (legacyError) throw legacyError;
     return;
@@ -220,11 +220,19 @@ function isMissingRecordDurationColumn(error) {
   return /duration_minutes/i.test(`${error.message || ""} ${error.details || ""}`);
 }
 
+function isMissingRecordSourceColumn(error) {
+  return /record_type|exercise_book_name|exercise_page|exercise_question/i.test(`${error.message || ""} ${error.details || ""}`);
+}
+
 function fromRecordRow(row) {
   return {
     id: row.id,
     subjectId: row.subject_id,
+    recordType: row.record_type || "paper",
     paperName: row.paper_name,
+    exerciseBookName: row.exercise_book_name || "",
+    exercisePage: row.exercise_page || "",
+    exerciseQuestion: row.exercise_question || "",
     score: row.score,
     fullScore: row.full_score,
     durationMinutes: row.duration_minutes == null ? "" : Number(row.duration_minutes),
@@ -237,7 +245,11 @@ function fromRecordRow(row) {
 function toRecordRow(record) {
   return {
     ...toLegacyRecordRow(record),
-    duration_minutes: toDurationValue(record.durationMinutes)
+    duration_minutes: toDurationValue(record.durationMinutes),
+    record_type: record.recordType === "exercise" ? "exercise" : "paper",
+    exercise_book_name: record.recordType === "exercise" ? record.exerciseBookName || "" : "",
+    exercise_page: record.recordType === "exercise" ? record.exercisePage || "" : "",
+    exercise_question: record.recordType === "exercise" ? record.exerciseQuestion || "" : ""
   };
 }
 
