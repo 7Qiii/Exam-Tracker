@@ -617,6 +617,24 @@ label:has(.field-suggestions) {
   box-shadow: 0 14px 30px rgba(16, 24, 40, 0.12);
 }
 
+.field-suggestions-head,
+.field-suggestion-row {
+  display: grid;
+  align-items: center;
+  gap: 4px;
+}
+
+.field-suggestions-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 2px 2px 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field-suggestion-row {
+  grid-template-columns: minmax(0, 1fr) 30px;
+}
+
 .field-suggestions button {
   min-height: 32px;
   border: 0;
@@ -630,6 +648,25 @@ label:has(.field-suggestions) {
   padding: 7px 8px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.field-suggestion-row > button:first-child {
+  min-width: 0;
+}
+
+.field-suggestion-row > button:last-child,
+.field-suggestions-head button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--muted);
+  padding: 6px;
+}
+
+.field-suggestions-head button {
+  min-height: 28px;
+  font-size: 12px;
 }
 
 .field-suggestions button:hover {

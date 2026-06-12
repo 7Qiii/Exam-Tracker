@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { BookOpenCheck, Save } from "@lucide/vue";
+import { BookOpenCheck, Save, Trash2, X } from "@lucide/vue";
 import ImageUploader from "./ImageUploader.vue";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -16,6 +16,7 @@ const files = ref([]);
 const uploaderResetKey = ref(0);
 const isSaving = ref(false);
 const focusedField = ref("");
+const hiddenHistory = ref(readHiddenHistory());
 
 const form = reactive({
   subjectId: "",
@@ -34,9 +35,9 @@ const sourceRecord = computed(() => {
   const id = props.mistake?.sourceRecordId || route.query.recordId || form.sourceRecordId;
   return store.records.find((record) => record.id === id) || null;
 });
-const titleHistory = computed(() => uniqueHistory(store.mistakes.map((mistake) => mistake.title)));
-const knowledgeHistory = computed(() => uniqueHistory(store.mistakes.map((mistake) => mistake.knowledgePoint)));
-const analysisHistory = computed(() => uniqueHistory(store.mistakes.map((mistake) => mistake.analysis), 5));
+const titleHistory = computed(() => visibleHistory("title", store.mistakes.map((mistake) => mistake.title)));
+const knowledgeHistory = computed(() => visibleHistory("knowledgePoint", store.mistakes.map((mistake) => mistake.knowledgePoint)));
+const analysisHistory = computed(() => visibleHistory("analysis", store.mistakes.map((mistake) => mistake.analysis), 5));
 
 function setFiles(nextFiles) {
   files.value = nextFiles;
@@ -56,9 +57,53 @@ function uniqueHistory(values, limit = 8) {
     .slice(0, limit);
 }
 
+function visibleHistory(field, values, limit = 8) {
+  const hidden = new Set(hiddenHistory.value[field] || []);
+  return uniqueHistory(values, 50).filter((value) => !hidden.has(value)).slice(0, limit);
+}
+
 function setSuggestion(field, value) {
   form[field] = value;
   focusedField.value = "";
+}
+
+function closeSuggestionsSoon() {
+  window.setTimeout(() => {
+    focusedField.value = "";
+  }, 120);
+}
+
+function removeHistoryItem(field, value) {
+  const next = {
+    ...hiddenHistory.value,
+    [field]: [...new Set([...(hiddenHistory.value[field] || []), value])]
+  };
+  hiddenHistory.value = next;
+  writeHiddenHistory(next);
+}
+
+function clearHistory(field, values) {
+  const next = {
+    ...hiddenHistory.value,
+    [field]: [...new Set([...(hiddenHistory.value[field] || []), ...values])]
+  };
+  hiddenHistory.value = next;
+  focusedField.value = "";
+  writeHiddenHistory(next);
+}
+
+function readHiddenHistory() {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem("exam-tracker-hidden-mistake-history") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeHiddenHistory(value) {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem("exam-tracker-hidden-mistake-history", JSON.stringify(value));
 }
 
 watch(
@@ -118,22 +163,42 @@ async function submit() {
       </label>
       <label>
         知识点
-        <input v-model.trim="form.knowledgePoint" @focus="focusedField = 'knowledgePoint'" @blur="focusedField = ''" />
+        <input v-model.trim="form.knowledgePoint" @focus="focusedField = 'knowledgePoint'" @blur="closeSuggestionsSoon" />
         <div v-if="focusedField === 'knowledgePoint' && knowledgeHistory.length" class="field-suggestions">
-          <button v-for="item in knowledgeHistory" :key="item" type="button" @mousedown.prevent="setSuggestion('knowledgePoint', item)">
-            {{ item }}
-          </button>
+          <div class="field-suggestions-head">
+            <span>历史记录</span>
+            <button type="button" @mousedown.prevent="clearHistory('knowledgePoint', knowledgeHistory)">
+              <Trash2 :size="13" />
+              清空
+            </button>
+          </div>
+          <div v-for="item in knowledgeHistory" :key="item" class="field-suggestion-row">
+            <button type="button" @mousedown.prevent="setSuggestion('knowledgePoint', item)">{{ item }}</button>
+            <button type="button" title="删除此条历史" @mousedown.prevent="removeHistoryItem('knowledgePoint', item)">
+              <X :size="14" />
+            </button>
+          </div>
         </div>
       </label>
     </div>
 
     <label>
       错题标题
-      <input v-model.trim="form.title" required @focus="focusedField = 'title'" @blur="focusedField = ''" />
+      <input v-model.trim="form.title" required @focus="focusedField = 'title'" @blur="closeSuggestionsSoon" />
       <div v-if="focusedField === 'title' && titleHistory.length" class="field-suggestions">
-        <button v-for="item in titleHistory" :key="item" type="button" @mousedown.prevent="setSuggestion('title', item)">
-          {{ item }}
-        </button>
+        <div class="field-suggestions-head">
+          <span>历史记录</span>
+          <button type="button" @mousedown.prevent="clearHistory('title', titleHistory)">
+            <Trash2 :size="13" />
+            清空
+          </button>
+        </div>
+        <div v-for="item in titleHistory" :key="item" class="field-suggestion-row">
+          <button type="button" @mousedown.prevent="setSuggestion('title', item)">{{ item }}</button>
+          <button type="button" title="删除此条历史" @mousedown.prevent="removeHistoryItem('title', item)">
+            <X :size="14" />
+          </button>
+        </div>
       </div>
     </label>
 
@@ -144,11 +209,21 @@ async function submit() {
 
     <label>
       解析与复盘
-      <textarea v-model.trim="form.analysis" rows="4" @focus="focusedField = 'analysis'" @blur="focusedField = ''"></textarea>
+      <textarea v-model.trim="form.analysis" rows="4" @focus="focusedField = 'analysis'" @blur="closeSuggestionsSoon"></textarea>
       <div v-if="focusedField === 'analysis' && analysisHistory.length" class="field-suggestions">
-        <button v-for="item in analysisHistory" :key="item" type="button" @mousedown.prevent="setSuggestion('analysis', item)">
-          {{ item }}
-        </button>
+        <div class="field-suggestions-head">
+          <span>历史记录</span>
+          <button type="button" @mousedown.prevent="clearHistory('analysis', analysisHistory)">
+            <Trash2 :size="13" />
+            清空
+          </button>
+        </div>
+        <div v-for="item in analysisHistory" :key="item" class="field-suggestion-row">
+          <button type="button" @mousedown.prevent="setSuggestion('analysis', item)">{{ item }}</button>
+          <button type="button" title="删除此条历史" @mousedown.prevent="removeHistoryItem('analysis', item)">
+            <X :size="14" />
+          </button>
+        </div>
       </div>
     </label>
 
