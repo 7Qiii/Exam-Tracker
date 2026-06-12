@@ -55,7 +55,7 @@ const syncStateText = computed(() => {
 const syncStateTitle = computed(() => {
   if (store.syncError) return store.syncError;
   if (store.lastSyncedAt) return `${store.deviceName} · ${store.autoSyncState} · 最后同步：${new Date(store.lastSyncedAt).toLocaleString("zh-CN")}`;
-  return store.user ? "可手动同步云端数据" : "登录后开启多设备同步";
+  return store.user ? "快速上传本地待同步数据" : "登录后开启多设备同步";
 });
 const globalSearchResults = computed(() => {
   const keyword = normalizeSearch(globalSearch.value);

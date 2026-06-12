@@ -33,6 +33,7 @@ import {
 
 const FALLBACK_SYNC_INTERVAL = 5 * 60 * 1000;
 const ACTIVE_FALLBACK_THROTTLE = 60 * 1000;
+const CLOUD_CALIBRATION_INTERVAL = 24 * 60 * 60 * 1000;
 
 export const useTrackerStore = defineStore("tracker", () => {
   const subjects = ref([]);
@@ -57,6 +58,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   let autoSyncStarted = false;
   let lastAutoSyncAt = 0;
   let pendingFallbackTimer = null;
+  let cloudCalibrationTimer = null;
   let unsubscribeRealtime = null;
   let realtimeReconnectTimer = null;
 
@@ -79,7 +81,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     if (!isSupabaseConfigured) return "本地模式";
     if (realtimeStatus.value === "connected") return "实时同步已连接";
     if (realtimeStatus.value === "connecting") return "实时同步连接中";
-    if (realtimeStatus.value === "error") return "实时同步异常，低频校准中";
+    if (realtimeStatus.value === "error") return "实时同步异常，快速兜底中";
     return autoSyncStarted ? "后台同步已开启" : "同步待启动";
   });
 
@@ -98,12 +100,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       const session = await getSession();
       user.value = session?.user || null;
       if (user.value) {
-        startAutoSync();
-        retryPendingImageUploads();
-        loadFromCloud().catch((error) => {
-          syncError.value = error.message || "云端同步失败";
-          console.error(error);
-        });
+        startCloudSync();
       }
     }
   }
@@ -116,9 +113,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       if (event === "INITIAL_SESSION") return;
       user.value = session?.user || null;
       if (user.value) {
-        startAutoSync();
-        retryPendingImageUploads();
-        await loadFromCloud();
+        startCloudSync();
       } else {
         stopAutoSync();
         const data = await loadAllData();
@@ -176,8 +171,18 @@ export const useTrackerStore = defineStore("tracker", () => {
       throw new Error("请先登录账号后再同步。");
     }
     syncError.value = "";
+    await syncPendingQueues(true);
+    notify("快速同步已完成。", "success");
+  }
+
+  async function calibrateCloud() {
+    if (!user.value || !supabase) {
+      throw new Error("请先登录账号后再校准云端数据。");
+    }
+    syncError.value = "";
     await loadFromCloud();
-    notify("已同步云端数据。", "success");
+    writeLocalValue(cloudCalibrationKey(), String(Date.now()));
+    notify("云端校准已完成。", "success");
   }
 
   function markBackupExported() {
@@ -189,19 +194,16 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function login(email, password) {
     const session = await signInWithPassword(email, password);
     user.value = session?.user || null;
-    startAutoSync();
-    retryPendingImageUploads();
-    await loadFromCloud();
+    startCloudSync();
   }
 
   async function register(email, password) {
     const session = await signUpWithPassword(email, password);
     user.value = session?.user || null;
     if (user.value) {
-      startAutoSync();
+      startCloudSync();
       await seedCloudDefaults();
-      retryPendingImageUploads();
-      await loadFromCloud();
+      await syncPendingQueues(true);
     }
   }
 
@@ -214,6 +216,12 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   async function seedCloudDefaults() {
     await Promise.all(subjects.value.map((subject) => upsertSubject(subject)));
+  }
+
+  function startCloudSync() {
+    startAutoSync();
+    syncPendingQueues(true);
+    scheduleCloudCalibrationIfNeeded();
   }
 
   async function addRecord(payload) {
@@ -642,20 +650,26 @@ export const useTrackerStore = defineStore("tracker", () => {
     return localTime >= cloudTime;
   }
 
-  function retryUnsyncedData() {
+  async function syncPendingQueues(silent = false) {
+    await retryUnsyncedData();
+    await retryPendingImageUploads(silent);
+    markSyncHeartbeat();
+  }
+
+  async function retryUnsyncedData() {
     if (!user.value || !supabase) return;
     const recordQueue = records.value.filter((record) => record.pendingSync);
     const mistakeQueue = mistakes.value.filter((mistake) => mistake.pendingSync);
-    recordQueue.forEach((record) => {
-      safeCloud(() => upsertRecord(record)).then((synced) => {
+    await Promise.all([
+      ...recordQueue.map(async (record) => {
+        const synced = await safeCloud(() => upsertRecord(record));
         if (synced) markRecordSynced(record.id);
-      });
-    });
-    mistakeQueue.forEach((mistake) => {
-      safeCloud(() => upsertMistake(mistake)).then((synced) => {
+      }),
+      ...mistakeQueue.map(async (mistake) => {
+        const synced = await safeCloud(() => upsertMistake(mistake));
         if (synced) markMistakeSynced(mistake.id);
-      });
-    });
+      })
+    ]);
   }
 
   async function markRecordSynced(id) {
@@ -693,7 +707,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     startRealtimeSync();
     if (autoSyncStarted) return;
     autoSyncStarted = true;
-    autoSyncTimer = window.setInterval(() => scheduleAutoSync(0, true), FALLBACK_SYNC_INTERVAL);
+    autoSyncTimer = window.setInterval(() => syncPendingQueues(true), FALLBACK_SYNC_INTERVAL);
     window.addEventListener("focus", syncWhenActive);
     window.addEventListener("online", syncWhenOnline);
     document.addEventListener("visibilitychange", syncWhenVisible);
@@ -711,8 +725,10 @@ export const useTrackerStore = defineStore("tracker", () => {
     autoSyncStarted = false;
     if (autoSyncTimer) window.clearInterval(autoSyncTimer);
     if (pendingFallbackTimer) window.clearTimeout(pendingFallbackTimer);
+    if (cloudCalibrationTimer) window.clearTimeout(cloudCalibrationTimer);
     autoSyncTimer = null;
     pendingFallbackTimer = null;
+    cloudCalibrationTimer = null;
     window.removeEventListener("focus", syncWhenActive);
     window.removeEventListener("online", syncWhenOnline);
     document.removeEventListener("visibilitychange", syncWhenVisible);
@@ -724,14 +740,11 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function syncWhenActive() {
-    retryUnsyncedData();
-    scheduleAutoSync();
+    syncPendingQueues(true);
   }
 
   function syncWhenOnline() {
-    retryUnsyncedData();
-    retryPendingImageUploads();
-    scheduleAutoSync(1000, true);
+    syncPendingQueues(false);
   }
 
   function scheduleAutoSync(delay = 0, force = false) {
@@ -743,11 +756,34 @@ export const useTrackerStore = defineStore("tracker", () => {
       const now = Date.now();
       if (!force && now - lastAutoSyncAt < ACTIVE_FALLBACK_THROTTLE) return;
       lastAutoSyncAt = now;
-      loadFromCloud().catch((error) => {
-        syncError.value = error.message || "兜底同步失败";
+      syncPendingQueues(true).catch((error) => {
+        syncError.value = error.message || "快速同步失败";
         console.error(error);
       });
     }, delay);
+  }
+
+  function scheduleCloudCalibrationIfNeeded() {
+    if (typeof window === "undefined" || !user.value) return;
+    const needsInitialData = !records.value.length && !mistakes.value.length && !images.value.length;
+    const last = Number(readLocalValue(cloudCalibrationKey(), "0"));
+    const now = Date.now();
+    if (!needsInitialData && now - last < CLOUD_CALIBRATION_INTERVAL) return;
+    if (cloudCalibrationTimer) window.clearTimeout(cloudCalibrationTimer);
+    cloudCalibrationTimer = window.setTimeout(() => {
+      cloudCalibrationTimer = null;
+      if (!user.value || document.hidden) return;
+      loadFromCloud()
+        .then(() => writeLocalValue(cloudCalibrationKey(), String(Date.now())))
+        .catch((error) => {
+          syncError.value = error.message || "云端校准失败";
+          console.error(error);
+        });
+    }, 1500);
+  }
+
+  function cloudCalibrationKey() {
+    return `exam-tracker-last-cloud-calibration-${user.value?.id || "anonymous"}`;
   }
 
   function startRealtimeSync() {
@@ -1010,6 +1046,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     loadFromCloud,
     startAutoSync,
     syncNow,
+    calibrateCloud,
     addRecord,
     updateRecord,
     removeRecord,

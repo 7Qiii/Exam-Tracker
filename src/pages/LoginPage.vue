@@ -39,7 +39,7 @@ async function submit() {
   try {
     if (mode.value === "login") {
       await store.login(form.email, form.password);
-      message.value = "已登录并同步云端数据";
+      message.value = "已登录，实时同步已启动";
     } else {
       await store.register(form.email, form.password);
       message.value = "注册完成。如果 Supabase 开启邮件确认，请先查收验证邮件。";
@@ -61,9 +61,22 @@ async function syncNow() {
   message.value = "";
   try {
     await store.syncNow();
-    message.value = "已重新同步云端数据";
+    message.value = "快速同步已完成";
   } catch (error) {
     message.value = error.message || "同步失败";
+  } finally {
+    isBusy.value = false;
+  }
+}
+
+async function calibrateCloud() {
+  isBusy.value = true;
+  message.value = "";
+  try {
+    await store.calibrateCloud();
+    message.value = "云端校准已完成";
+  } catch (error) {
+    message.value = error.message || "云端校准失败";
   } finally {
     isBusy.value = false;
   }
@@ -122,7 +135,11 @@ async function syncNow() {
         </div>
         <button class="primary-button" type="button" :disabled="isBusy || store.isSyncing" @click="syncNow">
           <RefreshCw :size="17" :class="{ spinning: store.isSyncing }" />
-          立即同步
+          快速同步
+        </button>
+        <button class="secondary-button" type="button" :disabled="isBusy || store.isSyncing" @click="calibrateCloud">
+          <Database :size="17" />
+          云端校准
         </button>
         <button class="secondary-button" type="button" @click="logout">
           <LogOut :size="17" />
