@@ -503,6 +503,10 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function uploadImageInBackground(entry, mistakeId, token) {
     let next = null;
     try {
+      if (await shouldWaitForMistakeSync(mistakeId)) {
+        queueImageRetry(entry, "等待错题同步完成");
+        return;
+      }
       const upload = await uploadMistakeImage(entry.blob, mistakeId, token, entry.id);
       next = {
         ...entry,
@@ -520,6 +524,10 @@ export const useTrackerStore = defineStore("tracker", () => {
       notify("图片已同步到云端。", "success");
     } catch (error) {
       const uploadError = error.message || "图片上传失败";
+      if (shouldRetryImageUpload(error)) {
+        queueImageRetry(entry, uploadError);
+        return;
+      }
       if (next) {
         const failed = { ...next, pendingUpload: false, uploadError };
         await db.images.put(failed);
@@ -529,6 +537,29 @@ export const useTrackerStore = defineStore("tracker", () => {
       }
       notify(`图片已本地保存，但云端上传失败：${uploadError}`, "error", 7000);
     }
+  }
+
+  async function shouldWaitForMistakeSync(mistakeId) {
+    const mistake = mistakes.value.find((item) => item.id === mistakeId);
+    if (!mistake?.pendingSync) return false;
+    const synced = await safeCloud(() => upsertMistake(mistake));
+    if (synced) {
+      await markMistakeSynced(mistakeId);
+      return false;
+    }
+    return true;
+  }
+
+  function shouldRetryImageUpload(error) {
+    const message = `${error?.message || ""}`;
+    return error?.status === 409 || /not ready|foreign key|violates foreign key|mistake/i.test(message);
+  }
+
+  async function queueImageRetry(entry, reason) {
+    const next = { ...entry, pendingUpload: true, uploadError: "" };
+    await db.images.put(next);
+    images.value = images.value.map((image) => (image.id === entry.id ? next : image));
+    window.setTimeout(() => retryPendingImageUploads(true).catch((error) => console.error(error)), 2500);
   }
 
   async function markImagesUploadFailed(entries, uploadError) {
@@ -641,7 +672,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     return Boolean(image?.blob && (image.pendingUpload || image.uploadError || !image.url));
   }
 
-  async function retryPendingImageUploads() {
+  async function retryPendingImageUploads(silent = false) {
     if (!user.value || !supabase) return;
     const pending = images.value.filter((image) => image.blob && (image.pendingUpload || image.uploadError));
     if (!pending.length) return;
@@ -651,7 +682,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     await Promise.all(pending.map((image) => db.images.update(image.id, { pendingUpload: true, uploadError: "" })));
     const pendingIds = new Set(pending.map((image) => image.id));
     images.value = images.value.map((image) => (pendingIds.has(image.id) ? { ...image, pendingUpload: true, uploadError: "" } : image));
-    notify(`正在重试 ${pending.length} 张图片同步。`, "info");
+    if (!silent) notify(`正在重试 ${pending.length} 张图片同步。`, "info");
     pending.forEach((image) => {
       uploadImageInBackground({ ...image, pendingUpload: true, uploadError: "" }, image.ownerId, token);
     });

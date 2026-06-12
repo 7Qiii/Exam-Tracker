@@ -46,6 +46,20 @@ export default async function handler(request, response) {
     return;
   }
 
+  const { data: mistake, error: mistakeError } = await supabase
+    .from("mistakes")
+    .select("id")
+    .eq("id", mistakeId)
+    .maybeSingle();
+  if (mistakeError) {
+    response.status(500).json({ error: mistakeError.message || "Unable to verify mistake record" });
+    return;
+  }
+  if (!mistake) {
+    response.status(409).json({ error: "Mistake record is not ready yet" });
+    return;
+  }
+
   const accountId = process.env.R2_ACCOUNT_ID;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;

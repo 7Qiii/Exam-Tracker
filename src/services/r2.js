@@ -15,7 +15,10 @@ export async function uploadMistakeImage(file, mistakeId, authToken, imageId = "
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    const message = await response.text();
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
 
   const upload = await response.json();
