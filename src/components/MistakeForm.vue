@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import { BookOpenCheck, Save, Sparkles, Trash2, X } from "@lucide/vue";
 import ImageUploader from "./ImageUploader.vue";
 import { useTrackerStore } from "../stores/tracker";
-import { analyzeMistakeImage } from "../services/aiReview";
+import { analyzeMistakeImage, analyzeMistakeImageUrl } from "../services/aiReview";
 
 const props = defineProps({
   mistake: { type: Object, default: null }
@@ -34,6 +34,7 @@ const form = reactive({
 });
 
 const relatedImages = computed(() => (props.mistake ? store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === props.mistake.id) : []));
+const aiAvailable = computed(() => Boolean(files.value.length || relatedImages.value.some((image) => image.url || image.blob)));
 const sourceRecord = computed(() => {
   const id = props.mistake?.sourceRecordId || route.query.recordId || form.sourceRecordId;
   return store.records.find((record) => record.id === id) || null;
@@ -110,20 +111,21 @@ function writeHiddenHistory(value) {
 }
 
 async function analyzeWithAi() {
-  const file = files.value[0];
-  if (!file) {
+  const source = getAiImageSource();
+  if (!source) {
     aiMessage.value = "请先上传一张错题图片。";
     return;
   }
   isAnalyzing.value = true;
   aiMessage.value = "";
   try {
-    const result = await analyzeMistakeImage(file, {
+    const context = {
       subjectName: store.subjectName(form.subjectId),
       currentTitle: form.title,
       currentKnowledgePoint: form.knowledgePoint,
       currentAnalysis: form.analysis
-    });
+    };
+    const result = source.type === "url" ? await analyzeMistakeImageUrl(source.value, context) : await analyzeMistakeImage(source.value, context);
     form.title = result.title || form.title;
     form.knowledgePoint = result.knowledgePoint || form.knowledgePoint;
     form.questionText = result.questionText || form.questionText;
@@ -136,12 +138,32 @@ async function analyzeWithAi() {
   }
 }
 
+function getAiImageSource() {
+  if (files.value[0]) return { type: "file", value: files.value[0] };
+  const existing = relatedImages.value.find((image) => image.url || image.blob);
+  if (!existing) return null;
+  if (existing.url) return { type: "url", value: existing.url };
+  return { type: "file", value: existing.blob };
+}
+
 function readableAiError(error) {
   const message = String(error?.message || "");
+  const parsed = parseErrorMessage(message);
+  if (parsed) return `AI 解析失败：${parsed}`;
   if (/OPENAI_API_KEY/i.test(message)) return "AI 服务还没有配置 API Key。";
   if (/Missing auth token|Invalid auth token|401/i.test(message)) return "请先登录后使用 AI 解析。";
   if (/too large/i.test(message)) return "图片过大，请裁剪后再试。";
   return "AI 解析失败，请稍后再试。";
+}
+
+function parseErrorMessage(message) {
+  try {
+    const parsed = JSON.parse(message);
+    if (typeof parsed.error === "string") return parsed.error;
+    return parsed.error?.message || parsed.message || "";
+  } catch {
+    return "";
+  }
 }
 
 watch(
@@ -273,7 +295,7 @@ async function submit() {
     />
 
     <div class="ai-action-row">
-      <button class="secondary-button" type="button" :disabled="isAnalyzing || !files.length" @click="analyzeWithAi">
+      <button class="secondary-button" type="button" :disabled="isAnalyzing || !aiAvailable" @click="analyzeWithAi">
         <Sparkles :size="17" :class="{ spinning: isAnalyzing }" />
         {{ isAnalyzing ? "解析中..." : "AI 解析图片" }}
       </button>

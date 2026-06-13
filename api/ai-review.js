@@ -23,12 +23,13 @@ export default async function handler(request, response) {
     return;
   }
 
-  const { imageDataUrl, subjectName = "", currentTitle = "", currentKnowledgePoint = "", currentAnalysis = "" } = request.body || {};
-  if (!isValidImageDataUrl(imageDataUrl)) {
+  const { imageDataUrl, imageUrl, subjectName = "", currentTitle = "", currentKnowledgePoint = "", currentAnalysis = "" } = request.body || {};
+  const imageSource = imageDataUrl || imageUrl;
+  if (!isValidImageSource(imageSource)) {
     response.status(400).json({ error: "Invalid image data" });
     return;
   }
-  if (estimateDataUrlBytes(imageDataUrl) > maxImageBytes) {
+  if (imageDataUrl && estimateDataUrlBytes(imageDataUrl) > maxImageBytes) {
     response.status(400).json({ error: "Image is too large for AI analysis" });
     return;
   }
@@ -38,7 +39,7 @@ export default async function handler(request, response) {
       apiKey,
       model: defaultModel,
       baseUrl: defaultBaseUrl,
-      imageDataUrl,
+      imageSource,
       subjectName,
       currentTitle,
       currentKnowledgePoint,
@@ -64,7 +65,7 @@ async function verifyUser(token) {
   return null;
 }
 
-async function analyzeImage({ apiKey, model, baseUrl, imageDataUrl, subjectName, currentTitle, currentKnowledgePoint, currentAnalysis }) {
+async function analyzeImage({ apiKey, model, baseUrl, imageSource, subjectName, currentTitle, currentKnowledgePoint, currentAnalysis }) {
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -84,19 +85,18 @@ async function analyzeImage({ apiKey, model, baseUrl, imageDataUrl, subjectName,
             {
               type: "image_url",
               image_url: {
-                url: imageDataUrl
+                url: imageSource
               }
             }
           ]
         }
       ],
-      response_format: { type: "json_object" },
       temperature: 0.2
     })
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorMessage(response);
     const error = new Error(message || "AI analysis failed");
     error.status = response.status;
     throw error;
@@ -126,7 +126,7 @@ function buildPrompt({ subjectName, currentTitle, currentKnowledgePoint, current
 function normalizeAiResult(payload) {
   const outputText = payload.choices?.[0]?.message?.content || payload.output_text || findOutputText(payload);
   if (!outputText) throw new Error("AI returned an empty response");
-  const parsed = JSON.parse(stripJsonFence(outputText));
+  const parsed = parseModelJson(outputText);
   return {
     title: cleanText(parsed.title),
     knowledgePoint: cleanText(parsed.knowledgePoint),
@@ -135,12 +135,28 @@ function normalizeAiResult(payload) {
   };
 }
 
-function stripJsonFence(value) {
-  return String(value || "")
+function parseModelJson(outputText) {
+  try {
+    return JSON.parse(extractJsonObject(outputText));
+  } catch {
+    return {
+      title: "错题复盘",
+      knowledgePoint: "",
+      questionText: "",
+      analysis: cleanText(outputText)
+    };
+  }
+}
+
+function extractJsonObject(value) {
+  const text = String(value || "")
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  return start >= 0 && end > start ? text.slice(start, end + 1) : text;
 }
 
 function findOutputText(payload) {
@@ -152,8 +168,8 @@ function findOutputText(payload) {
   return "";
 }
 
-function isValidImageDataUrl(value) {
-  return /^data:image\/(png|jpe?g|webp);base64,/i.test(value || "");
+function isValidImageSource(value) {
+  return /^data:image\/(png|jpe?g|webp);base64,/i.test(value || "") || /^https?:\/\//i.test(value || "");
 }
 
 function estimateDataUrlBytes(value) {
@@ -163,4 +179,14 @@ function estimateDataUrlBytes(value) {
 
 function cleanText(value) {
   return String(value || "").trim();
+}
+
+async function readErrorMessage(response) {
+  const text = await response.text();
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.error?.message || parsed.message || text;
+  } catch {
+    return text;
+  }
 }

@@ -8,6 +8,14 @@ export async function analyzeMistakeImage(file, context = {}) {
     quality: 0.8
   });
   const imageDataUrl = await fileToDataUrl(compressed.file);
+  return requestAiReview({ imageDataUrl, ...context });
+}
+
+export async function analyzeMistakeImageUrl(imageUrl, context = {}) {
+  return requestAiReview({ imageUrl, ...context });
+}
+
+async function requestAiReview(payload) {
   const session = await getSession();
   const token = session?.access_token;
 
@@ -17,10 +25,7 @@ export async function analyzeMistakeImage(file, context = {}) {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {})
     },
-    body: JSON.stringify({
-      imageDataUrl,
-      ...context
-    })
+    body: JSON.stringify(payload)
   });
 
   if (!response.ok) {
