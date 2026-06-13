@@ -52,11 +52,18 @@ npm run build
 
 ## AI 解析配置
 
-错题表单的“AI 解析图片”通过 Vercel API `/api/ai-review` 调用 OpenAI Responses API。需要在 Vercel 环境变量中配置：
+错题表单的“AI 解析图片”通过 Vercel API `/api/ai-review` 调用 OpenAI 兼容的视觉模型接口。需要在 Vercel 环境变量中配置：
 
 - `OPENAI_API_KEY`：服务端 OpenAI API Key
-- `OPENAI_MODEL`：可选，默认 `gpt-4o-mini`
+- `OPENAI_MODEL`：可选，默认 `qwen-vl-plus`
 - `OPENAI_BASE_URL`：可选，默认 OpenAI 官方接口；使用 OpenAI 兼容服务时填写
+
+百炼 / 通义千问推荐配置：
+
+```txt
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENAI_MODEL=qwen-vl-plus
+```
 
 AI 解析只会回填表单内容，不会自动保存错题；请检查后再点击保存。
 

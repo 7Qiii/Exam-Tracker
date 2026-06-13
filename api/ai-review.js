@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-const defaultModel = process.env.OPENAI_MODEL || process.env.AI_MODEL || "gpt-4o-mini";
+const defaultModel = process.env.OPENAI_MODEL || process.env.AI_MODEL || "qwen-vl-plus";
 const defaultBaseUrl = process.env.OPENAI_BASE_URL || process.env.AI_BASE_URL || "https://api.openai.com/v1";
 const maxImageBytes = 1.2 * 1024 * 1024;
 
@@ -65,7 +65,7 @@ async function verifyUser(token) {
 }
 
 async function analyzeImage({ apiKey, model, baseUrl, imageDataUrl, subjectName, currentTitle, currentKnowledgePoint, currentAnalysis }) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/responses`, {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -73,39 +73,25 @@ async function analyzeImage({ apiKey, model, baseUrl, imageDataUrl, subjectName,
     },
     body: JSON.stringify({
       model,
-      input: [
+      messages: [
         {
           role: "user",
           content: [
             {
-              type: "input_text",
+              type: "text",
               text: buildPrompt({ subjectName, currentTitle, currentKnowledgePoint, currentAnalysis })
             },
             {
-              type: "input_image",
-              image_url: imageDataUrl
+              type: "image_url",
+              image_url: {
+                url: imageDataUrl
+              }
             }
           ]
         }
       ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "mistake_review",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              title: { type: "string" },
-              knowledgePoint: { type: "string" },
-              questionText: { type: "string" },
-              analysis: { type: "string" }
-            },
-            required: ["title", "knowledgePoint", "questionText", "analysis"]
-          }
-        }
-      }
+      response_format: { type: "json_object" },
+      temperature: 0.2
     })
   });
 
@@ -122,6 +108,8 @@ async function analyzeImage({ apiKey, model, baseUrl, imageDataUrl, subjectName,
 function buildPrompt({ subjectName, currentTitle, currentKnowledgePoint, currentAnalysis }) {
   return [
     "你是考研错题整理助手。请根据图片识别题目内容，并生成适合错题本的结构化结果。",
+    "只输出一个 JSON 对象，不要 Markdown，不要解释。",
+    "JSON 字段必须为 title、knowledgePoint、questionText、analysis。",
     "要求：",
     "1. 如果图片文字不完整，不要编造题目细节，只写可确认的信息。",
     "2. title 要简短，像错题标题，不超过 24 个中文字符。",
@@ -136,15 +124,23 @@ function buildPrompt({ subjectName, currentTitle, currentKnowledgePoint, current
 }
 
 function normalizeAiResult(payload) {
-  const outputText = payload.output_text || findOutputText(payload);
+  const outputText = payload.choices?.[0]?.message?.content || payload.output_text || findOutputText(payload);
   if (!outputText) throw new Error("AI returned an empty response");
-  const parsed = JSON.parse(outputText);
+  const parsed = JSON.parse(stripJsonFence(outputText));
   return {
     title: cleanText(parsed.title),
     knowledgePoint: cleanText(parsed.knowledgePoint),
     questionText: cleanText(parsed.questionText),
     analysis: cleanText(parsed.analysis)
   };
+}
+
+function stripJsonFence(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
 }
 
 function findOutputText(payload) {
