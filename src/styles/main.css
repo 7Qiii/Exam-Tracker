@@ -681,6 +681,19 @@ label:has(.field-suggestions) {
   font-weight: 800;
 }
 
+.ai-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ai-status {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 input,
 select,
 textarea {

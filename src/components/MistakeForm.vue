@@ -1,9 +1,10 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { BookOpenCheck, Save, Trash2, X } from "@lucide/vue";
+import { BookOpenCheck, Save, Sparkles, Trash2, X } from "@lucide/vue";
 import ImageUploader from "./ImageUploader.vue";
 import { useTrackerStore } from "../stores/tracker";
+import { analyzeMistakeImage } from "../services/aiReview";
 
 const props = defineProps({
   mistake: { type: Object, default: null }
@@ -15,6 +16,8 @@ const route = useRoute();
 const files = ref([]);
 const uploaderResetKey = ref(0);
 const isSaving = ref(false);
+const isAnalyzing = ref(false);
+const aiMessage = ref("");
 const focusedField = ref("");
 const hiddenHistory = ref(readHiddenHistory());
 
@@ -104,6 +107,41 @@ function readHiddenHistory() {
 function writeHiddenHistory(value) {
   if (typeof localStorage === "undefined") return;
   localStorage.setItem("exam-tracker-hidden-mistake-history", JSON.stringify(value));
+}
+
+async function analyzeWithAi() {
+  const file = files.value[0];
+  if (!file) {
+    aiMessage.value = "请先上传一张错题图片。";
+    return;
+  }
+  isAnalyzing.value = true;
+  aiMessage.value = "";
+  try {
+    const result = await analyzeMistakeImage(file, {
+      subjectName: store.subjectName(form.subjectId),
+      currentTitle: form.title,
+      currentKnowledgePoint: form.knowledgePoint,
+      currentAnalysis: form.analysis
+    });
+    form.title = result.title || form.title;
+    form.knowledgePoint = result.knowledgePoint || form.knowledgePoint;
+    form.questionText = result.questionText || form.questionText;
+    form.analysis = result.analysis || form.analysis;
+    aiMessage.value = "AI 解析已填入表单，请检查后保存。";
+  } catch (error) {
+    aiMessage.value = readableAiError(error);
+  } finally {
+    isAnalyzing.value = false;
+  }
+}
+
+function readableAiError(error) {
+  const message = String(error?.message || "");
+  if (/OPENAI_API_KEY/i.test(message)) return "AI 服务还没有配置 API Key。";
+  if (/Missing auth token|Invalid auth token|401/i.test(message)) return "请先登录后使用 AI 解析。";
+  if (/too large/i.test(message)) return "图片过大，请裁剪后再试。";
+  return "AI 解析失败，请稍后再试。";
 }
 
 watch(
@@ -233,6 +271,14 @@ async function submit() {
       @files="setFiles"
       @remove="store.removeImage"
     />
+
+    <div class="ai-action-row">
+      <button class="secondary-button" type="button" :disabled="isAnalyzing || !files.length" @click="analyzeWithAi">
+        <Sparkles :size="17" :class="{ spinning: isAnalyzing }" />
+        {{ isAnalyzing ? "解析中..." : "AI 解析图片" }}
+      </button>
+      <span v-if="aiMessage" class="ai-status">{{ aiMessage }}</span>
+    </div>
 
     <button class="primary-button" type="submit" :disabled="isSaving">
       <Save :size="17" />
