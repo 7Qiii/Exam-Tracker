@@ -2,17 +2,33 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+export const isSupabaseProxyEnabled = shouldUseSupabaseProxy();
+const supabaseApiUrl = isSupabaseProxyEnabled ? `${window.location.origin}/api/supabase-proxy` : supabaseUrl;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+  ? createClient(supabaseApiUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true
+      },
+      realtime: {
+        params: {
+          eventsPerSecond: 2
+        }
+      },
+      global: {
+        headers: isSupabaseProxyEnabled ? { "x-supabase-url": supabaseUrl } : {}
       }
     })
   : null;
+
+function shouldUseSupabaseProxy() {
+  if (typeof window === "undefined") return false;
+  if (import.meta.env.VITE_SUPABASE_PROXY === "false") return false;
+  return window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost";
+}
 
 export async function getSession() {
   if (!supabase) return null;

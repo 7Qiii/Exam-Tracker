@@ -18,6 +18,7 @@ import {
   deleteSubjectCloud,
   getSession,
   isSupabaseConfigured,
+  isSupabaseProxyEnabled,
   loadCloudData,
   onAuthStateChange,
   signInWithPassword,
@@ -79,6 +80,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   const autoSyncState = computed(() => {
     if (!user.value) return "未登录";
     if (!isSupabaseConfigured) return "本地模式";
+    if (isSupabaseProxyEnabled) return "兼容同步已开启";
     if (realtimeStatus.value === "connected") return "实时同步已连接";
     if (realtimeStatus.value === "connecting") return "实时同步连接中";
     if (realtimeStatus.value === "error") return "实时同步异常，快速兜底中";
@@ -704,7 +706,7 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   function startAutoSync() {
     if (!isSupabaseConfigured || typeof window === "undefined") return;
-    startRealtimeSync();
+    if (!isSupabaseProxyEnabled) startRealtimeSync();
     if (autoSyncStarted) return;
     autoSyncStarted = true;
     autoSyncTimer = window.setInterval(() => syncPendingQueues(true), FALLBACK_SYNC_INTERVAL);
