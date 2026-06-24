@@ -1,12 +1,14 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { ArrowLeft, Trash2 } from "@lucide/vue";
+import { ArrowLeft, Edit3, Trash2, X } from "@lucide/vue";
+import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
 const route = useRoute();
 const router = useRouter();
 const store = useTrackerStore();
+const isEditing = ref(false);
 
 const record = computed(() => store.records.find((item) => item.id === route.params.id));
 const relatedMistakes = computed(() => store.mistakes.filter((item) => item.sourceRecordId === route.params.id));
@@ -29,6 +31,18 @@ async function remove() {
   router.push("/records");
 }
 
+function startEdit() {
+  isEditing.value = true;
+}
+
+function closeEdit() {
+  isEditing.value = false;
+}
+
+function onSaved() {
+  closeEdit();
+}
+
 function formatDuration(minutes) {
   const value = Number(minutes);
   if (!Number.isFinite(value) || value <= 0) return "未记录";
@@ -49,7 +63,10 @@ function formatDuration(minutes) {
           <h2>{{ recordTitle }}</h2>
           <span>{{ record.date }}</span>
         </div>
-        <button class="secondary-button danger-text" type="button" @click="remove"><Trash2 :size="16" />删除</button>
+        <div class="topbar-tools">
+          <button class="secondary-button" type="button" @click="startEdit"><Edit3 :size="16" />编辑</button>
+          <button class="secondary-button danger-text" type="button" @click="remove"><Trash2 :size="16" />删除</button>
+        </div>
       </div>
       <div class="detail-metrics">
         <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
@@ -62,6 +79,16 @@ function formatDuration(minutes) {
         <h3>复盘备注</h3>
         <p>{{ record.note || "还没有填写复盘备注。" }}</p>
       </div>
+    </section>
+    <section v-if="record && isEditing" class="panel">
+      <div class="section-head">
+        <h2>编辑成绩</h2>
+        <button class="secondary-button compact" type="button" @click="closeEdit">
+          <X :size="15" />
+          关闭
+        </button>
+      </div>
+      <RecordForm :record="record" @saved="onSaved" />
     </section>
     <section class="panel">
       <div class="section-head">
