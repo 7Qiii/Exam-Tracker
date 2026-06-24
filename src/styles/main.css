@@ -195,7 +195,7 @@ p {
 
 .workspace {
   min-width: 0;
-  width: 100%;
+  width: calc(100% - 260px);
   min-height: 100vh;
   margin-left: 260px;
   padding: 18px 24px 36px;
@@ -235,6 +235,7 @@ p {
 .hero-actions,
 .tag-row,
 .pager {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -563,6 +564,19 @@ p {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.detail-head > div:first-child {
+  min-width: 0;
+}
+
+.detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 
 .section-head h2,
@@ -1224,6 +1238,7 @@ td a,
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 999px;
+  max-width: min(320px, 100%);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1231,6 +1246,13 @@ td a,
   color: var(--ink);
   padding: 0 10px 0 4px;
   font-weight: 800;
+}
+
+.account-pill > span:not(.avatar-dot) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .avatar-dot {
@@ -1555,6 +1577,7 @@ td a,
   }
 
   .workspace {
+    width: 100%;
     margin-left: 0;
     padding: 16px;
   }
@@ -1606,6 +1629,11 @@ td a,
     width: 100%;
   }
 
+  .detail-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
   .account-pill {
     max-width: 100%;
   }
@@ -1651,6 +1679,15 @@ td a,
     display: grid;
     grid-template-columns: auto auto auto;
     align-items: center;
+  }
+
+  .detail-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-actions > .secondary-button {
+    width: 100%;
   }
 
   .account-pill {

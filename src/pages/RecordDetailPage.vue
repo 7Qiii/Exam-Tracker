@@ -63,32 +63,26 @@ function formatDuration(minutes) {
           <h2>{{ recordTitle }}</h2>
           <span>{{ record.date }}</span>
         </div>
-        <div class="topbar-tools">
-          <button class="secondary-button" type="button" @click="startEdit"><Edit3 :size="16" />编辑</button>
+        <div class="detail-actions">
+          <button v-if="!isEditing" class="secondary-button" type="button" @click="startEdit"><Edit3 :size="16" />编辑</button>
+          <button v-else class="secondary-button" type="button" @click="closeEdit"><X :size="16" />关闭</button>
           <button class="secondary-button danger-text" type="button" @click="remove"><Trash2 :size="16" />删除</button>
         </div>
       </div>
-      <div class="detail-metrics">
-        <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
-        <article><span>用时</span><strong>{{ formatDuration(record.durationMinutes) }}</strong></article>
-        <article><span>类型</span><strong>{{ recordTypeText }}</strong></article>
-        <article v-if="record.recordType === 'exercise'"><span>习题册</span><strong>{{ record.exerciseBookName || "未填写" }}</strong></article>
-        <article v-if="record.recordType === 'exercise'"><span>页码 / 题号</span><strong>{{ record.exercisePage || "--" }} / {{ record.exerciseQuestion || "--" }}</strong></article>
-      </div>
-      <div class="note-block">
-        <h3>复盘备注</h3>
-        <p>{{ record.note || "还没有填写复盘备注。" }}</p>
-      </div>
-    </section>
-    <section v-if="record && isEditing" class="panel">
-      <div class="section-head">
-        <h2>编辑成绩</h2>
-        <button class="secondary-button compact" type="button" @click="closeEdit">
-          <X :size="15" />
-          关闭
-        </button>
-      </div>
-      <RecordForm :record="record" @saved="onSaved" />
+      <RecordForm v-if="isEditing" :record="record" @saved="onSaved" />
+      <template v-else>
+        <div class="detail-metrics">
+          <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
+          <article><span>用时</span><strong>{{ formatDuration(record.durationMinutes) }}</strong></article>
+          <article><span>类型</span><strong>{{ recordTypeText }}</strong></article>
+          <article v-if="record.recordType === 'exercise'"><span>习题册</span><strong>{{ record.exerciseBookName || "未填写" }}</strong></article>
+          <article v-if="record.recordType === 'exercise'"><span>页码 / 题号</span><strong>{{ record.exercisePage || "--" }} / {{ record.exerciseQuestion || "--" }}</strong></article>
+        </div>
+        <div class="note-block">
+          <h3>复盘备注</h3>
+          <p>{{ record.note || "还没有填写复盘备注。" }}</p>
+        </div>
+      </template>
     </section>
     <section class="panel">
       <div class="section-head">
