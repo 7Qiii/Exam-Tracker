@@ -147,8 +147,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       const localMistakes = mistakes.value;
       user.value = data.user;
       subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
-      records.value = mergeCloudEntries(data.records, localRecords, "createdAt");
-      mistakes.value = mergeCloudEntries(data.mistakes, localMistakes, "updatedAt");
+      records.value = mergeCloudEntries(data.records, localRecords, "updatedAt", isSameRecord);
+      mistakes.value = mergeCloudEntries(data.mistakes, localMistakes, "updatedAt", isSameMistake);
       images.value = mergeCloudImages(data.images);
       syncMode.value = "cloud";
       lastSyncedAt.value = new Date().toISOString();
@@ -227,6 +227,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function addRecord(payload) {
+    const now = new Date().toISOString();
     const normalized = normalizeRecordPayload(payload);
     const record = {
       id: crypto.randomUUID(),
@@ -235,7 +236,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       fullScore: Number(normalized.fullScore),
       durationMinutes: normalizeDuration(normalized.durationMinutes),
       pendingSync: true,
-      createdAt: new Date().toISOString()
+      createdAt: now,
+      updatedAt: now
     };
     await db.records.put(record);
     records.value.push(record);
@@ -250,7 +252,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     const next = {
       ...normalized,
       score: Number(normalized.score),
-      fullScore: Number(normalized.fullScore)
+      fullScore: Number(normalized.fullScore),
+      updatedAt: new Date().toISOString()
     };
     if ("durationMinutes" in normalized) {
       next.durationMinutes = normalizeDuration(normalized.durationMinutes);
@@ -618,7 +621,8 @@ export const useTrackerStore = defineStore("tracker", () => {
         item.durationMinutes,
         item.date,
         item.note,
-        item.createdAt
+        item.createdAt,
+        item.updatedAt
       ]),
       mistakes: data.mistakes.map((item) => [item.id, item.subjectId, item.title, item.knowledgePoint, item.analysis, item.updatedAt]),
       images: data.images.map((item) => [item.id, item.ownerId, item.name, item.size, item.storageKey, item.url, item.pendingUpload, item.uploadError])
@@ -631,7 +635,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     return [...cloudImages, ...localPending];
   }
 
-  function mergeCloudEntries(cloudEntries, localEntries, stampField) {
+  function mergeCloudEntries(cloudEntries, localEntries, stampField, isSame = null) {
     const merged = new Map(cloudEntries.map((entry) => [entry.id, { ...entry, pendingSync: false }]));
     localEntries.forEach((entry) => {
       const cloudEntry = merged.get(entry.id);
@@ -639,8 +643,10 @@ export const useTrackerStore = defineStore("tracker", () => {
         merged.set(entry.id, { ...entry, pendingSync: Boolean(user.value && supabase) });
         return;
       }
-      if (entry.pendingSync && isNewerEntry(entry, cloudEntry, stampField)) {
-        merged.set(entry.id, entry);
+      const localIsNewer = isNewerEntry(entry, cloudEntry, stampField);
+      if (entry.pendingSync || localIsNewer) {
+        const needsCloudRetry = Boolean(user.value && supabase && localIsNewer && isSame && !isSame(entry, cloudEntry));
+        merged.set(entry.id, { ...entry, pendingSync: Boolean(entry.pendingSync || needsCloudRetry) });
       }
     });
     return [...merged.values()];
@@ -876,7 +882,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function applyRealtimeRecord(record) {
     const incoming = { ...record, pendingSync: false };
     const local = records.value.find((item) => item.id === incoming.id);
-    if (local?.pendingSync && !isSameRecord(local, incoming)) return;
+    if (local && shouldKeepLocalRecord(local, incoming)) return;
     const nextRecord = local?.pendingSync ? { ...local, pendingSync: false } : incoming;
     records.value = sortRecords(upsertById(records.value, nextRecord));
     await db.records.put(nextRecord);
@@ -947,8 +953,13 @@ export const useTrackerStore = defineStore("tracker", () => {
     return [...entries].sort((a, b) => {
       const dateDiff = new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
       if (dateDiff) return dateDiff;
-      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
     });
+  }
+
+  function shouldKeepLocalRecord(local, incoming) {
+    if (local.pendingSync && !isSameRecord(local, incoming)) return true;
+    return isNewerEntry(local, incoming, "updatedAt") && !isSameRecord(local, incoming);
   }
 
   function sortMistakes(entries) {

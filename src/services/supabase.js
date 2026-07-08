@@ -103,6 +103,16 @@ export async function upsertRecord(record) {
   if (!supabase) return;
   const { error } = await supabase.from("records").upsert(toRecordRow(record));
   if (!error) return;
+  if (isMissingRecordUpdatedAtColumn(error)) {
+    const { error: withoutUpdatedAtError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAt(record));
+    if (!withoutUpdatedAtError) return;
+    if (isMissingRecordDurationColumn(withoutUpdatedAtError) || isMissingRecordSourceColumn(withoutUpdatedAtError)) {
+      const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
+      if (legacyError) throw legacyError;
+      return;
+    }
+    throw withoutUpdatedAtError;
+  }
   if (isMissingRecordDurationColumn(error) || isMissingRecordSourceColumn(error)) {
     const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
     if (legacyError) throw legacyError;
@@ -240,6 +250,10 @@ function isMissingRecordSourceColumn(error) {
   return /record_type|exercise_book_name|exercise_page|exercise_question/i.test(`${error.message || ""} ${error.details || ""}`);
 }
 
+function isMissingRecordUpdatedAtColumn(error) {
+  return /updated_at/i.test(`${error.message || ""} ${error.details || ""}`);
+}
+
 function fromRecordRow(row) {
   return {
     id: row.id,
@@ -254,11 +268,19 @@ function fromRecordRow(row) {
     durationMinutes: row.duration_minutes == null ? "" : Number(row.duration_minutes),
     date: row.date,
     note: row.note || "",
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    updatedAt: row.updated_at || row.created_at
   };
 }
 
 function toRecordRow(record) {
+  return {
+    ...toRecordRowWithoutUpdatedAt(record),
+    updated_at: record.updatedAt || record.createdAt
+  };
+}
+
+function toRecordRowWithoutUpdatedAt(record) {
   return {
     ...toLegacyRecordRow(record),
     duration_minutes: toDurationValue(record.durationMinutes),
