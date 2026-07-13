@@ -14,7 +14,9 @@ const draftFilters = reactive({ keyword: "", subjectId: "" });
 const showForm = ref(false);
 const editingRecordId = ref("");
 const selectedRecordIds = ref([]);
-const compositeForm = reactive({ paperName: "", score: "", fullScore: "", durationMinutes: "", date: "", note: "" });
+const compositeForm = reactive({ paperName: "", date: "", note: "" });
+const compositeRows = reactive({});
+const isCompositeDialogOpen = ref(false);
 const isCompositeSaving = ref(false);
 
 const filteredRecords = computed(() => {
@@ -56,11 +58,12 @@ const selectedRecords = computed(() =>
     .filter((record) => record && record.recordType !== "composite")
 );
 const selectedSubjectCount = computed(() => new Set(selectedRecords.value.map((record) => record.subjectId)).size);
-const canCreateComposite = computed(() => selectedRecords.value.length >= 2 && selectedSubjectCount.value === 1);
+const canCreateComposite = computed(() => selectedRecords.value.length >= 2 && selectedSubjectCount.value === 1 && compositeSummary.value.fullScore > 0);
+const selectedCompositeRows = computed(() => selectedRecords.value.map((record) => ({ record, draft: compositeRows[record.id] })).filter((item) => item.draft));
 const compositeSummary = computed(() => {
-  const score = selectedRecords.value.reduce((sum, record) => sum + Number(record.score || 0), 0);
-  const fullScore = selectedRecords.value.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
-  const durations = selectedRecords.value.map((record) => normalizeDuration(record.durationMinutes));
+  const score = selectedCompositeRows.value.reduce((sum, item) => sum + normalizeScoreValue(item.draft.score), 0);
+  const fullScore = selectedCompositeRows.value.reduce((sum, item) => sum + normalizeScoreValue(item.draft.fullScore), 0);
+  const durations = selectedCompositeRows.value.map((item) => normalizeDuration(item.draft.durationMinutes));
   const durationMinutes = durations.every((value) => value !== "") ? durations.reduce((sum, value) => sum + Number(value), 0) : "";
   const latestDate = selectedRecords.value.map((record) => record.date).filter(Boolean).sort().at(-1) || new Date().toISOString().slice(0, 10);
   return { score, fullScore, durationMinutes, latestDate };
@@ -80,7 +83,11 @@ watch(selectedRecordIds, () => {
     selectedRecordIds.value = validIds;
     return;
   }
+  syncCompositeRows();
   syncCompositeDefaults();
+  if (selectedRecords.value.length) {
+    isCompositeDialogOpen.value = true;
+  }
 });
 
 function applyFilters() {
@@ -133,30 +140,56 @@ function isSelected(id) {
 
 function clearSelection() {
   selectedRecordIds.value = [];
+  Object.keys(compositeRows).forEach((id) => delete compositeRows[id]);
   compositeForm.paperName = "";
-  compositeForm.score = "";
-  compositeForm.fullScore = "";
-  compositeForm.durationMinutes = "";
   compositeForm.note = "";
   compositeForm.date = "";
+  isCompositeDialogOpen.value = false;
+}
+
+function closeCompositeDialog() {
+  isCompositeDialogOpen.value = false;
+}
+
+function openCompositeDialog() {
+  if (selectedRecords.value.length) {
+    isCompositeDialogOpen.value = true;
+  }
+}
+
+function removeCompositeSource(id) {
+  selectedRecordIds.value = selectedRecordIds.value.filter((selectedId) => selectedId !== id);
+  delete compositeRows[id];
+  if (!selectedRecordIds.value.length) {
+    clearSelection();
+  }
+}
+
+function syncCompositeRows(force = false) {
+  const selectedIds = new Set(selectedRecords.value.map((record) => record.id));
+  Object.keys(compositeRows).forEach((id) => {
+    if (!selectedIds.has(id)) delete compositeRows[id];
+  });
+  selectedRecords.value.forEach((record) => {
+    if (!compositeRows[record.id] || force) {
+      compositeRows[record.id] = {
+        score: String(record.score ?? ""),
+        fullScore: String(record.fullScore ?? ""),
+        durationMinutes: normalizeDuration(record.durationMinutes) === "" ? "" : String(normalizeDuration(record.durationMinutes))
+      };
+    }
+  });
 }
 
 function syncCompositeDefaults(force = false) {
   if (!selectedRecords.value.length) return;
   compositeForm.date = compositeSummary.value.latestDate;
-  if (force || compositeForm.score === "") compositeForm.score = String(compositeSummary.value.score);
-  if (force || compositeForm.fullScore === "") compositeForm.fullScore = String(compositeSummary.value.fullScore);
-  if (force || compositeForm.durationMinutes === "") {
-    compositeForm.durationMinutes = compositeSummary.value.durationMinutes === "" ? "" : String(compositeSummary.value.durationMinutes);
-  }
   if (force || !compositeForm.paperName) compositeForm.paperName = defaultCompositeName.value;
 }
 
 function resetCompositeValues() {
   if (!selectedRecords.value.length) return;
-  compositeForm.score = String(compositeSummary.value.score);
-  compositeForm.fullScore = String(compositeSummary.value.fullScore);
-  compositeForm.durationMinutes = compositeSummary.value.durationMinutes === "" ? "" : String(compositeSummary.value.durationMinutes);
+  syncCompositeRows(true);
   compositeForm.paperName = defaultCompositeName.value;
 }
 
@@ -166,9 +199,9 @@ async function createCompositeRecord() {
   try {
     await store.addCompositeRecord(selectedRecordIds.value, {
       paperName: compositeForm.paperName || defaultCompositeName.value,
-      score: compositeForm.score,
-      fullScore: compositeForm.fullScore,
-      durationMinutes: compositeForm.durationMinutes,
+      score: compositeSummary.value.score,
+      fullScore: compositeSummary.value.fullScore,
+      durationMinutes: compositeSummary.value.durationMinutes,
       date: compositeForm.date || compositeSummary.value.latestDate,
       note: compositeForm.note
     });
@@ -216,6 +249,11 @@ function normalizeDuration(value) {
   const minutes = Number(value);
   return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
 }
+
+function normalizeScoreValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
 </script>
 
 <template>
@@ -259,73 +297,92 @@ function normalizeDuration(value) {
       <RecordForm :record="editingRecord" @saved="onFormSaved" />
     </section>
 
-    <section v-if="selectedRecords.length" class="panel composite-builder">
-      <div class="section-head">
-        <div>
-          <h2>合成成绩</h2>
-          <span class="section-meta">已选择 {{ selectedRecords.length }} 条分项记录</span>
+    <div v-if="isCompositeDialogOpen && selectedRecords.length" class="composite-dialog-backdrop" @mousedown.self="closeCompositeDialog">
+      <section class="composite-dialog" role="dialog" aria-modal="true" aria-labelledby="composite-dialog-title">
+        <div class="composite-dialog-head">
+          <div>
+            <p class="eyebrow">Composite Builder</p>
+            <h2 id="composite-dialog-title">合成成绩</h2>
+            <span class="section-meta">已选择 {{ selectedRecords.length }} 条分项记录</span>
+          </div>
+          <div class="composite-dialog-actions">
+            <button class="secondary-button compact" type="button" @click="resetCompositeValues">
+              <RefreshCw :size="15" />
+              恢复原始值
+            </button>
+            <button class="secondary-button compact" type="button" @click="closeCompositeDialog">
+              继续选择
+            </button>
+          </div>
         </div>
-        <button class="secondary-button compact" type="button" @click="clearSelection">
-          <X :size="15" />
-          清空选择
-        </button>
-      </div>
-      <div v-if="selectedSubjectCount > 1" class="inline-alert danger">请选择同一科目的记录进行合成。</div>
-      <div class="composite-summary">
-        <article>
-          <span>自动合计得分</span>
-          <strong>{{ compositeSummary.score }} / {{ compositeSummary.fullScore }}</strong>
-        </article>
-        <article>
-          <span>自动合计用时</span>
-          <strong>{{ formatDuration(compositeSummary.durationMinutes) }}</strong>
-        </article>
-      </div>
-      <form class="form-grid" @submit.prevent="createCompositeRecord">
-        <div class="composite-actions">
-          <span class="section-meta">自动值可以直接改，适合你的题数口径。</span>
-          <button class="ghost-button compact" type="button" @click="resetCompositeValues">
-            <RefreshCw :size="15" />
-            恢复自动值
-          </button>
+
+        <div v-if="selectedRecords.length < 2" class="inline-alert">再选择至少一条同科目记录后即可生成合成成绩。</div>
+        <div v-else-if="selectedSubjectCount > 1" class="inline-alert danger">请选择同一科目的记录进行合成。</div>
+
+        <div class="composite-total-bar">
+          <article>
+            <span>当前合计</span>
+            <strong>{{ compositeSummary.score }} / {{ compositeSummary.fullScore }}</strong>
+          </article>
+          <article>
+            <span>当前用时</span>
+            <strong>{{ formatDuration(compositeSummary.durationMinutes) }}</strong>
+          </article>
         </div>
-        <div class="form-row two">
+
+        <form class="composite-dialog-body" @submit.prevent="createCompositeRecord">
+          <div class="form-row two">
+            <label>
+              合成名称
+              <input v-model.trim="compositeForm.paperName" :placeholder="defaultCompositeName" />
+            </label>
+            <label>
+              日期
+              <input v-model="compositeForm.date" type="date" required />
+            </label>
+          </div>
+
+          <div class="composite-source-editor-list">
+            <article v-for="{ record, draft } in selectedCompositeRows" :key="record.id" class="composite-source-editor">
+              <div class="composite-source-title">
+                <strong>{{ record.paperName }}</strong>
+                <span>{{ store.subjectName(record.subjectId) }} · 原始 {{ record.score }}/{{ record.fullScore }} · {{ formatDuration(record.durationMinutes) }}</span>
+              </div>
+              <div class="composite-source-fields">
+                <label>
+                  计入得分
+                  <input v-model="draft.score" type="number" min="0" step="0.5" />
+                </label>
+                <label>
+                  计入满分
+                  <input v-model="draft.fullScore" type="number" min="0" step="0.5" />
+                </label>
+                <label>
+                  计入用时
+                  <input v-model="draft.durationMinutes" type="number" min="0" step="1" />
+                </label>
+              </div>
+              <button class="icon-button danger" type="button" title="移除此来源" @click="removeCompositeSource(record.id)">
+                <X :size="15" />
+              </button>
+            </article>
+          </div>
+
           <label>
-            合成名称
-            <input v-model.trim="compositeForm.paperName" :placeholder="defaultCompositeName" />
+            备注
+            <textarea v-model.trim="compositeForm.note" rows="2"></textarea>
           </label>
-          <label>
-            日期
-            <input v-model="compositeForm.date" type="date" required />
-          </label>
-        </div>
-        <div class="form-row three">
-          <label>
-            合成得分
-            <input v-model="compositeForm.score" type="number" min="0" step="0.5" required />
-          </label>
-          <label>
-            合成满分
-            <input v-model="compositeForm.fullScore" type="number" min="1" step="0.5" required />
-          </label>
-          <label>
-            合成用时（分钟）
-            <input v-model="compositeForm.durationMinutes" type="number" min="0" step="1" />
-          </label>
-        </div>
-        <label>
-          备注
-          <textarea v-model.trim="compositeForm.note" rows="2"></textarea>
-        </label>
-        <div class="composite-source-list">
-          <span v-for="record in selectedRecords" :key="record.id">{{ record.paperName }} · {{ record.score }}/{{ record.fullScore }}</span>
-        </div>
-        <button class="primary-button" type="submit" :disabled="!canCreateComposite || isCompositeSaving">
-          <Plus :size="17" />
-          {{ isCompositeSaving ? "合成中..." : "生成合成成绩" }}
-        </button>
-      </form>
-    </section>
+
+          <div class="composite-dialog-footer">
+            <button class="secondary-button" type="button" @click="clearSelection">取消合成</button>
+            <button class="primary-button" type="submit" :disabled="!canCreateComposite || isCompositeSaving">
+              <Plus :size="17" />
+              {{ isCompositeSaving ? "合成中..." : "生成合成成绩" }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
 
     <section class="content-grid records-content-grid">
       <div v-if="!hasActiveFilters && !showForm" class="panel record-create-hint">
@@ -341,7 +398,12 @@ function normalizeDuration(value) {
       <div class="panel panel-wide" :class="{ 'full-span': hasActiveFilters || showForm }">
         <div class="section-head">
           <h2>成绩列表</h2>
-          <span class="section-meta">分页展示</span>
+          <div class="topbar-tools">
+            <span class="section-meta">分页展示</span>
+            <button v-if="selectedRecords.length" class="secondary-button compact" type="button" @click="openCompositeDialog">
+              已选择 {{ selectedRecords.length }} 条
+            </button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
