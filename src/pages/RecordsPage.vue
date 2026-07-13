@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { BookOpenCheck, ChevronLeft, ChevronRight, Edit3, Plus, Search, Trash2, X } from "@lucide/vue";
+import { BookOpenCheck, ChevronLeft, ChevronRight, Edit3, Plus, RefreshCw, Search, Trash2, X } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -14,7 +14,7 @@ const draftFilters = reactive({ keyword: "", subjectId: "" });
 const showForm = ref(false);
 const editingRecordId = ref("");
 const selectedRecordIds = ref([]);
-const compositeForm = reactive({ paperName: "", date: "", note: "" });
+const compositeForm = reactive({ paperName: "", score: "", fullScore: "", durationMinutes: "", date: "", note: "" });
 const isCompositeSaving = ref(false);
 
 const filteredRecords = computed(() => {
@@ -80,7 +80,7 @@ watch(selectedRecordIds, () => {
     selectedRecordIds.value = validIds;
     return;
   }
-  compositeForm.date = compositeSummary.value.latestDate;
+  syncCompositeDefaults();
 });
 
 function applyFilters() {
@@ -134,8 +134,30 @@ function isSelected(id) {
 function clearSelection() {
   selectedRecordIds.value = [];
   compositeForm.paperName = "";
+  compositeForm.score = "";
+  compositeForm.fullScore = "";
+  compositeForm.durationMinutes = "";
   compositeForm.note = "";
   compositeForm.date = "";
+}
+
+function syncCompositeDefaults(force = false) {
+  if (!selectedRecords.value.length) return;
+  compositeForm.date = compositeSummary.value.latestDate;
+  if (force || compositeForm.score === "") compositeForm.score = String(compositeSummary.value.score);
+  if (force || compositeForm.fullScore === "") compositeForm.fullScore = String(compositeSummary.value.fullScore);
+  if (force || compositeForm.durationMinutes === "") {
+    compositeForm.durationMinutes = compositeSummary.value.durationMinutes === "" ? "" : String(compositeSummary.value.durationMinutes);
+  }
+  if (force || !compositeForm.paperName) compositeForm.paperName = defaultCompositeName.value;
+}
+
+function resetCompositeValues() {
+  if (!selectedRecords.value.length) return;
+  compositeForm.score = String(compositeSummary.value.score);
+  compositeForm.fullScore = String(compositeSummary.value.fullScore);
+  compositeForm.durationMinutes = compositeSummary.value.durationMinutes === "" ? "" : String(compositeSummary.value.durationMinutes);
+  compositeForm.paperName = defaultCompositeName.value;
 }
 
 async function createCompositeRecord() {
@@ -144,6 +166,9 @@ async function createCompositeRecord() {
   try {
     await store.addCompositeRecord(selectedRecordIds.value, {
       paperName: compositeForm.paperName || defaultCompositeName.value,
+      score: compositeForm.score,
+      fullScore: compositeForm.fullScore,
+      durationMinutes: compositeForm.durationMinutes,
       date: compositeForm.date || compositeSummary.value.latestDate,
       note: compositeForm.note
     });
@@ -248,15 +273,22 @@ function normalizeDuration(value) {
       <div v-if="selectedSubjectCount > 1" class="inline-alert danger">请选择同一科目的记录进行合成。</div>
       <div class="composite-summary">
         <article>
-          <span>合计得分</span>
+          <span>自动合计得分</span>
           <strong>{{ compositeSummary.score }} / {{ compositeSummary.fullScore }}</strong>
         </article>
         <article>
-          <span>合计用时</span>
+          <span>自动合计用时</span>
           <strong>{{ formatDuration(compositeSummary.durationMinutes) }}</strong>
         </article>
       </div>
       <form class="form-grid" @submit.prevent="createCompositeRecord">
+        <div class="composite-actions">
+          <span class="section-meta">自动值可以直接改，适合你的题数口径。</span>
+          <button class="ghost-button compact" type="button" @click="resetCompositeValues">
+            <RefreshCw :size="15" />
+            恢复自动值
+          </button>
+        </div>
         <div class="form-row two">
           <label>
             合成名称
@@ -265,6 +297,20 @@ function normalizeDuration(value) {
           <label>
             日期
             <input v-model="compositeForm.date" type="date" required />
+          </label>
+        </div>
+        <div class="form-row three">
+          <label>
+            合成得分
+            <input v-model="compositeForm.score" type="number" min="0" step="0.5" required />
+          </label>
+          <label>
+            合成满分
+            <input v-model="compositeForm.fullScore" type="number" min="1" step="0.5" required />
+          </label>
+          <label>
+            合成用时（分钟）
+            <input v-model="compositeForm.durationMinutes" type="number" min="0" step="1" />
           </label>
         </div>
         <label>

@@ -883,6 +883,14 @@ textarea:focus {
   gap: 12px;
 }
 
+.composite-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .composite-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -925,6 +933,10 @@ textarea:focus {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.form-row.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .progress {
@@ -1664,6 +1676,7 @@ td a,
   .content-grid,
   .chart-grid,
   .form-row,
+  .form-row.three,
   .filter-bar,
   .filter-bar.with-actions,
   .detail-metrics,

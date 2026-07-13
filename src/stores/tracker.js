@@ -278,10 +278,13 @@ export const useTrackerStore = defineStore("tracker", () => {
     if (sourceRecords.some((record) => record.subjectId !== subjectId)) {
       throw new Error("只能合成同一科目的成绩。");
     }
-    const score = sourceRecords.reduce((sum, record) => sum + Number(record.score || 0), 0);
-    const fullScore = sourceRecords.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
+    const rawScore = sourceRecords.reduce((sum, record) => sum + Number(record.score || 0), 0);
+    const rawFullScore = sourceRecords.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
     const durations = sourceRecords.map((record) => normalizeDuration(record.durationMinutes));
-    const durationMinutes = durations.every((value) => value !== "") ? durations.reduce((sum, value) => sum + Number(value), 0) : "";
+    const rawDurationMinutes = durations.every((value) => value !== "") ? durations.reduce((sum, value) => sum + Number(value), 0) : "";
+    const score = normalizeOptionalNumber(payload.score, rawScore);
+    const fullScore = normalizeOptionalNumber(payload.fullScore, rawFullScore);
+    const durationMinutes = normalizeOptionalDuration(payload.durationMinutes, rawDurationMinutes);
     const latestDate = sourceRecords.map((record) => record.date).filter(Boolean).sort().at(-1) || new Date().toISOString().slice(0, 10);
     const title = cleanText(payload.paperName) || buildCompositeRecordName(sourceRecords);
     const note = cleanText(payload.note) || `由 ${sourceRecords.map((record) => record.paperName).join("、")} 合成。`;
@@ -470,6 +473,17 @@ export const useTrackerStore = defineStore("tracker", () => {
     if (value === "" || value === null || value === undefined) return "";
     const minutes = Number(value);
     return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
+  }
+
+  function normalizeOptionalNumber(value, fallback) {
+    if (value === "" || value === null || value === undefined) return Number(fallback || 0);
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : Number(fallback || 0);
+  }
+
+  function normalizeOptionalDuration(value, fallback) {
+    if (value === "" || value === null || value === undefined) return fallback;
+    return normalizeDuration(value);
   }
 
   function normalizeRecordPayload(payload) {
