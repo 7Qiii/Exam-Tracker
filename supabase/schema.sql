@@ -28,6 +28,7 @@ create table if not exists public.records (
   exercise_page text not null default '',
   exercise_question text not null default '',
   duration_minutes integer,
+  composite_source_ids jsonb not null default '[]'::jsonb,
   date date not null,
   note text not null default '',
   created_at timestamptz not null default now(),
@@ -39,6 +40,7 @@ alter table public.records add column if not exists record_type text not null de
 alter table public.records add column if not exists exercise_book_name text not null default '';
 alter table public.records add column if not exists exercise_page text not null default '';
 alter table public.records add column if not exists exercise_question text not null default '';
+alter table public.records add column if not exists composite_source_ids jsonb not null default '[]'::jsonb;
 alter table public.records add column if not exists updated_at timestamptz;
 update public.records set updated_at = created_at where updated_at is null;
 alter table public.records alter column updated_at set default now();

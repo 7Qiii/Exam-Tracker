@@ -26,6 +26,7 @@ const form = reactive({
 
 const selectedSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === form.subjectId));
 const isEditing = computed(() => Boolean(props.record));
+const isComposite = computed(() => form.recordType === "composite");
 const isMathSubject = computed(() => selectedSubject.value?.id === "math1");
 const exerciseBooks = computed(() => {
   const books = store.records
@@ -65,7 +66,7 @@ watch(
     if (selectedSubject.value && !props.record) {
       form.fullScore = selectedSubject.value.fullScore;
     }
-    if (!isMathSubject.value) {
+    if (!isMathSubject.value && form.recordType === "exercise") {
       form.recordType = "paper";
       form.exerciseBookName = "";
       form.exercisePage = "";
@@ -78,7 +79,7 @@ watch(
 watch(
   () => form.recordType,
   () => {
-    if (form.recordType === "paper") {
+    if (form.recordType !== "exercise") {
       form.exerciseBookName = "";
       form.exercisePage = "";
       form.exerciseQuestion = "";
@@ -123,15 +124,15 @@ async function submit() {
         <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
       </select>
     </label>
-    <div v-if="isMathSubject" class="field-group">
+    <div v-if="isMathSubject && !isComposite" class="field-group">
       <span>记录类型</span>
       <div class="segmented">
         <button type="button" :class="{ active: form.recordType === 'paper' }" @click="form.recordType = 'paper'">试卷</button>
         <button type="button" :class="{ active: form.recordType === 'exercise' }" @click="form.recordType = 'exercise'">习题</button>
       </div>
     </div>
-    <label v-if="form.recordType === 'paper'">
-      试卷名称
+    <label v-if="form.recordType !== 'exercise'">
+      {{ isComposite ? "合成成绩名称" : "试卷名称" }}
       <input v-model.trim="form.paperName" required />
     </label>
     <template v-else>

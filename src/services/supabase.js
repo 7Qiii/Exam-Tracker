@@ -106,12 +106,37 @@ export async function upsertRecord(record) {
   if (isMissingRecordUpdatedAtColumn(error)) {
     const { error: withoutUpdatedAtError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAt(record));
     if (!withoutUpdatedAtError) return;
+    if (isMissingRecordCompositeColumn(withoutUpdatedAtError)) {
+      const { error: withoutBothError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAtAndComposite(record));
+      if (!withoutBothError) return;
+      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError)) {
+        const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
+        if (legacyError) throw legacyError;
+        return;
+      }
+      throw withoutBothError;
+    }
     if (isMissingRecordDurationColumn(withoutUpdatedAtError) || isMissingRecordSourceColumn(withoutUpdatedAtError)) {
       const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
       if (legacyError) throw legacyError;
       return;
     }
     throw withoutUpdatedAtError;
+  }
+  if (isMissingRecordCompositeColumn(error)) {
+    const { error: withoutCompositeError } = await supabase.from("records").upsert(toRecordRowWithoutComposite(record));
+    if (!withoutCompositeError) return;
+    if (isMissingRecordUpdatedAtColumn(withoutCompositeError)) {
+      const { error: withoutBothError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAtAndComposite(record));
+      if (!withoutBothError) return;
+      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError)) {
+        const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
+        if (legacyError) throw legacyError;
+        return;
+      }
+      throw withoutBothError;
+    }
+    throw withoutCompositeError;
   }
   if (isMissingRecordDurationColumn(error) || isMissingRecordSourceColumn(error)) {
     const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
@@ -254,6 +279,10 @@ function isMissingRecordUpdatedAtColumn(error) {
   return /updated_at/i.test(`${error.message || ""} ${error.details || ""}`);
 }
 
+function isMissingRecordCompositeColumn(error) {
+  return /composite_source_ids/i.test(`${error.message || ""} ${error.details || ""}`);
+}
+
 function fromRecordRow(row) {
   return {
     id: row.id,
@@ -269,7 +298,8 @@ function fromRecordRow(row) {
     date: row.date,
     note: row.note || "",
     createdAt: row.created_at,
-    updatedAt: row.updated_at || row.created_at
+    updatedAt: row.updated_at || row.created_at,
+    compositeSourceIds: Array.isArray(row.composite_source_ids) ? row.composite_source_ids : []
   };
 }
 
@@ -280,14 +310,27 @@ function toRecordRow(record) {
   };
 }
 
+function toRecordRowWithoutComposite(record) {
+  const row = toRecordRow(record);
+  delete row.composite_source_ids;
+  return row;
+}
+
+function toRecordRowWithoutUpdatedAtAndComposite(record) {
+  const row = toRecordRowWithoutUpdatedAt(record);
+  delete row.composite_source_ids;
+  return row;
+}
+
 function toRecordRowWithoutUpdatedAt(record) {
   return {
     ...toLegacyRecordRow(record),
     duration_minutes: toDurationValue(record.durationMinutes),
-    record_type: record.recordType === "exercise" ? "exercise" : "paper",
+    record_type: record.recordType === "exercise" || record.recordType === "composite" ? record.recordType : "paper",
     exercise_book_name: record.recordType === "exercise" ? record.exerciseBookName || "" : "",
     exercise_page: record.recordType === "exercise" ? record.exercisePage || "" : "",
-    exercise_question: record.recordType === "exercise" ? record.exerciseQuestion || "" : ""
+    exercise_question: record.recordType === "exercise" ? record.exerciseQuestion || "" : "",
+    composite_source_ids: Array.isArray(record.compositeSourceIds) ? record.compositeSourceIds : []
   };
 }
 

@@ -23,7 +23,10 @@ const recordTitle = computed(() => {
     .filter(Boolean)
     .join(" · ");
 });
-const recordTypeText = computed(() => (record.value?.recordType === "exercise" ? "习题" : "试卷"));
+const recordTypeText = computed(() => {
+  if (record.value?.recordType === "composite") return "合成";
+  return record.value?.recordType === "exercise" ? "习题" : "试卷";
+});
 
 async function remove() {
   if (!record.value) return;

@@ -269,6 +269,36 @@ export const useTrackerStore = defineStore("tracker", () => {
     notify("成绩已更新。", "success");
   }
 
+  async function addCompositeRecord(sourceIds, payload = {}) {
+    const sourceRecords = sourceIds.map((id) => records.value.find((record) => record.id === id)).filter(Boolean);
+    if (sourceRecords.length < 2) {
+      throw new Error("请至少选择两条成绩进行合成。");
+    }
+    const subjectId = sourceRecords[0].subjectId;
+    if (sourceRecords.some((record) => record.subjectId !== subjectId)) {
+      throw new Error("只能合成同一科目的成绩。");
+    }
+    const score = sourceRecords.reduce((sum, record) => sum + Number(record.score || 0), 0);
+    const fullScore = sourceRecords.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
+    const durations = sourceRecords.map((record) => normalizeDuration(record.durationMinutes));
+    const durationMinutes = durations.every((value) => value !== "") ? durations.reduce((sum, value) => sum + Number(value), 0) : "";
+    const latestDate = sourceRecords.map((record) => record.date).filter(Boolean).sort().at(-1) || new Date().toISOString().slice(0, 10);
+    const title = cleanText(payload.paperName) || buildCompositeRecordName(sourceRecords);
+    const note = cleanText(payload.note) || `由 ${sourceRecords.map((record) => record.paperName).join("、")} 合成。`;
+
+    return addRecord({
+      subjectId,
+      recordType: "composite",
+      paperName: title,
+      score,
+      fullScore,
+      durationMinutes,
+      date: payload.date || latestDate,
+      note,
+      compositeSourceIds: sourceRecords.map((record) => record.id)
+    });
+  }
+
   async function removeRecord(id) {
     await db.records.delete(id);
     await safeCloud(() => deleteRecordCloud(id));
@@ -443,7 +473,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function normalizeRecordPayload(payload) {
-    const recordType = payload.recordType === "exercise" ? "exercise" : "paper";
+    const recordType = payload.recordType === "exercise" || payload.recordType === "composite" ? payload.recordType : "paper";
     const exerciseBookName = cleanText(payload.exerciseBookName);
     const exercisePage = cleanText(payload.exercisePage);
     const exerciseQuestion = cleanText(payload.exerciseQuestion);
@@ -458,8 +488,25 @@ export const useTrackerStore = defineStore("tracker", () => {
       paperName,
       exerciseBookName: recordType === "exercise" ? exerciseBookName : "",
       exercisePage: recordType === "exercise" ? exercisePage : "",
-      exerciseQuestion: recordType === "exercise" ? exerciseQuestion : ""
+      exerciseQuestion: recordType === "exercise" ? exerciseQuestion : "",
+      compositeSourceIds: recordType === "composite" ? normalizeIdList(payload.compositeSourceIds) : []
     };
+  }
+
+  function buildCompositeRecordName(sourceRecords) {
+    const datePrefix = commonYearLabel(sourceRecords);
+    const suffix = sourceRecords.length ? sourceRecords.map((record) => record.paperName).join(" + ") : "合成成绩";
+    return datePrefix ? `${datePrefix} ${suffix}` : suffix;
+  }
+
+  function commonYearLabel(sourceRecords) {
+    const years = [...new Set(sourceRecords.map((record) => String(record.paperName || "").match(/\d{2,4}/)?.[0]).filter(Boolean))];
+    if (years.length === 1) return years[0].length === 2 ? `20${years[0]}` : years[0];
+    return "";
+  }
+
+  function normalizeIdList(value) {
+    return Array.isArray(value) ? [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))] : [];
   }
 
   function buildExerciseRecordName(bookName, page, question) {
@@ -622,7 +669,8 @@ export const useTrackerStore = defineStore("tracker", () => {
         item.date,
         item.note,
         item.createdAt,
-        item.updatedAt
+        item.updatedAt,
+        normalizeIdList(item.compositeSourceIds).join(",")
       ]),
       mistakes: data.mistakes.map((item) => [item.id, item.subjectId, item.title, item.knowledgePoint, item.analysis, item.updatedAt]),
       images: data.images.map((item) => [item.id, item.ownerId, item.name, item.size, item.storageKey, item.url, item.pendingUpload, item.uploadError])
@@ -644,8 +692,9 @@ export const useTrackerStore = defineStore("tracker", () => {
         return;
       }
       const localIsNewer = isNewerEntry(entry, cloudEntry, stampField);
-      if (entry.pendingSync || localIsNewer) {
-        const needsCloudRetry = Boolean(user.value && supabase && localIsNewer && isSame && !isSame(entry, cloudEntry));
+      const shouldPreserveDuration = isSame === isSameRecord && hasDuration(entry) && !hasDuration(cloudEntry);
+      if (entry.pendingSync || localIsNewer || shouldPreserveDuration) {
+        const needsCloudRetry = Boolean(user.value && supabase && (localIsNewer || shouldPreserveDuration) && isSame && !isSame(entry, cloudEntry));
         merged.set(entry.id, { ...entry, pendingSync: Boolean(entry.pendingSync || needsCloudRetry) });
       }
     });
@@ -882,7 +931,14 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function applyRealtimeRecord(record) {
     const incoming = { ...record, pendingSync: false };
     const local = records.value.find((item) => item.id === incoming.id);
-    if (local && shouldKeepLocalRecord(local, incoming)) return;
+    if (local && shouldKeepLocalRecord(local, incoming)) {
+      if (!local.pendingSync && hasDuration(local) && !hasDuration(incoming)) {
+        await db.records.update(local.id, { pendingSync: true });
+        records.value = records.value.map((item) => (item.id === local.id ? { ...item, pendingSync: true } : item));
+        scheduleAutoSync(0, true);
+      }
+      return;
+    }
     const nextRecord = local?.pendingSync ? { ...local, pendingSync: false } : incoming;
     records.value = sortRecords(upsertById(records.value, nextRecord));
     await db.records.put(nextRecord);
@@ -959,7 +1015,12 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   function shouldKeepLocalRecord(local, incoming) {
     if (local.pendingSync && !isSameRecord(local, incoming)) return true;
+    if (hasDuration(local) && !hasDuration(incoming)) return true;
     return isNewerEntry(local, incoming, "updatedAt") && !isSameRecord(local, incoming);
+  }
+
+  function hasDuration(record) {
+    return record?.durationMinutes !== "" && record?.durationMinutes !== null && record?.durationMinutes !== undefined;
   }
 
   function sortMistakes(entries) {
@@ -982,7 +1043,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       Number(a.fullScore) === Number(b.fullScore) &&
       String(a.durationMinutes ?? "") === String(b.durationMinutes ?? "") &&
       a.date === b.date &&
-      (a.note || "") === (b.note || "")
+      (a.note || "") === (b.note || "") &&
+      normalizeIdList(a.compositeSourceIds).join(",") === normalizeIdList(b.compositeSourceIds).join(",")
     );
   }
 
@@ -1061,6 +1123,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     syncNow,
     calibrateCloud,
     addRecord,
+    addCompositeRecord,
     updateRecord,
     removeRecord,
     addMistake,

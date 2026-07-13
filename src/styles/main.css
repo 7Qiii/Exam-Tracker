@@ -878,6 +878,55 @@ textarea:focus {
   color: var(--red);
 }
 
+.composite-builder {
+  display: grid;
+  gap: 12px;
+}
+
+.composite-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.composite-summary article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.composite-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composite-summary strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 22px;
+}
+
+.composite-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.composite-source-list span {
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .progress {
   height: 7px;
   border-radius: 999px;
@@ -966,6 +1015,17 @@ td a,
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.select-column {
+  width: 62px;
+  text-align: center;
+}
+
+.select-column input {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
 }
 
 .pager button:disabled {
@@ -1607,6 +1667,7 @@ td a,
   .filter-bar,
   .filter-bar.with-actions,
   .detail-metrics,
+  .composite-summary,
   .subject-editor {
     grid-template-columns: 1fr;
   }
