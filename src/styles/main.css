@@ -409,6 +409,11 @@ p {
   min-height: 34px;
 }
 
+.primary-button.compact {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
 .danger-text {
   color: var(--red);
 }
@@ -883,6 +888,97 @@ textarea:focus {
   gap: 12px;
 }
 
+.selection-count {
+  min-height: 28px;
+  border: 1px solid rgba(23, 125, 220, 0.2);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: #eff8ff;
+  color: var(--blue);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.composite-selection-bar {
+  margin-bottom: 12px;
+  border: 1px solid rgba(23, 125, 220, 0.18);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: minmax(132px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(180deg, #f5fbff 0%, #ffffff 100%);
+  padding: 10px;
+}
+
+.composite-selection-info {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.composite-selection-info strong {
+  font-size: 13px;
+}
+
+.composite-selection-info span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.composite-selection-list {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.selected-record-chip {
+  max-width: 220px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 9px 0 11px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.selected-record-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-record-chip svg {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.selected-record-chip:hover {
+  border-color: rgba(217, 45, 32, 0.28);
+  background: #fff7f6;
+}
+
+.composite-selection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .composite-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -1114,6 +1210,14 @@ tbody tr {
 
 tbody tr:hover {
   background: #f8fbff;
+}
+
+tbody tr.is-selected {
+  background: #eff8ff;
+}
+
+tbody tr.is-selected:hover {
+  background: #e6f2ff;
 }
 
 td a,
@@ -1797,6 +1901,7 @@ td a,
   .detail-metrics,
   .composite-summary,
   .composite-total-bar,
+  .composite-selection-bar,
   .composite-source-editor,
   .composite-source-fields,
   .subject-editor {
@@ -1819,6 +1924,10 @@ td a,
   .topbar-tools {
     justify-content: flex-start;
     width: 100%;
+  }
+
+  .composite-selection-actions {
+    justify-content: flex-start;
   }
 
   .composite-dialog {

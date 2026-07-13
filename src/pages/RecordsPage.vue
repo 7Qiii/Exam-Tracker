@@ -85,9 +85,7 @@ watch(selectedRecordIds, () => {
   }
   syncCompositeRows();
   syncCompositeDefaults();
-  if (selectedRecords.value.length) {
-    isCompositeDialogOpen.value = true;
-  }
+  if (!selectedRecords.value.length) isCompositeDialogOpen.value = false;
 });
 
 function applyFilters() {
@@ -153,6 +151,8 @@ function closeCompositeDialog() {
 
 function openCompositeDialog() {
   if (selectedRecords.value.length) {
+    syncCompositeRows();
+    syncCompositeDefaults();
     isCompositeDialogOpen.value = true;
   }
 }
@@ -400,8 +400,33 @@ function normalizeScoreValue(value) {
           <h2>成绩列表</h2>
           <div class="topbar-tools">
             <span class="section-meta">分页展示</span>
-            <button v-if="selectedRecords.length" class="secondary-button compact" type="button" @click="openCompositeDialog">
-              已选择 {{ selectedRecords.length }} 条
+            <span v-if="selectedRecords.length" class="selection-count">已选择 {{ selectedRecords.length }} 条</span>
+          </div>
+        </div>
+        <div v-if="selectedRecords.length" class="composite-selection-bar">
+          <div class="composite-selection-info">
+            <strong>合成来源</strong>
+            <span v-if="selectedSubjectCount === 1">{{ store.subjectName(selectedRecords[0].subjectId) }} · {{ selectedRecords.length }} 条记录</span>
+            <span v-else class="danger-text">包含多个科目，请保留同一科目的记录</span>
+          </div>
+          <div class="composite-selection-list">
+            <button
+              v-for="record in selectedRecords"
+              :key="record.id"
+              class="selected-record-chip"
+              type="button"
+              title="移除此条来源"
+              @click="removeCompositeSource(record.id)"
+            >
+              <span>{{ recordTitle(record) }}</span>
+              <X :size="14" />
+            </button>
+          </div>
+          <div class="composite-selection-actions">
+            <button class="secondary-button compact" type="button" @click="clearSelection">清空</button>
+            <button class="primary-button compact" type="button" @click="openCompositeDialog">
+              <Plus :size="15" />
+              进入合成
             </button>
           </div>
         </div>
@@ -421,7 +446,7 @@ function normalizeScoreValue(value) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="record in pagedRecords" :key="record.id">
+              <tr v-for="record in pagedRecords" :key="record.id" :class="{ 'is-selected': isSelected(record.id) }">
                 <td class="select-column">
                   <input
                     type="checkbox"
