@@ -10,9 +10,12 @@ import {
   Home,
   LogIn,
   Menu,
+  Monitor,
+  Moon,
   RefreshCw,
   Search,
   Settings,
+  Sun,
   Upload,
   X
 } from "@lucide/vue";
@@ -25,6 +28,13 @@ const isSidebarOpen = ref(false);
 const isOnline = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const globalSearch = ref("");
 const isGlobalSearchOpen = ref(false);
+const themeMode = ref("system");
+const themeStorageKey = "exam-tracker-theme-mode";
+const themeOptions = [
+  { value: "system", label: "跟随系统", icon: Monitor },
+  { value: "light", label: "浅色", icon: Sun },
+  { value: "dark", label: "深色", icon: Moon }
+];
 
 const navItems = [
   { to: "/", label: "总览", title: "总览", icon: Home },
@@ -117,6 +127,32 @@ function openGlobalResult(item = globalSearchResults.value[0]) {
   isGlobalSearchOpen.value = false;
 }
 
+function normalizeThemeMode(value) {
+  return ["system", "light", "dark"].includes(value) ? value : "system";
+}
+
+function applyThemeMode(mode) {
+  if (typeof document === "undefined") return;
+  const normalized = normalizeThemeMode(mode);
+  const root = document.documentElement;
+  if (normalized === "system") {
+    root.removeAttribute("data-theme");
+    root.style.colorScheme = "light dark";
+  } else {
+    root.dataset.theme = normalized;
+    root.style.colorScheme = normalized;
+  }
+}
+
+function setThemeMode(mode) {
+  const normalized = normalizeThemeMode(mode);
+  themeMode.value = normalized;
+  applyThemeMode(normalized);
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(themeStorageKey, normalized);
+  }
+}
+
 watch(
   () => route.fullPath,
   () => {
@@ -131,6 +167,7 @@ function updateOnlineState() {
 }
 
 onMounted(() => {
+  setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey)));
   store.load();
   window.addEventListener("online", updateOnlineState);
   window.addEventListener("offline", updateOnlineState);
@@ -234,6 +271,20 @@ onBeforeUnmount(() => {
               <div v-if="!globalSearchResults.length" class="global-search-empty">没有匹配结果</div>
             </div>
           </form>
+          <div class="theme-switcher" role="group" aria-label="外观模式">
+            <button
+              v-for="item in themeOptions"
+              :key="item.value"
+              type="button"
+              :class="{ active: themeMode === item.value }"
+              :title="item.label"
+              :aria-label="item.label"
+              :aria-pressed="themeMode === item.value"
+              @click="setThemeMode(item.value)"
+            >
+              <component :is="item.icon" :size="15" />
+            </button>
+          </div>
           <RouterLink class="account-pill" to="/login" :title="store.user ? '账号与同步' : '登录同步'">
             <span class="avatar-dot" :class="{ online: store.user }">{{ userInitial }}</span>
             <span>{{ syncLabel }}</span>

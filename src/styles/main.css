@@ -4156,3 +4156,323 @@ th {
     white-space: normal;
   }
 }
+
+.theme-switcher {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-grid;
+  grid-template-columns: repeat(3, 32px);
+  align-items: center;
+  padding: 3px;
+  background: rgba(232, 238, 246, 0.56);
+  box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.theme-switcher button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.theme-switcher button.active {
+  background: rgba(255, 255, 255, 0.48);
+  color: var(--blue);
+  box-shadow: 0 8px 18px rgba(35, 48, 66, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #dfe7f0;
+  --surface: rgba(236, 241, 247, 0.66);
+  --surface-soft: rgba(224, 232, 242, 0.62);
+  --glass: rgba(239, 244, 250, 0.58);
+  --glass-strong: rgba(246, 249, 252, 0.72);
+  --ink: #1f2329;
+  --muted: #606b78;
+  --line: rgba(73, 88, 108, 0.13);
+  --line-strong: rgba(73, 88, 108, 0.2);
+  --blue: #007aff;
+  --green: #20b875;
+  --orange: #f59d22;
+  --purple: #7a6cff;
+  --red: #df3f36;
+  --soft-shadow: 0 1px 1px rgba(35, 48, 66, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  --shadow: 0 18px 46px rgba(35, 48, 66, 0.13);
+}
+
+:root[data-theme="light"] body {
+  background:
+    linear-gradient(180deg, rgba(237, 243, 250, 0.9) 0, rgba(223, 231, 240, 0) 300px),
+    linear-gradient(135deg, rgba(197, 213, 232, 0.78), rgba(223, 231, 240, 0) 54%),
+    var(--bg);
+}
+
+:root[data-theme="light"] .brand-mark {
+  background: #1d1d1f;
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .brand strong,
+:root[data-theme="light"] .sidebar-card strong,
+:root[data-theme="light"] .topbar h1,
+:root[data-theme="light"] .hero-panel h2,
+:root[data-theme="light"] .records-hero h2,
+:root[data-theme="light"] .detail-copy h2,
+:root[data-theme="light"] .auth-hero h2,
+:root[data-theme="light"] .section-head h2,
+:root[data-theme="light"] .detail-head h2,
+:root[data-theme="light"] .metric-card strong,
+:root[data-theme="light"] .records-metric strong,
+:root[data-theme="light"] .subject-card strong,
+:root[data-theme="light"] .list-card strong,
+:root[data-theme="light"] .mistake-card strong,
+:root[data-theme="light"] .detail-metrics strong,
+:root[data-theme="light"] .note-block h3,
+:root[data-theme="light"] td,
+:root[data-theme="light"] th,
+:root[data-theme="light"] label,
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea {
+  color: var(--ink);
+}
+
+:root[data-theme="light"] .sidebar,
+:root[data-theme="light"] .bottom-nav,
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .records-metric,
+:root[data-theme="light"] .detail-metrics article,
+:root[data-theme="light"] .note-block,
+:root[data-theme="light"] .sync-stats article,
+:root[data-theme="light"] .queue-row,
+:root[data-theme="light"] .table-wrap,
+:root[data-theme="light"] .subject-card,
+:root[data-theme="light"] .list-card,
+:root[data-theme="light"] .mistake-card,
+:root[data-theme="light"] .record-card,
+:root[data-theme="light"] .subject-editor,
+:root[data-theme="light"] .detail-panel,
+:root[data-theme="light"] .login-panel,
+:root[data-theme="light"] .loading-panel,
+:root[data-theme="light"] .auth-panel,
+:root[data-theme="light"] .composite-dialog,
+:root[data-theme="light"] .composite-total-bar article,
+:root[data-theme="light"] .composite-source-editor,
+:root[data-theme="light"] .composite-selection-bar,
+:root[data-theme="light"] .inline-alert,
+:root[data-theme="light"] .offline-banner,
+:root[data-theme="light"] .dialog-hint {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03)),
+    var(--glass);
+}
+
+:root[data-theme="light"] .sidebar-card,
+:root[data-theme="light"] .account-pill,
+:root[data-theme="light"] .sync-pill,
+:root[data-theme="light"] .topbar-tools .icon-only,
+:root[data-theme="light"] .topbar-tools .icon-button,
+:root[data-theme="light"] .drawer-close,
+:root[data-theme="light"] .menu-button,
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .search-box,
+:root[data-theme="light"] .sync-state,
+:root[data-theme="light"] .segmented,
+:root[data-theme="light"] .secondary-button,
+:root[data-theme="light"] .ghost-button,
+:root[data-theme="light"] .icon-button,
+:root[data-theme="light"] .pager button,
+:root[data-theme="light"] .theme-switcher,
+:root[data-theme="light"] .records-hero-tags span,
+:root[data-theme="light"] .detail-pill,
+:root[data-theme="light"] .auth-tags span,
+:root[data-theme="light"] .tag-row i,
+:root[data-theme="light"] .record-card-meta-line span,
+:root[data-theme="light"] .record-type-pill,
+:root[data-theme="light"] .selected-record-chip,
+:root[data-theme="light"] .selection-count {
+  background: rgba(232, 238, 246, 0.56);
+  color: var(--ink);
+}
+
+:root[data-theme="light"] .nav-item,
+:root[data-theme="light"] .nav-item svg,
+:root[data-theme="light"] .section-meta,
+:root[data-theme="light"] .metric-card span,
+:root[data-theme="light"] .metric-card small,
+:root[data-theme="light"] .records-metric small,
+:root[data-theme="light"] .detail-metrics span,
+:root[data-theme="light"] .subject-card span,
+:root[data-theme="light"] .list-card span,
+:root[data-theme="light"] .mistake-card span,
+:root[data-theme="light"] .hero-panel p,
+:root[data-theme="light"] .records-hero-desc,
+:root[data-theme="light"] .auth-hero p,
+:root[data-theme="light"] .note-block p,
+:root[data-theme="light"] .empty,
+:root[data-theme="light"] .empty-cell {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #11161d;
+  --surface: rgba(25, 31, 40, 0.72);
+  --surface-soft: rgba(32, 39, 50, 0.7);
+  --glass: rgba(28, 35, 45, 0.58);
+  --glass-strong: rgba(35, 42, 54, 0.7);
+  --ink: #f4f7fb;
+  --muted: #a7b0bd;
+  --line: rgba(255, 255, 255, 0.11);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --blue: #5aa7ff;
+  --green: #3ed68f;
+  --orange: #ffb452;
+  --purple: #a49bff;
+  --red: #ff6b64;
+  --soft-shadow: 0 1px 1px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --shadow: 0 20px 54px rgba(0, 0, 0, 0.32);
+}
+
+:root[data-theme="dark"] body {
+  background:
+    linear-gradient(180deg, rgba(36, 46, 60, 0.92) 0, rgba(17, 22, 29, 0) 330px),
+    linear-gradient(135deg, rgba(24, 57, 88, 0.54), rgba(17, 22, 29, 0) 52%),
+    var(--bg);
+}
+
+:root[data-theme="dark"] .brand-mark {
+  background: rgba(244, 247, 251, 0.92);
+  color: #11161d;
+}
+
+:root[data-theme="dark"] .brand strong,
+:root[data-theme="dark"] .sidebar-card strong,
+:root[data-theme="dark"] .topbar h1,
+:root[data-theme="dark"] .hero-panel h2,
+:root[data-theme="dark"] .records-hero h2,
+:root[data-theme="dark"] .detail-copy h2,
+:root[data-theme="dark"] .auth-hero h2,
+:root[data-theme="dark"] .section-head h2,
+:root[data-theme="dark"] .detail-head h2,
+:root[data-theme="dark"] .metric-card strong,
+:root[data-theme="dark"] .records-metric strong,
+:root[data-theme="dark"] .subject-card strong,
+:root[data-theme="dark"] .list-card strong,
+:root[data-theme="dark"] .mistake-card strong,
+:root[data-theme="dark"] .detail-metrics strong,
+:root[data-theme="dark"] .note-block h3,
+:root[data-theme="dark"] td,
+:root[data-theme="dark"] th,
+:root[data-theme="dark"] label,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .bottom-nav,
+:root[data-theme="dark"] .metric-card,
+:root[data-theme="dark"] .records-metric,
+:root[data-theme="dark"] .detail-metrics article,
+:root[data-theme="dark"] .note-block,
+:root[data-theme="dark"] .sync-stats article,
+:root[data-theme="dark"] .queue-row,
+:root[data-theme="dark"] .table-wrap,
+:root[data-theme="dark"] .subject-card,
+:root[data-theme="dark"] .list-card,
+:root[data-theme="dark"] .mistake-card,
+:root[data-theme="dark"] .record-card,
+:root[data-theme="dark"] .subject-editor,
+:root[data-theme="dark"] .detail-panel,
+:root[data-theme="dark"] .login-panel,
+:root[data-theme="dark"] .loading-panel,
+:root[data-theme="dark"] .auth-panel,
+:root[data-theme="dark"] .composite-dialog,
+:root[data-theme="dark"] .composite-total-bar article,
+:root[data-theme="dark"] .composite-source-editor,
+:root[data-theme="dark"] .composite-selection-bar,
+:root[data-theme="dark"] .inline-alert,
+:root[data-theme="dark"] .offline-banner,
+:root[data-theme="dark"] .dialog-hint {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015)),
+    var(--glass);
+}
+
+:root[data-theme="dark"] .sidebar-card,
+:root[data-theme="dark"] .account-pill,
+:root[data-theme="dark"] .sync-pill,
+:root[data-theme="dark"] .topbar-tools .icon-only,
+:root[data-theme="dark"] .topbar-tools .icon-button,
+:root[data-theme="dark"] .drawer-close,
+:root[data-theme="dark"] .menu-button,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .search-box,
+:root[data-theme="dark"] .sync-state,
+:root[data-theme="dark"] .segmented,
+:root[data-theme="dark"] .secondary-button,
+:root[data-theme="dark"] .ghost-button,
+:root[data-theme="dark"] .icon-button,
+:root[data-theme="dark"] .pager button,
+:root[data-theme="dark"] .theme-switcher,
+:root[data-theme="dark"] .records-hero-tags span,
+:root[data-theme="dark"] .detail-pill,
+:root[data-theme="dark"] .auth-tags span,
+:root[data-theme="dark"] .tag-row i,
+:root[data-theme="dark"] .record-card-meta-line span,
+:root[data-theme="dark"] .record-type-pill,
+:root[data-theme="dark"] .selected-record-chip,
+:root[data-theme="dark"] .selection-count {
+  background: rgba(39, 47, 60, 0.58);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .nav-item,
+:root[data-theme="dark"] .nav-item svg,
+:root[data-theme="dark"] .section-meta,
+:root[data-theme="dark"] .metric-card span,
+:root[data-theme="dark"] .metric-card small,
+:root[data-theme="dark"] .records-metric small,
+:root[data-theme="dark"] .detail-metrics span,
+:root[data-theme="dark"] .subject-card span,
+:root[data-theme="dark"] .list-card span,
+:root[data-theme="dark"] .mistake-card span,
+:root[data-theme="dark"] .hero-panel p,
+:root[data-theme="dark"] .records-hero-desc,
+:root[data-theme="dark"] .auth-hero p,
+:root[data-theme="dark"] .note-block p,
+:root[data-theme="dark"] .empty,
+:root[data-theme="dark"] .empty-cell {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .theme-switcher button.active {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 520px) {
+  .theme-switcher {
+    grid-template-columns: repeat(3, 30px);
+  }
+
+  .theme-switcher button {
+    width: 30px;
+    height: 30px;
+  }
+}
