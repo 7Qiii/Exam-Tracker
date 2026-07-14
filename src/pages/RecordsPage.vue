@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { BookOpenCheck, ChevronLeft, ChevronRight, Edit3, Plus, RefreshCw, Search, Trash2, X } from "@lucide/vue";
+import { BarChart3, BookOpenCheck, ChevronLeft, ChevronRight, Clock3, Edit3, Plus, RefreshCw, Search, Target, TrendingUp, Trash2, X } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -71,6 +71,42 @@ const compositeSummary = computed(() => {
 const defaultCompositeName = computed(() => {
   const year = commonYearLabel(selectedRecords.value);
   return year ? `${year} 合成成绩` : "合成成绩";
+});
+const dashboardStats = computed(() => {
+  const records = filteredRecords.value;
+  const scoredRecords = records.filter((record) => normalizeScoreValue(record.fullScore) > 0);
+  const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
+  const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
+  const scoreRate = totalFullScore > 0 ? Math.round((totalScore / totalFullScore) * 100) : 0;
+  const timedDurations = records
+    .map((record) => normalizeDuration(record.durationMinutes))
+    .filter((value) => value !== "");
+  const timedCount = timedDurations.length;
+  const avgDuration = timedCount ? Math.round(timedDurations.reduce((sum, value) => sum + Number(value), 0) / timedCount) : "";
+  const syncedCount = records.filter((record) => !record.pendingSync).length;
+  const latestDate = records.map((record) => record.date).filter(Boolean).sort().at(-1) || "—";
+  return {
+    totalRecords: records.length,
+    scoreRate,
+    totalScore,
+    totalFullScore,
+    timedCount,
+    avgDuration,
+    syncedCount,
+    latestDate
+  };
+});
+const topSubject = computed(() => {
+  const counts = new Map();
+  filteredRecords.value.forEach((record) => {
+    counts.set(record.subjectId, (counts.get(record.subjectId) || 0) + 1);
+  });
+  const winner = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return winner ? { name: store.subjectName(winner[0]), count: winner[1] } : { name: "暂无", count: 0 };
+});
+const selectionProgress = computed(() => {
+  const total = selectedRecords.value.length;
+  return total >= 2 ? Math.min(100, Math.round((total / 4) * 100)) : total ? 25 : 0;
 });
 
 watch(() => [filters.keyword, filters.subjectId], () => {
@@ -254,10 +290,84 @@ function normalizeScoreValue(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : 0;
 }
+
+function scorePercent(record) {
+  const fullScore = normalizeScoreValue(record.fullScore);
+  if (!fullScore) return 0;
+  const rate = Math.round((normalizeScoreValue(record.score) / fullScore) * 100);
+  return Math.max(0, Math.min(100, rate));
+}
+
+function scoreBarStyle(record) {
+  const percent = scorePercent(record);
+  const color = percent >= 90 ? "linear-gradient(90deg, #12b76a 0%, #22c55e 100%)" : percent >= 60 ? "linear-gradient(90deg, #177ddc 0%, #38bdf8 100%)" : "linear-gradient(90deg, #f79009 0%, #f97316 100%)";
+  return { width: `${percent}%`, background: color };
+}
 </script>
 
 <template>
   <div class="page-stack">
+    <section class="panel records-hero">
+      <div class="records-hero-grid">
+        <div class="records-hero-copy">
+          <p class="eyebrow">Study workspace</p>
+          <h2>成绩工作台</h2>
+          <p class="records-hero-desc">把记录、计时、合成和同步放在同一处，页面保持克制，但信息层次更清楚。</p>
+          <div class="records-hero-tags">
+            <span>{{ hasActiveFilters ? "当前视图已筛选" : "当前视图为全量" }}</span>
+            <span>{{ selectedRecords.length ? `已选 ${selectedRecords.length} 条` : "尚未选择合成来源" }}</span>
+            <span>{{ topSubject.name }} · {{ topSubject.count }} 条</span>
+          </div>
+          <div class="records-hero-actions">
+            <button class="primary-button" type="button" @click="startCreate">
+              <Plus :size="17" />
+              新增成绩
+            </button>
+            <button class="secondary-button" type="button" @click="clearFilters">
+              <Search :size="16" />
+              重置筛选
+            </button>
+          </div>
+        </div>
+        <div class="records-hero-stats">
+          <article class="records-metric">
+            <div class="metric-head">
+              <Target :size="16" />
+              <span>得分率</span>
+            </div>
+            <strong>{{ dashboardStats.scoreRate }}%</strong>
+            <div class="records-progress"><i :style="{ width: `${dashboardStats.scoreRate}%` }"></i></div>
+            <small>{{ dashboardStats.totalScore }} / {{ dashboardStats.totalFullScore }}</small>
+          </article>
+          <article class="records-metric accent">
+            <div class="metric-head">
+              <Clock3 :size="16" />
+              <span>用时记录</span>
+            </div>
+            <strong>{{ dashboardStats.timedCount }}</strong>
+            <small>{{ dashboardStats.avgDuration ? `${formatDuration(dashboardStats.avgDuration)} 平均` : "暂无计时" }}</small>
+          </article>
+          <article class="records-metric">
+            <div class="metric-head">
+              <BarChart3 :size="16" />
+              <span>当前结果</span>
+            </div>
+            <strong>{{ dashboardStats.totalRecords }}</strong>
+            <small>{{ dashboardStats.latestDate }} · {{ dashboardStats.syncedCount }} 条已同步</small>
+          </article>
+          <article class="records-metric">
+            <div class="metric-head">
+              <TrendingUp :size="16" />
+              <span>合成状态</span>
+            </div>
+            <strong>{{ selectedRecords.length }}</strong>
+            <small>{{ selectionProgress }}% 进入合成准备</small>
+            <div class="records-progress subtle"><i :style="{ width: `${selectionProgress}%` }"></i></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="section-head">
         <h2>成绩筛选</h2>
@@ -430,7 +540,7 @@ function normalizeScoreValue(value) {
             </button>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap desktop-record-table">
           <table>
             <thead>
               <tr>
@@ -459,7 +569,13 @@ function normalizeScoreValue(value) {
                 <td><RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink></td>
                 <td>{{ store.subjectName(record.subjectId) }}</td>
                 <td>{{ recordTypeLabel(record) }}</td>
-                <td>{{ record.score }} / {{ record.fullScore }}</td>
+                <td>
+                  <div class="score-cell">
+                    <strong>{{ record.score }} / {{ record.fullScore }}</strong>
+                    <div class="progress micro"><i :style="scoreBarStyle(record)"></i></div>
+                    <span>{{ scorePercent(record) }}%</span>
+                  </div>
+                </td>
                 <td>{{ formatDuration(record.durationMinutes) }}</td>
                 <td>{{ record.date }}</td>
                 <td>{{ record.pendingSync ? "待同步" : "已同步" }}</td>
@@ -480,6 +596,57 @@ function normalizeScoreValue(value) {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div class="mobile-record-list">
+          <article
+            v-for="record in pagedRecords"
+            :key="record.id"
+            class="record-card"
+            :class="{ 'is-selected': isSelected(record.id) }"
+          >
+            <div class="record-card-top">
+              <label class="record-card-check">
+                <input
+                  type="checkbox"
+                  :checked="isSelected(record.id)"
+                  :disabled="record.recordType === 'composite'"
+                  :title="record.recordType === 'composite' ? '合成成绩不能再次作为来源' : '选择为合成来源'"
+                  @change="toggleSelect(record)"
+                />
+              </label>
+              <div class="record-card-main">
+                <div class="record-card-title-row">
+                  <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
+                  <span class="record-type-pill">{{ recordTypeLabel(record) }}</span>
+                </div>
+                <div class="record-card-meta-line">
+                  <span>{{ store.subjectName(record.subjectId) }}</span>
+                  <span>{{ record.date }}</span>
+                  <span>{{ record.pendingSync ? "待同步" : "已同步" }}</span>
+                </div>
+              </div>
+              <div class="record-card-score">
+                <strong>{{ record.score }} / {{ record.fullScore }}</strong>
+                <span>{{ scorePercent(record) }}%</span>
+              </div>
+            </div>
+            <div class="record-card-progress">
+              <div class="progress micro"><i :style="scoreBarStyle(record)"></i></div>
+              <span>{{ formatDuration(record.durationMinutes) }}</span>
+            </div>
+            <div class="record-card-actions">
+              <button class="icon-button" type="button" title="编辑成绩" @click="startEdit(record)">
+                <Edit3 :size="15" />
+              </button>
+              <button class="icon-button" type="button" title="基于本成绩新增错题" @click="createMistakeFromRecord(record)">
+                <BookOpenCheck :size="15" />
+              </button>
+              <button class="icon-button danger" type="button" title="删除成绩" @click="store.removeRecord(record.id)">
+                <Trash2 :size="15" />
+              </button>
+            </div>
+          </article>
+          <div v-if="!pagedRecords.length" class="mobile-empty-state">没有找到匹配的成绩。</div>
         </div>
         <div class="pager">
           <button type="button" :disabled="page === 1" @click="page -= 1"><ChevronLeft :size="16" />上一页</button>
