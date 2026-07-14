@@ -76,7 +76,12 @@ function recordTitle(record) {
 
 <template>
   <div class="page-stack">
-    <section class="hero-panel quick-actions-panel">
+    <section class="hero-panel dashboard-hero">
+      <div>
+        <p class="eyebrow">Today</p>
+        <h2>今天继续推进。</h2>
+        <p>用更少的界面负担，保留成绩、错题和备份的关键操作。</p>
+      </div>
       <div class="hero-actions">
         <RouterLink class="primary-button" to="/mistakes">
           <FilePlus2 :size="17" />
