@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHashHistory } from "vue-router";
 import DashboardPage from "../pages/DashboardPage.vue";
 import RecordsPage from "../pages/RecordsPage.vue";
 import RecordDetailPage from "../pages/RecordDetailPage.vue";
@@ -9,7 +9,7 @@ import SubjectsPage from "../pages/SubjectsPage.vue";
 import BackupPage from "../pages/BackupPage.vue";
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     { path: "/", name: "dashboard", component: DashboardPage },
     { path: "/login", name: "login", component: LoginPage },
