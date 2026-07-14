@@ -158,6 +158,7 @@ onBeforeUnmount(() => {
           <span class="brand-mark">ET</span>
           <span>
             <strong>Exam Tracker</strong>
+            <small>Study OS</small>
           </span>
         </RouterLink>
         <button class="drawer-close" type="button" aria-label="关闭导航" @click="closeSidebar">
@@ -169,9 +170,11 @@ onBeforeUnmount(() => {
         <span class="brand-mark">ET</span>
         <span>
           <strong>Exam Tracker</strong>
+          <small>Study OS</small>
         </span>
       </RouterLink>
 
+      <p class="sidebar-section-label">Workspace</p>
       <nav class="nav-list" aria-label="主导航">
         <RouterLink
           v-for="item in navItems"
@@ -187,7 +190,10 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="sidebar-card">
-        <div class="mini-icon"><BarChart3 :size="18" /></div>
+        <div class="sidebar-card-head">
+          <div class="mini-icon"><BarChart3 :size="18" /></div>
+          <span>最近成绩</span>
+        </div>
         <strong>{{ sidebarScore }}</strong>
         <span>{{ sidebarHint }}</span>
       </div>
