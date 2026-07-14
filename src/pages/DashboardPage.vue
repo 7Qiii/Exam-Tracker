@@ -78,9 +78,9 @@ function recordTitle(record) {
   <div class="page-stack">
     <section class="hero-panel dashboard-hero">
       <div>
-        <p class="eyebrow">Today</p>
-        <h2>今天继续推进。</h2>
-        <p>用更少的界面负担，保留成绩、错题和备份的关键操作。</p>
+        <p class="eyebrow">今日</p>
+        <h2>今天继续推进</h2>
+        <p>集中处理成绩、错题和备份，页面更轻，重点更清楚。</p>
       </div>
       <div class="hero-actions">
         <RouterLink class="primary-button" to="/mistakes">
@@ -110,7 +110,6 @@ function recordTitle(record) {
       <div class="panel">
         <div class="section-head">
           <h2>新增成绩</h2>
-          <span class="section-meta">基础功能保留</span>
         </div>
         <RecordForm />
       </div>

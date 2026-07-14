@@ -27,17 +27,17 @@ const globalSearch = ref("");
 const isGlobalSearchOpen = ref(false);
 
 const navItems = [
-  { to: "/", label: "总览", title: "Overview", icon: Home },
-  { to: "/records", label: "成绩", title: "Scores", icon: ClipboardList },
-  { to: "/mistakes", label: "错题", title: "Review Bank", icon: BookOpenCheck },
-  { to: "/login", label: "同步", title: "Sync", icon: LogIn },
-  { to: "/subjects", label: "科目", title: "Subjects", icon: Settings },
-  { to: "/backup", label: "备份", title: "Vault", icon: Database }
+  { to: "/", label: "总览", title: "总览", icon: Home },
+  { to: "/records", label: "成绩", title: "成绩", icon: ClipboardList },
+  { to: "/mistakes", label: "错题", title: "错题", icon: BookOpenCheck },
+  { to: "/login", label: "同步", title: "同步", icon: LogIn },
+  { to: "/subjects", label: "科目", title: "科目", icon: Settings },
+  { to: "/backup", label: "备份", title: "备份", icon: Database }
 ];
 
 const pageTitle = computed(() => {
   const matched = navItems.find((item) => item.to === route.path);
-  return matched?.title || "Detail";
+  return matched?.title || "详情";
 });
 
 const latestRecord = computed(() =>
@@ -207,7 +207,7 @@ onBeforeUnmount(() => {
             <Menu :size="20" />
           </button>
           <div>
-            <p class="eyebrow">Exam Intelligence Console</p>
+            <p class="eyebrow">学习档案</p>
             <h1>{{ pageTitle }}</h1>
           </div>
         </div>

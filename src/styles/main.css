@@ -3776,3 +3776,383 @@ textarea,
 .subject-editor:hover {
   background: rgba(248, 250, 253, 0.96);
 }
+
+/* Liquid glass system theme: follows OS light/dark mode and avoids glare. */
+:root {
+  color-scheme: light dark;
+  --bg: #dfe7f0;
+  --surface: rgba(236, 241, 247, 0.66);
+  --surface-soft: rgba(224, 232, 242, 0.62);
+  --glass: rgba(239, 244, 250, 0.58);
+  --glass-strong: rgba(246, 249, 252, 0.72);
+  --ink: #1f2329;
+  --muted: #606b78;
+  --line: rgba(73, 88, 108, 0.13);
+  --line-strong: rgba(73, 88, 108, 0.2);
+  --blue: #007aff;
+  --green: #20b875;
+  --orange: #f59d22;
+  --purple: #7a6cff;
+  --red: #df3f36;
+  --soft-shadow: 0 1px 1px rgba(35, 48, 66, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  --shadow: 0 18px 46px rgba(35, 48, 66, 0.13);
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(237, 243, 250, 0.9) 0, rgba(223, 231, 240, 0) 300px),
+    linear-gradient(135deg, rgba(197, 213, 232, 0.78), rgba(223, 231, 240, 0) 54%),
+    var(--bg);
+}
+
+.topbar h1 {
+  font-size: clamp(28px, 2.1vw, 36px);
+}
+
+.hero-panel h2,
+.records-hero h2,
+.detail-copy h2,
+.auth-hero h2 {
+  font-size: clamp(30px, 3.2vw, 44px);
+  line-height: 1.08;
+}
+
+.dashboard-hero h2 {
+  font-size: clamp(34px, 4vw, 52px);
+}
+
+.section-head {
+  min-width: 0;
+}
+
+.section-head h2,
+.detail-head h2 {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.section-head > select {
+  width: min(100%, 260px);
+  flex: 0 1 260px;
+}
+
+.sidebar,
+.bottom-nav,
+.metric-card,
+.records-metric,
+.detail-metrics article,
+.note-block,
+.sync-stats article,
+.queue-row,
+.table-wrap,
+.subject-card,
+.list-card,
+.mistake-card,
+.record-card,
+.subject-editor,
+.detail-panel,
+.login-panel,
+.loading-panel,
+.auth-panel,
+.composite-dialog,
+.composite-total-bar article,
+.composite-source-editor,
+.composite-selection-bar,
+.inline-alert,
+.offline-banner,
+.dialog-hint {
+  border: 1px solid var(--line);
+  background: var(--glass);
+  box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+
+.metric-card,
+.records-metric,
+.subject-card,
+.list-card,
+.mistake-card,
+.record-card,
+.subject-editor,
+.table-wrap {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03)),
+    var(--glass);
+}
+
+.detail-panel,
+.login-panel,
+.loading-panel,
+.auth-panel,
+.composite-dialog {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04)),
+    var(--glass-strong);
+  box-shadow: var(--shadow);
+}
+
+.sidebar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03)),
+    rgba(232, 238, 246, 0.58);
+}
+
+.sidebar-card,
+.account-pill,
+.sync-pill,
+.topbar-tools .icon-only,
+.topbar-tools .icon-button,
+.drawer-close,
+.menu-button,
+input,
+select,
+textarea,
+.search-box,
+.sync-state,
+.segmented,
+.secondary-button,
+.ghost-button,
+.icon-button,
+.pager button,
+.records-hero-tags span,
+.detail-pill,
+.auth-tags span,
+.tag-row i,
+.record-card-meta-line span,
+.record-type-pill,
+.selected-record-chip,
+.selection-count {
+  border: 1px solid var(--line);
+  background: rgba(232, 238, 246, 0.56);
+  box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  background: rgba(244, 248, 252, 0.78);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.14), var(--soft-shadow);
+}
+
+.subject-card:hover,
+.list-card:hover,
+.mistake-card:hover,
+.record-card:hover,
+.record-card.is-selected,
+.subject-editor:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.08)),
+    rgba(238, 244, 250, 0.72);
+  box-shadow: 0 16px 36px rgba(35, 48, 66, 0.12);
+}
+
+th {
+  background: rgba(214, 224, 237, 0.5);
+}
+
+td,
+th {
+  border-bottom-color: rgba(73, 88, 108, 0.1);
+}
+
+.records-progress,
+.progress,
+.progress.micro {
+  background: rgba(75, 89, 110, 0.12);
+}
+
+.composite-dialog-backdrop,
+.sidebar-backdrop {
+  background: rgba(209, 219, 232, 0.44);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+
+.bottom-nav {
+  background: rgba(232, 238, 246, 0.68);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161d;
+    --surface: rgba(25, 31, 40, 0.72);
+    --surface-soft: rgba(32, 39, 50, 0.7);
+    --glass: rgba(28, 35, 45, 0.58);
+    --glass-strong: rgba(35, 42, 54, 0.7);
+    --ink: #f4f7fb;
+    --muted: #a7b0bd;
+    --line: rgba(255, 255, 255, 0.11);
+    --line-strong: rgba(255, 255, 255, 0.18);
+    --blue: #5aa7ff;
+    --green: #3ed68f;
+    --orange: #ffb452;
+    --purple: #a49bff;
+    --red: #ff6b64;
+    --soft-shadow: 0 1px 1px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --shadow: 0 20px 54px rgba(0, 0, 0, 0.32);
+  }
+
+  body {
+    background:
+      linear-gradient(180deg, rgba(36, 46, 60, 0.92) 0, rgba(17, 22, 29, 0) 330px),
+      linear-gradient(135deg, rgba(24, 57, 88, 0.54), rgba(17, 22, 29, 0) 52%),
+      var(--bg);
+  }
+
+  .brand-mark {
+    background: rgba(244, 247, 251, 0.92);
+    color: #11161d;
+  }
+
+  .brand strong,
+  .sidebar-card strong,
+  .topbar h1,
+  .hero-panel h2,
+  .records-hero h2,
+  .detail-copy h2,
+  .auth-hero h2,
+  .section-head h2,
+  .detail-head h2,
+  .metric-card strong,
+  .records-metric strong,
+  .subject-card strong,
+  .list-card strong,
+  .mistake-card strong,
+  .detail-metrics strong,
+  .note-block h3,
+  td,
+  th,
+  label,
+  input,
+  select,
+  textarea {
+    color: var(--ink);
+  }
+
+  .sidebar,
+  .bottom-nav,
+  .metric-card,
+  .records-metric,
+  .detail-metrics article,
+  .note-block,
+  .sync-stats article,
+  .queue-row,
+  .table-wrap,
+  .subject-card,
+  .list-card,
+  .mistake-card,
+  .record-card,
+  .subject-editor,
+  .detail-panel,
+  .login-panel,
+  .loading-panel,
+  .auth-panel,
+  .composite-dialog,
+  .composite-total-bar article,
+  .composite-source-editor,
+  .composite-selection-bar,
+  .inline-alert,
+  .offline-banner,
+  .dialog-hint {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015)),
+      var(--glass);
+  }
+
+  .sidebar-card,
+  .account-pill,
+  .sync-pill,
+  .topbar-tools .icon-only,
+  .topbar-tools .icon-button,
+  .drawer-close,
+  .menu-button,
+  input,
+  select,
+  textarea,
+  .search-box,
+  .sync-state,
+  .segmented,
+  .secondary-button,
+  .ghost-button,
+  .icon-button,
+  .pager button,
+  .records-hero-tags span,
+  .detail-pill,
+  .auth-tags span,
+  .tag-row i,
+  .record-card-meta-line span,
+  .record-type-pill,
+  .selected-record-chip,
+  .selection-count {
+    background: rgba(39, 47, 60, 0.58);
+    color: var(--ink);
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    background: rgba(49, 59, 74, 0.72);
+  }
+
+  .nav-item,
+  .nav-item svg,
+  .section-meta,
+  .metric-card span,
+  .metric-card small,
+  .records-metric small,
+  .detail-metrics span,
+  .subject-card span,
+  .list-card span,
+  .mistake-card span,
+  .hero-panel p,
+  .records-hero-desc,
+  .auth-hero p,
+  .note-block p,
+  .empty,
+  .empty-cell {
+    color: var(--muted);
+  }
+
+  .subject-card:hover,
+  .list-card:hover,
+  .mistake-card:hover,
+  .record-card:hover,
+  .record-card.is-selected,
+  .subject-editor:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+      rgba(43, 52, 66, 0.72);
+  }
+
+  .composite-dialog-backdrop,
+  .sidebar-backdrop {
+    background: rgba(9, 12, 17, 0.48);
+  }
+
+  th {
+    background: rgba(48, 58, 72, 0.58);
+  }
+
+  td,
+  th {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+}
+
+@media (max-width: 820px) {
+  .hero-panel h2,
+  .records-hero h2,
+  .detail-copy h2,
+  .auth-hero h2 {
+    font-size: 31px;
+  }
+
+  .dashboard-hero h2 {
+    font-size: 34px;
+  }
+
+  .section-head h2,
+  .detail-head h2 {
+    white-space: normal;
+  }
+}

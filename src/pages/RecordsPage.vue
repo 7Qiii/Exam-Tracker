@@ -310,9 +310,9 @@ function scoreBarStyle(record) {
     <section class="panel records-hero">
       <div class="records-hero-grid">
         <div class="records-hero-copy">
-          <p class="eyebrow">Study workspace</p>
+          <p class="eyebrow">成绩</p>
           <h2>成绩工作台</h2>
-          <p class="records-hero-desc">把记录、计时、合成和同步放在同一处，页面保持克制，但信息层次更清楚。</p>
+          <p class="records-hero-desc">记录、计时、合成和同步放在同一处，保留关键操作，减少界面干扰。</p>
           <div class="records-hero-tags">
             <span>{{ hasActiveFilters ? "当前视图已筛选" : "当前视图为全量" }}</span>
             <span>{{ selectedRecords.length ? `已选 ${selectedRecords.length} 条` : "尚未选择合成来源" }}</span>
@@ -411,7 +411,7 @@ function scoreBarStyle(record) {
       <section class="composite-dialog" role="dialog" aria-modal="true" aria-labelledby="composite-dialog-title">
         <div class="composite-dialog-head">
           <div>
-            <p class="eyebrow">Composite Builder</p>
+            <p class="eyebrow">合成工具</p>
             <h2 id="composite-dialog-title">合成成绩</h2>
             <span class="section-meta">已选择 {{ selectedRecords.length }} 条分项记录</span>
           </div>
@@ -498,7 +498,6 @@ function scoreBarStyle(record) {
       <div v-if="!hasActiveFilters && !showForm" class="panel record-create-hint">
         <div class="section-head">
           <h2>快速录入</h2>
-          <span class="section-meta">独立模块</span>
         </div>
         <button class="primary-button" type="button" @click="startCreate">
           <Plus :size="17" />
@@ -509,7 +508,6 @@ function scoreBarStyle(record) {
         <div class="section-head">
           <h2>成绩列表</h2>
           <div class="topbar-tools">
-            <span class="section-meta">分页展示</span>
             <span v-if="selectedRecords.length" class="selection-count">已选择 {{ selectedRecords.length }} 条</span>
           </div>
         </div>
