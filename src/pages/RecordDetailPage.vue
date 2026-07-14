@@ -61,10 +61,14 @@ function formatDuration(minutes) {
     <RouterLink class="text-link" to="/records"><ArrowLeft :size="16" />返回成绩列表</RouterLink>
     <section v-if="record" class="detail-panel">
       <div class="detail-head">
-        <div>
+        <div class="detail-copy">
           <p class="eyebrow">{{ store.subjectName(record.subjectId) }}</p>
           <h2>{{ recordTitle }}</h2>
-          <span>{{ record.date }}</span>
+          <div class="detail-meta-row">
+            <span class="detail-pill">{{ record.date }}</span>
+            <span class="detail-pill">{{ recordTypeText }}</span>
+            <span class="detail-pill">{{ record.pendingSync ? "待同步" : "已同步" }}</span>
+          </div>
         </div>
         <div class="detail-actions">
           <button v-if="!isEditing" class="secondary-button" type="button" @click="startEdit"><Edit3 :size="16" />编辑</button>

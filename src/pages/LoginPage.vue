@@ -17,7 +17,7 @@ onMounted(() => {
   const url = new URL(window.location.href);
   if (url.searchParams.get("confirmed") === "1") {
     message.value = "邮箱已确认，现在可以登录并开启同步。";
-    window.history.replaceState({}, "", "/login");
+    window.history.replaceState({}, "", "#/login");
   }
 });
 
@@ -85,72 +85,80 @@ async function calibrateCloud() {
 
 <template>
   <div class="login-layout">
-    <section class="login-panel">
-      <div class="brand-row">
-        <span class="brand-mark">ET</span>
-        <strong>Exam Tracker Console</strong>
-      </div>
-      <h2>账号同步</h2>
-      <p>Supabase 负责账号和成绩/错题数据，Cloudflare R2 负责错题图片。登录后手机、平板、电脑会读取同一份云端数据。</p>
-
-      <div class="sync-state" :class="{ online: store.user }">
-        <Database :size="18" />
-        <span>{{ statusText }}</span>
-      </div>
-
-      <div class="sync-state">
-        <Cloud :size="18" />
-        <span>{{ store.deviceName }} · {{ store.autoSyncState }} · {{ imageSyncText }}</span>
-      </div>
-
-      <form v-if="!store.user" class="form-grid" @submit.prevent="submit">
-        <label>
-          邮箱
-          <div class="input-with-icon">
-            <Mail :size="17" />
-            <input v-model.trim="form.email" type="email" required placeholder="you@example.com" />
-          </div>
-        </label>
-        <label>
-          密码
-          <div class="input-with-icon">
-            <KeyRound :size="17" />
-            <input v-model="form.password" type="password" minlength="6" required placeholder="至少 6 位" />
-          </div>
-        </label>
-        <div class="segmented">
-          <button type="button" :class="{ active: mode === 'login' }" @click="mode = 'login'">登录</button>
-          <button type="button" :class="{ active: mode === 'register' }" @click="mode = 'register'">注册</button>
+    <section class="login-panel auth-panel">
+      <div class="auth-hero">
+        <div class="brand-row">
+          <span class="brand-mark">ET</span>
+          <strong>Exam Tracker Console</strong>
         </div>
-        <button class="primary-button" type="submit" :disabled="isBusy || !isSupabaseConfigured">
-          <component :is="mode === 'login' ? Cloud : UserPlus" :size="17" />
-          {{ mode === "login" ? "登录并同步" : "创建账号" }}
-        </button>
-      </form>
-
-      <div v-else class="action-stack">
-        <div class="sync-state online">
-          <RefreshCw :size="17" />
-          <span>最后同步：{{ lastSyncText }}</span>
+        <h2>账号同步</h2>
+        <p>Supabase 负责账号和成绩/错题数据，Cloudflare R2 负责错题图片。登录后手机、平板、电脑会读取同一份云端数据。</p>
+        <div class="auth-tags">
+          <span>Cloud Sync</span>
+          <span>R2 Images</span>
+          <span>Cross Device</span>
         </div>
-        <button class="primary-button" type="button" :disabled="isBusy || store.isSyncing" @click="syncNow">
-          <RefreshCw :size="17" :class="{ spinning: store.isSyncing }" />
-          快速同步
-        </button>
-        <button class="secondary-button" type="button" :disabled="isBusy || store.isSyncing" @click="calibrateCloud">
+      </div>
+      <div class="auth-stack">
+        <div class="sync-state" :class="{ online: store.user }">
+          <Database :size="18" />
+          <span>{{ statusText }}</span>
+        </div>
+
+        <div class="sync-state">
+          <Cloud :size="18" />
+          <span>{{ store.deviceName }} · {{ store.autoSyncState }} · {{ imageSyncText }}</span>
+        </div>
+
+        <form v-if="!store.user" class="form-grid" @submit.prevent="submit">
+          <label>
+            邮箱
+            <div class="input-with-icon">
+              <Mail :size="17" />
+              <input v-model.trim="form.email" type="email" required placeholder="you@example.com" />
+            </div>
+          </label>
+          <label>
+            密码
+            <div class="input-with-icon">
+              <KeyRound :size="17" />
+              <input v-model="form.password" type="password" minlength="6" required placeholder="至少 6 位" />
+            </div>
+          </label>
+          <div class="segmented">
+            <button type="button" :class="{ active: mode === 'login' }" @click="mode = 'login'">登录</button>
+            <button type="button" :class="{ active: mode === 'register' }" @click="mode = 'register'">注册</button>
+          </div>
+          <button class="primary-button" type="submit" :disabled="isBusy || !isSupabaseConfigured">
+            <component :is="mode === 'login' ? Cloud : UserPlus" :size="17" />
+            {{ mode === "login" ? "登录并同步" : "创建账号" }}
+          </button>
+        </form>
+
+        <div v-else class="action-stack">
+          <div class="sync-state online">
+            <RefreshCw :size="17" />
+            <span>最后同步：{{ lastSyncText }}</span>
+          </div>
+          <button class="primary-button" type="button" :disabled="isBusy || store.isSyncing" @click="syncNow">
+            <RefreshCw :size="17" :class="{ spinning: store.isSyncing }" />
+            快速同步
+          </button>
+          <button class="secondary-button" type="button" :disabled="isBusy || store.isSyncing" @click="calibrateCloud">
+            <Database :size="17" />
+            云端校准
+          </button>
+          <button class="secondary-button" type="button" @click="logout">
+            <LogOut :size="17" />
+            退出登录
+          </button>
+        </div>
+
+        <p v-if="message" class="dialog-hint">{{ message }}</p>
+        <div class="login-note">
           <Database :size="17" />
-          云端校准
-        </button>
-        <button class="secondary-button" type="button" @click="logout">
-          <LogOut :size="17" />
-          退出登录
-        </button>
-      </div>
-
-      <p v-if="message" class="dialog-hint">{{ message }}</p>
-      <div class="login-note">
-        <Database :size="17" />
-        <span>需要在 Vercel 配置 Supabase 和 R2 环境变量；未配置时应用会继续使用本地 IndexedDB。</span>
+          <span>需要在 Vercel 配置 Supabase 和 R2 环境变量；未配置时应用会继续使用本地 IndexedDB。</span>
+        </div>
       </div>
     </section>
   </div>

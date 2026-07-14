@@ -15,10 +15,13 @@ const mistake = computed(() => store.mistakes.find((item) => item.id === route.p
     <RouterLink class="text-link" to="/mistakes"><ArrowLeft :size="16" />返回错题库</RouterLink>
     <section v-if="mistake" class="detail-panel">
       <div class="detail-head">
-        <div>
+        <div class="detail-copy">
           <p class="eyebrow">{{ store.subjectName(mistake.subjectId) }}</p>
           <h2>{{ mistake.title }}</h2>
-          <span>{{ mistake.knowledgePoint || "未填写知识点" }}</span>
+          <div class="detail-meta-row">
+            <span class="detail-pill">{{ mistake.knowledgePoint || "未填写知识点" }}</span>
+            <span class="detail-pill">{{ mistake.status }}</span>
+          </div>
         </div>
       </div>
       <MistakeForm :mistake="mistake" />
