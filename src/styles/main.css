@@ -4476,3 +4476,24 @@ th {
     height: 30px;
   }
 }
+
+.chart-box {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.025)),
+    var(--glass);
+  box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+
+:root[data-theme="dark"] .chart-box {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015)),
+    var(--glass);
+}
+
+:root[data-theme="light"] .chart-box {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03)),
+    var(--glass);
+}
