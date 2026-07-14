@@ -3542,3 +3542,237 @@ tbody tr:hover {
     bottom: 12px;
   }
 }
+
+/* Comfort tone pass: keep the Apple-like calm, but reduce the white glare. */
+:root {
+  --bg: #edf1f6;
+  --surface: #f7f8fb;
+  --surface-soft: #eceff4;
+  --ink: #1d1d1f;
+  --muted: #69707a;
+  --line: rgba(35, 45, 62, 0.08);
+  --soft-shadow: 0 1px 2px rgba(32, 42, 58, 0.04);
+  --shadow: 0 16px 40px rgba(32, 42, 58, 0.1);
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(243, 246, 251, 0.92) 0, rgba(237, 241, 246, 0) 320px),
+    linear-gradient(135deg, rgba(218, 227, 240, 0.72), rgba(237, 241, 246, 0) 46%),
+    var(--bg);
+}
+
+.sidebar {
+  background: rgba(239, 243, 248, 0.86);
+  box-shadow: 10px 0 28px rgba(32, 42, 58, 0.055);
+}
+
+.sidebar::before {
+  background:
+    linear-gradient(180deg, rgba(248, 250, 253, 0.72), transparent 46%),
+    linear-gradient(135deg, rgba(0, 113, 227, 0.055), rgba(120, 144, 180, 0.05) 44%, transparent);
+}
+
+.sidebar-card,
+.account-pill,
+.sync-pill,
+.topbar-tools .icon-only,
+.topbar-tools .icon-button,
+.drawer-close,
+.menu-button,
+.bottom-nav {
+  background: rgba(247, 249, 252, 0.72);
+}
+
+.nav-item:hover {
+  background: rgba(32, 42, 58, 0.055);
+}
+
+.nav-item.router-link-active,
+.bottom-nav-item.router-link-active {
+  background: rgba(0, 113, 227, 0.12);
+}
+
+.metric-card,
+.records-metric,
+.detail-metrics article,
+.note-block,
+.sync-stats article,
+.queue-row,
+.table-wrap,
+.subject-card,
+.list-card,
+.mistake-card,
+.record-card,
+.subject-editor,
+.inline-alert,
+.offline-banner,
+.dialog-hint {
+  background: rgba(247, 249, 252, 0.84);
+  box-shadow: 0 1px 2px rgba(32, 42, 58, 0.04);
+}
+
+.detail-panel,
+.login-panel,
+.loading-panel,
+.auth-panel {
+  background: rgba(247, 249, 252, 0.88);
+  box-shadow: 0 18px 48px rgba(32, 42, 58, 0.09);
+}
+
+input,
+select,
+textarea,
+.search-box,
+.sync-state,
+.segmented,
+.secondary-button,
+.ghost-button,
+.icon-button,
+.pager button {
+  background: rgba(244, 246, 250, 0.9);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  background: #fbfcfe;
+}
+
+.records-hero-tags span,
+.detail-pill,
+.auth-tags span,
+.tag-row i,
+.record-card-meta-line span,
+.record-type-pill,
+.selected-record-chip,
+.selection-count {
+  background: rgba(244, 246, 250, 0.78);
+}
+
+.composite-dialog-backdrop {
+  background: rgba(226, 232, 241, 0.62);
+}
+
+.composite-dialog {
+  background: rgba(244, 247, 251, 0.96);
+}
+
+.composite-total-bar article,
+.composite-source-editor,
+.composite-selection-bar {
+  background: rgba(250, 251, 253, 0.9);
+}
+
+th {
+  background: rgba(232, 237, 244, 0.92);
+}
+
+tbody tr:hover {
+  background: rgba(0, 113, 227, 0.045);
+}
+
+.records-progress,
+.progress,
+.progress.micro {
+  background: rgba(32, 42, 58, 0.08);
+}
+
+@media (max-width: 520px) {
+  body {
+    background:
+      linear-gradient(180deg, rgba(243, 246, 251, 0.96) 0, rgba(237, 241, 246, 0) 240px),
+      var(--bg);
+  }
+}
+
+/* Slightly dimmer surface mix after visual check on mobile. */
+:root {
+  --bg: #e8edf4;
+  --surface: #f1f4f8;
+  --surface-soft: #e4eaf2;
+  --muted: #626b76;
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(237, 242, 248, 0.96) 0, rgba(232, 237, 244, 0) 280px),
+    linear-gradient(135deg, rgba(207, 219, 234, 0.76), rgba(232, 237, 244, 0) 48%),
+    var(--bg);
+}
+
+.metric-card,
+.records-metric,
+.detail-metrics article,
+.note-block,
+.sync-stats article,
+.queue-row,
+.table-wrap,
+.subject-card,
+.list-card,
+.mistake-card,
+.record-card,
+.subject-editor,
+.inline-alert,
+.offline-banner,
+.dialog-hint {
+  background: rgba(241, 244, 248, 0.92);
+}
+
+input,
+select,
+textarea,
+.search-box,
+.sync-state,
+.segmented,
+.secondary-button,
+.ghost-button,
+.icon-button,
+.pager button,
+.sidebar-card,
+.account-pill,
+.sync-pill,
+.topbar-tools .icon-only,
+.topbar-tools .icon-button,
+.drawer-close,
+.menu-button {
+  background: rgba(232, 237, 244, 0.86);
+}
+
+.records-hero-tags span,
+.detail-pill,
+.auth-tags span,
+.tag-row i,
+.record-card-meta-line span,
+.record-type-pill,
+.selected-record-chip,
+.selection-count {
+  background: rgba(226, 232, 241, 0.82);
+}
+
+.detail-panel,
+.login-panel,
+.loading-panel,
+.auth-panel,
+.composite-dialog {
+  background: rgba(241, 244, 248, 0.94);
+}
+
+.composite-total-bar article,
+.composite-source-editor,
+.composite-selection-bar {
+  background: rgba(246, 248, 251, 0.9);
+}
+
+.bottom-nav {
+  background: rgba(241, 244, 248, 0.86);
+}
+
+.subject-card:hover,
+.list-card:hover,
+.mistake-card:hover,
+.record-card:hover,
+.record-card.is-selected,
+.subject-editor:hover {
+  background: rgba(248, 250, 253, 0.96);
+}
