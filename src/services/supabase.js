@@ -284,6 +284,7 @@ function isMissingRecordCompositeColumn(error) {
 }
 
 function fromRecordRow(row) {
+  const note = row.note || "";
   return {
     id: row.id,
     subjectId: row.subject_id,
@@ -296,11 +297,28 @@ function fromRecordRow(row) {
     fullScore: row.full_score,
     durationMinutes: row.duration_minutes == null ? "" : Number(row.duration_minutes),
     date: row.date,
-    note: row.note || "",
+    note,
     createdAt: row.created_at,
     updatedAt: row.updated_at || row.created_at,
-    compositeSourceIds: Array.isArray(row.composite_source_ids) ? row.composite_source_ids : []
+    compositeSourceIds: Array.isArray(row.composite_source_ids) ? row.composite_source_ids : [],
+    compositeSources: parseCompositeSourcesFromNote(note)
   };
+}
+
+function parseCompositeSourcesFromNote(note) {
+  const prefix = "\n\n<!-- exam-tracker-composite:";
+  const suffix = " -->";
+  const text = String(note || "");
+  const start = text.indexOf(prefix);
+  if (start < 0) return [];
+  const end = text.indexOf(suffix, start);
+  if (end < 0) return [];
+  try {
+    const parsed = JSON.parse(decodeURIComponent(text.slice(start + prefix.length, end)));
+    return Array.isArray(parsed.sources) ? parsed.sources : [];
+  } catch {
+    return [];
+  }
 }
 
 function toRecordRow(record) {

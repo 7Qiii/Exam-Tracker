@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { BarChart3, BookOpenCheck, ChevronLeft, ChevronRight, Clock3, Edit3, Plus, RefreshCw, Search, Target, TrendingUp, Trash2, X } from "@lucide/vue";
+import { BarChart3, BookOpenCheck, Calculator, ChevronLeft, ChevronRight, Clock3, Edit3, Plus, RefreshCw, Search, Target, TrendingUp, Trash2, X } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -60,6 +60,30 @@ const selectedRecords = computed(() =>
 const selectedSubjectCount = computed(() => new Set(selectedRecords.value.map((record) => record.subjectId)).size);
 const canCreateComposite = computed(() => selectedRecords.value.length >= 2 && selectedSubjectCount.value === 1 && compositeSummary.value.fullScore > 0);
 const selectedCompositeRows = computed(() => selectedRecords.value.map((record) => ({ record, draft: compositeRows[record.id] })).filter((item) => item.draft));
+const selectedAverageStats = computed(() => {
+  const records = selectedRecords.value;
+  const scoredRecords = records.filter((record) => normalizeScoreValue(record.fullScore) > 0);
+  const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
+  const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
+  const durations = records
+    .map((record) => normalizeDuration(record.durationMinutes))
+    .filter((value) => value !== "");
+  const avgScore = scoredRecords.length ? totalScore / scoredRecords.length : 0;
+  const avgFullScore = scoredRecords.length ? totalFullScore / scoredRecords.length : 0;
+  const avgRate = totalFullScore > 0 ? Math.round((totalScore / totalFullScore) * 100) : 0;
+  const avgDuration = durations.length ? Math.round(durations.reduce((sum, value) => sum + Number(value), 0) / durations.length) : "";
+  const subjectName = selectedSubjectCount.value === 1 && records.length ? store.subjectName(records[0].subjectId) : "多科目";
+  return {
+    avgScore,
+    avgFullScore,
+    avgRate,
+    avgDuration,
+    count: records.length,
+    scoredCount: scoredRecords.length,
+    subjectName,
+    isReady: records.length > 0 && selectedSubjectCount.value === 1 && scoredRecords.length > 0
+  };
+});
 const compositeSummary = computed(() => {
   const score = selectedCompositeRows.value.reduce((sum, item) => sum + normalizeScoreValue(item.draft.score), 0);
   const fullScore = selectedCompositeRows.value.reduce((sum, item) => sum + normalizeScoreValue(item.draft.fullScore), 0);
@@ -239,7 +263,13 @@ async function createCompositeRecord() {
       fullScore: compositeSummary.value.fullScore,
       durationMinutes: compositeSummary.value.durationMinutes,
       date: compositeForm.date || compositeSummary.value.latestDate,
-      note: compositeForm.note
+      note: compositeForm.note,
+      sources: selectedCompositeRows.value.map(({ record, draft }) => ({
+        id: record.id,
+        score: draft.score,
+        fullScore: draft.fullScore,
+        durationMinutes: draft.durationMinutes
+      }))
     });
     clearSelection();
   } catch (error) {
@@ -291,6 +321,12 @@ function normalizeScoreValue(value) {
   return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 
+function formatScoreValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
+}
+
 function scorePercent(record) {
   const fullScore = normalizeScoreValue(record.fullScore);
   if (!fullScore) return 0;
@@ -315,7 +351,7 @@ function scoreBarStyle(record) {
           <p class="records-hero-desc">记录、计时、合成和同步放在同一处，保留关键操作，减少界面干扰。</p>
           <div class="records-hero-tags">
             <span>{{ hasActiveFilters ? "当前视图已筛选" : "当前视图为全量" }}</span>
-            <span>{{ selectedRecords.length ? `已选 ${selectedRecords.length} 条` : "尚未选择合成来源" }}</span>
+            <span>{{ selectedRecords.length ? `已选 ${selectedRecords.length} 条` : "勾选成绩可实时算均分" }}</span>
             <span>{{ topSubject.name }} · {{ topSubject.count }} 条</span>
           </div>
           <div class="records-hero-actions">
@@ -358,10 +394,10 @@ function scoreBarStyle(record) {
           <article class="records-metric">
             <div class="metric-head">
               <TrendingUp :size="16" />
-              <span>合成状态</span>
+              <span>选择分析</span>
             </div>
             <strong>{{ selectedRecords.length }}</strong>
-            <small>{{ selectionProgress }}% 进入合成准备</small>
+            <small>{{ selectedAverageStats.isReady ? `${selectedAverageStats.subjectName} 均分 ${formatScoreValue(selectedAverageStats.avgScore)}` : `${selectionProgress}% 进入合成准备` }}</small>
             <div class="records-progress subtle"><i :style="{ width: `${selectionProgress}%` }"></i></div>
           </article>
         </div>
@@ -513,9 +549,24 @@ function scoreBarStyle(record) {
         </div>
         <div v-if="selectedRecords.length" class="composite-selection-bar">
           <div class="composite-selection-info">
-            <strong>合成来源</strong>
-            <span v-if="selectedSubjectCount === 1">{{ store.subjectName(selectedRecords[0].subjectId) }} · {{ selectedRecords.length }} 条记录</span>
-            <span v-else class="danger-text">包含多个科目，请保留同一科目的记录</span>
+            <strong>选择分析</strong>
+            <span v-if="selectedSubjectCount === 1">{{ store.subjectName(selectedRecords[0].subjectId) }} · {{ selectedRecords.length }} 条记录 · 实时计算不保存</span>
+            <span v-else class="danger-text">包含多个科目，请保留同一科目来计算均分</span>
+          </div>
+          <div class="selection-average-card" :class="{ muted: !selectedAverageStats.isReady }">
+            <div class="selection-average-head">
+              <span><Calculator :size="15" />实时均分</span>
+              <small>{{ selectedAverageStats.subjectName }}</small>
+            </div>
+            <strong v-if="selectedAverageStats.isReady">
+              {{ formatScoreValue(selectedAverageStats.avgScore) }} / {{ formatScoreValue(selectedAverageStats.avgFullScore) }}
+            </strong>
+            <strong v-else>--</strong>
+            <div class="selection-average-meta">
+              <span>{{ selectedAverageStats.isReady ? `${selectedAverageStats.avgRate}% 得分率` : "选择同一科目后显示" }}</span>
+              <span>{{ selectedAverageStats.avgDuration ? `${formatDuration(selectedAverageStats.avgDuration)} 平均用时` : "暂无计时均值" }}</span>
+            </div>
+            <div class="records-progress"><i :style="{ width: `${selectedAverageStats.isReady ? selectedAverageStats.avgRate : 0}%` }"></i></div>
           </div>
           <div class="composite-selection-list">
             <button
@@ -527,6 +578,7 @@ function scoreBarStyle(record) {
               @click="removeCompositeSource(record.id)"
             >
               <span>{{ recordTitle(record) }}</span>
+              <small>{{ formatScoreValue(record.score) }}/{{ formatScoreValue(record.fullScore) }}</small>
               <X :size="14" />
             </button>
           </div>

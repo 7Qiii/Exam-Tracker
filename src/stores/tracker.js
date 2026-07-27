@@ -35,6 +35,8 @@ import {
 const FALLBACK_SYNC_INTERVAL = 5 * 60 * 1000;
 const ACTIVE_FALLBACK_THROTTLE = 60 * 1000;
 const CLOUD_CALIBRATION_INTERVAL = 24 * 60 * 60 * 1000;
+const COMPOSITE_NOTE_META_PREFIX = "\n\n<!-- exam-tracker-composite:";
+const COMPOSITE_NOTE_META_SUFFIX = " -->";
 
 export const useTrackerStore = defineStore("tracker", () => {
   const subjects = ref([]);
@@ -287,7 +289,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     const durationMinutes = normalizeOptionalDuration(payload.durationMinutes, rawDurationMinutes);
     const latestDate = sourceRecords.map((record) => record.date).filter(Boolean).sort().at(-1) || new Date().toISOString().slice(0, 10);
     const title = cleanText(payload.paperName) || buildCompositeRecordName(sourceRecords);
-    const note = cleanText(payload.note) || `由 ${sourceRecords.map((record) => record.paperName).join("、")} 合成。`;
+    const compositeSources = buildCompositeSources(sourceRecords, payload.sources);
+    const note = attachCompositeMeta(cleanText(payload.note) || `由 ${sourceRecords.map((record) => record.paperName).join("、")} 合成。`, compositeSources);
 
     return addRecord({
       subjectId,
@@ -298,7 +301,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       durationMinutes,
       date: payload.date || latestDate,
       note,
-      compositeSourceIds: sourceRecords.map((record) => record.id)
+      compositeSourceIds: sourceRecords.map((record) => record.id),
+      compositeSources
     });
   }
 
@@ -491,20 +495,121 @@ export const useTrackerStore = defineStore("tracker", () => {
     const exerciseBookName = cleanText(payload.exerciseBookName);
     const exercisePage = cleanText(payload.exercisePage);
     const exerciseQuestion = cleanText(payload.exerciseQuestion);
+    const compositeSources = recordType === "composite" ? normalizeCompositeSources(Array.isArray(payload.compositeSources) && payload.compositeSources.length ? payload.compositeSources : payload.note) : [];
     const paperName =
       recordType === "exercise"
         ? buildExerciseRecordName(exerciseBookName, exercisePage, exerciseQuestion)
         : cleanText(payload.paperName);
+    const note = recordType === "composite" ? attachCompositeMeta(cleanText(payload.note), compositeSources) : payload.note;
 
     return {
       ...payload,
       recordType,
       paperName,
+      note,
       exerciseBookName: recordType === "exercise" ? exerciseBookName : "",
       exercisePage: recordType === "exercise" ? exercisePage : "",
       exerciseQuestion: recordType === "exercise" ? exerciseQuestion : "",
-      compositeSourceIds: recordType === "composite" ? normalizeIdList(payload.compositeSourceIds) : []
+      compositeSourceIds: recordType === "composite" ? normalizeIdList(payload.compositeSourceIds) : [],
+      compositeSources
     };
+  }
+
+  function buildCompositeSources(sourceRecords, sourceDrafts = []) {
+    const draftMap = new Map(
+      (Array.isArray(sourceDrafts) ? sourceDrafts : [])
+        .filter((item) => item?.id)
+        .map((item) => [item.id, item])
+    );
+    return sourceRecords.map((record) => {
+      const draft = draftMap.get(record.id) || {};
+      return {
+        id: record.id,
+        subjectId: record.subjectId,
+        paperName: record.paperName,
+        recordType: record.recordType || "paper",
+        score: normalizeOptionalNumber(draft.score, record.score),
+        fullScore: normalizeOptionalNumber(draft.fullScore, record.fullScore),
+        durationMinutes: normalizeOptionalDuration(draft.durationMinutes, normalizeDuration(record.durationMinutes)),
+        originalScore: Number(record.score || 0),
+        originalFullScore: Number(record.fullScore || 0),
+        originalDurationMinutes: normalizeDuration(record.durationMinutes),
+        date: record.date || ""
+      };
+    });
+  }
+
+  function normalizeCompositeSources(value) {
+    if (Array.isArray(value) && value.length) {
+      return value
+        .filter((item) => item?.id)
+        .map((item) => ({
+          id: String(item.id),
+          subjectId: cleanText(item.subjectId),
+          paperName: cleanText(item.paperName),
+          recordType: item.recordType === "exercise" || item.recordType === "composite" ? item.recordType : "paper",
+          score: normalizeOptionalNumber(item.score, 0),
+          fullScore: normalizeOptionalNumber(item.fullScore, 0),
+          durationMinutes: normalizeOptionalDuration(item.durationMinutes, ""),
+          originalScore: normalizeOptionalNumber(item.originalScore, item.score),
+          originalFullScore: normalizeOptionalNumber(item.originalFullScore, item.fullScore),
+          originalDurationMinutes: normalizeOptionalDuration(item.originalDurationMinutes, item.durationMinutes),
+          date: cleanText(item.date)
+        }));
+    }
+    const parsed = parseCompositeMeta(value?.note || value);
+    return parsed.sources || [];
+  }
+
+  function attachCompositeMeta(note, sources) {
+    if (!sources.length) return note;
+    const cleanNote = stripCompositeMeta(note);
+    return `${cleanNote}${COMPOSITE_NOTE_META_PREFIX}${encodeURIComponent(JSON.stringify({ sources }))}${COMPOSITE_NOTE_META_SUFFIX}`;
+  }
+
+  function parseCompositeMeta(note) {
+    const text = String(note || "");
+    const start = text.indexOf(COMPOSITE_NOTE_META_PREFIX);
+    if (start < 0) return { note: text, sources: [] };
+    const end = text.indexOf(COMPOSITE_NOTE_META_SUFFIX, start);
+    if (end < 0) return { note: text, sources: [] };
+    const encoded = text.slice(start + COMPOSITE_NOTE_META_PREFIX.length, end);
+    try {
+      const parsed = JSON.parse(decodeURIComponent(encoded));
+      return { note: text.slice(0, start), sources: normalizeCompositeSources(parsed.sources) };
+    } catch {
+      return { note: text.slice(0, start), sources: [] };
+    }
+  }
+
+  function stripCompositeMeta(note) {
+    return parseCompositeMeta(note).note.trim();
+  }
+
+  function displayRecordNote(record) {
+    return stripCompositeMeta(record?.note || "");
+  }
+
+  function compositeSourcesForRecord(record) {
+    if (!record || record.recordType !== "composite") return [];
+    const savedSources = normalizeCompositeSources(Array.isArray(record.compositeSources) && record.compositeSources.length ? record.compositeSources : record.note);
+    if (savedSources.length) return savedSources;
+    return normalizeIdList(record.compositeSourceIds)
+      .map((id) => records.value.find((item) => item.id === id))
+      .filter(Boolean)
+      .map((source) => ({
+        id: source.id,
+        subjectId: source.subjectId,
+        paperName: source.paperName,
+        recordType: source.recordType || "paper",
+        score: Number(source.score || 0),
+        fullScore: Number(source.fullScore || 0),
+        durationMinutes: normalizeDuration(source.durationMinutes),
+        originalScore: Number(source.score || 0),
+        originalFullScore: Number(source.fullScore || 0),
+        originalDurationMinutes: normalizeDuration(source.durationMinutes),
+        date: source.date || ""
+      }));
   }
 
   function buildCompositeRecordName(sourceRecords) {
@@ -684,7 +789,8 @@ export const useTrackerStore = defineStore("tracker", () => {
         item.note,
         item.createdAt,
         item.updatedAt,
-        normalizeIdList(item.compositeSourceIds).join(",")
+        normalizeIdList(item.compositeSourceIds).join(","),
+        JSON.stringify(normalizeCompositeSources(item.compositeSources))
       ]),
       mistakes: data.mistakes.map((item) => [item.id, item.subjectId, item.title, item.knowledgePoint, item.analysis, item.updatedAt]),
       images: data.images.map((item) => [item.id, item.ownerId, item.name, item.size, item.storageKey, item.url, item.pendingUpload, item.uploadError])
@@ -1058,7 +1164,8 @@ export const useTrackerStore = defineStore("tracker", () => {
       String(a.durationMinutes ?? "") === String(b.durationMinutes ?? "") &&
       a.date === b.date &&
       (a.note || "") === (b.note || "") &&
-      normalizeIdList(a.compositeSourceIds).join(",") === normalizeIdList(b.compositeSourceIds).join(",")
+      normalizeIdList(a.compositeSourceIds).join(",") === normalizeIdList(b.compositeSourceIds).join(",") &&
+      JSON.stringify(normalizeCompositeSources(a.compositeSources)) === JSON.stringify(normalizeCompositeSources(b.compositeSources))
     );
   }
 
@@ -1155,6 +1262,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     markBackupExported,
     subjectName,
     subjectColor,
+    displayRecordNote,
+    compositeSourcesForRecord,
     notify,
     removeNotification,
     retryPendingImageUploads

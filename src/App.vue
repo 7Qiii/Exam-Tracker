@@ -12,6 +12,7 @@ import {
   Menu,
   Monitor,
   Moon,
+  PenLine,
   RefreshCw,
   Search,
   Settings,
@@ -30,6 +31,12 @@ const globalSearch = ref("");
 const isGlobalSearchOpen = ref(false);
 const themeMode = ref("system");
 const themeStorageKey = "exam-tracker-theme-mode";
+const signatureStorageKey = "exam-tracker-signature";
+const signatureText = ref("稳住节奏，今天继续推进");
+const signatureDraft = ref("");
+const isSignatureSplashVisible = ref(false);
+const isSignatureDialogOpen = ref(false);
+let signatureTimer = null;
 const themeOptions = [
   { value: "system", label: "跟随系统", icon: Monitor },
   { value: "light", label: "浅色", icon: Sun },
@@ -153,6 +160,32 @@ function setThemeMode(mode) {
   }
 }
 
+function showSignatureSplash() {
+  if (signatureTimer) window.clearTimeout(signatureTimer);
+  isSignatureSplashVisible.value = true;
+  signatureTimer = window.setTimeout(() => {
+    isSignatureSplashVisible.value = false;
+    signatureTimer = null;
+  }, 2800);
+}
+
+function openSignatureDialog() {
+  signatureDraft.value = signatureText.value;
+  isSignatureDialogOpen.value = true;
+}
+
+function closeSignatureDialog() {
+  isSignatureDialogOpen.value = false;
+}
+
+function saveSignature() {
+  const next = signatureDraft.value.trim() || "稳住节奏，今天继续推进";
+  signatureText.value = next;
+  localStorage.setItem(signatureStorageKey, next);
+  closeSignatureDialog();
+  showSignatureSplash();
+}
+
 watch(
   () => route.fullPath,
   () => {
@@ -168,12 +201,15 @@ function updateOnlineState() {
 
 onMounted(() => {
   setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey)));
+  signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
+  showSignatureSplash();
   store.load();
   window.addEventListener("online", updateOnlineState);
   window.addEventListener("offline", updateOnlineState);
 });
 
 onBeforeUnmount(() => {
+  if (signatureTimer) window.clearTimeout(signatureTimer);
   window.removeEventListener("online", updateOnlineState);
   window.removeEventListener("offline", updateOnlineState);
 });
@@ -285,6 +321,9 @@ onBeforeUnmount(() => {
               <component :is="item.icon" :size="15" />
             </button>
           </div>
+          <button class="ghost-button icon-only" type="button" title="签名" aria-label="签名" @click="openSignatureDialog">
+            <PenLine :size="18" />
+          </button>
           <RouterLink class="account-pill" to="/login" :title="store.user ? '账号与同步' : '登录同步'">
             <span class="avatar-dot" :class="{ online: store.user }">{{ userInitial }}</span>
             <span>{{ syncLabel }}</span>
@@ -335,6 +374,38 @@ onBeforeUnmount(() => {
       >
         {{ item.message }}
       </button>
+    </div>
+
+    <div v-if="isSignatureSplashVisible" class="signature-splash" @click="isSignatureSplashVisible = false">
+      <div class="signature-card">
+        <span class="signature-orbit"></span>
+        <p>学习签名</p>
+        <strong>{{ signatureText }}</strong>
+        <i></i>
+      </div>
+    </div>
+
+    <div v-if="isSignatureDialogOpen" class="signature-dialog-backdrop" @mousedown.self="closeSignatureDialog">
+      <section class="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="signature-title">
+        <div class="section-head">
+          <h2 id="signature-title">设置签名</h2>
+          <button class="icon-button" type="button" aria-label="关闭" @click="closeSignatureDialog">
+            <X :size="16" />
+          </button>
+        </div>
+        <label>
+          每次打开网页时展示
+          <input v-model.trim="signatureDraft" maxlength="32" placeholder="稳住节奏，今天继续推进" @keydown.enter.prevent="saveSignature" />
+        </label>
+        <div class="signature-preview">
+          <span>预览</span>
+          <strong>{{ signatureDraft || "稳住节奏，今天继续推进" }}</strong>
+        </div>
+        <div class="composite-dialog-footer">
+          <button class="secondary-button" type="button" @click="closeSignatureDialog(); showSignatureSplash()">重播</button>
+          <button class="primary-button" type="button" @click="saveSignature">保存签名</button>
+        </div>
+      </section>
     </div>
   </div>
 </template>

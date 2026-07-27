@@ -27,6 +27,20 @@ const recordTypeText = computed(() => {
   if (record.value?.recordType === "composite") return "合成";
   return record.value?.recordType === "exercise" ? "习题" : "试卷";
 });
+const compositeSources = computed(() => store.compositeSourcesForRecord(record.value));
+const compositeSourceTotal = computed(() =>
+  compositeSources.value.reduce(
+    (total, item) => ({
+      score: total.score + normalizeScoreValue(item.score),
+      fullScore: total.fullScore + normalizeScoreValue(item.fullScore),
+      durationMinutes:
+        total.durationMinutes === "" || normalizeDuration(item.durationMinutes) === ""
+          ? ""
+          : Number(total.durationMinutes) + Number(normalizeDuration(item.durationMinutes))
+    }),
+    { score: 0, fullScore: 0, durationMinutes: 0 }
+  )
+);
 
 async function remove() {
   if (!record.value) return;
@@ -53,6 +67,30 @@ function formatDuration(minutes) {
   const rest = value % 60;
   if (!hours) return `${value} 分钟`;
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
+}
+
+function normalizeDuration(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const minutes = Number(value);
+  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
+}
+
+function normalizeScoreValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function sourceTypeText(source) {
+  if (source.recordType === "composite") return "合成";
+  return source.recordType === "exercise" ? "习题" : "试卷";
+}
+
+function sourceChanged(source) {
+  return (
+    Number(source.score) !== Number(source.originalScore) ||
+    Number(source.fullScore) !== Number(source.originalFullScore) ||
+    String(normalizeDuration(source.durationMinutes)) !== String(normalizeDuration(source.originalDurationMinutes))
+  );
 }
 </script>
 
@@ -85,9 +123,31 @@ function formatDuration(minutes) {
           <article v-if="record.recordType === 'exercise'"><span>习题册</span><strong>{{ record.exerciseBookName || "未填写" }}</strong></article>
           <article v-if="record.recordType === 'exercise'"><span>页码 / 题号</span><strong>{{ record.exercisePage || "--" }} / {{ record.exerciseQuestion || "--" }}</strong></article>
         </div>
+        <div v-if="record.recordType === 'composite'" class="note-block composite-breakdown">
+          <div class="composite-breakdown-head">
+            <div>
+              <h3>分项构成</h3>
+              <p>{{ compositeSources.length ? `共 ${compositeSources.length} 条来源` : "没有找到来源记录。" }}</p>
+            </div>
+            <strong v-if="compositeSources.length">{{ compositeSourceTotal.score }} / {{ compositeSourceTotal.fullScore }}</strong>
+          </div>
+          <div v-if="compositeSources.length" class="composite-source-list detail-source-list">
+            <article v-for="source in compositeSources" :key="source.id" class="detail-source-item">
+              <div class="detail-source-main">
+                <strong>{{ source.paperName }}</strong>
+                <span>{{ store.subjectName(source.subjectId) }} · {{ sourceTypeText(source) }} · {{ source.date || "未记录日期" }}</span>
+              </div>
+              <div class="detail-source-score">
+                <strong>{{ source.score }} / {{ source.fullScore }}</strong>
+                <span>{{ formatDuration(source.durationMinutes) }}</span>
+              </div>
+              <i v-if="sourceChanged(source)">已自定义计入</i>
+            </article>
+          </div>
+        </div>
         <div class="note-block">
           <h3>复盘备注</h3>
-          <p>{{ record.note || "还没有填写复盘备注。" }}</p>
+          <p>{{ store.displayRecordNote(record) || "还没有填写复盘备注。" }}</p>
         </div>
       </template>
     </section>

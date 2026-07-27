@@ -50,7 +50,7 @@ watch(
       form.fullScore = props.record.fullScore ?? "";
       form.durationMinutes = props.record.durationMinutes ?? "";
       form.date = props.record.date || new Date().toISOString().slice(0, 10);
-      form.note = props.record.note || "";
+      form.note = store.displayRecordNote(props.record) || "";
       return;
     }
     if ((!form.subjectId || !selectedSubject.value) && store.visibleSubjects.length) {
@@ -94,7 +94,11 @@ async function submit() {
   isSaving.value = true;
   try {
     if (props.record) {
-      await store.updateRecord(props.record.id, { ...form });
+      await store.updateRecord(props.record.id, {
+        ...form,
+        compositeSourceIds: props.record.compositeSourceIds || [],
+        compositeSources: props.record.compositeSources || []
+      });
     } else {
       await store.addRecord({ ...form });
       form.recordType = isMathSubject.value ? form.recordType : "paper";
