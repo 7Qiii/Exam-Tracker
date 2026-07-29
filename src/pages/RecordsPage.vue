@@ -52,11 +52,17 @@ const pageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.len
 const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1) * pageSize, page.value * pageSize));
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
 const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId));
+const selectableFilteredRecords = computed(() => filteredRecords.value.filter((record) => record.recordType !== "composite"));
 const selectedRecords = computed(() =>
   selectedRecordIds.value
     .map((id) => store.records.find((record) => record.id === id))
     .filter((record) => record && record.recordType !== "composite")
 );
+const allFilteredRecordsSelected = computed(() => {
+  if (!selectableFilteredRecords.value.length) return false;
+  const selectedIds = new Set(selectedRecordIds.value);
+  return selectableFilteredRecords.value.every((record) => selectedIds.has(record.id));
+});
 const selectedSubjectCount = computed(() => new Set(selectedRecords.value.map((record) => record.subjectId)).size);
 const canCreateComposite = computed(() => selectedRecords.value.length >= 2 && selectedSubjectCount.value === 1 && compositeSummary.value.fullScore > 0);
 const selectedCompositeRows = computed(() => selectedRecords.value.map((record) => ({ record, draft: compositeRows[record.id] })).filter((item) => item.draft));
@@ -135,6 +141,8 @@ const selectionProgress = computed(() => {
 
 watch(() => [filters.keyword, filters.subjectId], () => {
   page.value = 1;
+  const validIds = new Set(selectableFilteredRecords.value.map((record) => record.id));
+  selectedRecordIds.value = selectedRecordIds.value.filter((id) => validIds.has(id));
 });
 
 watch(selectedRecordIds, () => {
@@ -203,6 +211,12 @@ function clearSelection() {
   compositeForm.note = "";
   compositeForm.date = "";
   isCompositeDialogOpen.value = false;
+}
+
+function selectAllFilteredRecords() {
+  const ids = selectableFilteredRecords.value.map((record) => record.id);
+  if (!ids.length) return;
+  selectedRecordIds.value = allFilteredRecordsSelected.value ? [] : ids;
 }
 
 function closeCompositeDialog() {
@@ -409,6 +423,9 @@ function scoreBarStyle(record) {
         <h2>成绩筛选</h2>
         <div class="topbar-tools">
           <span class="section-meta">{{ filteredRecords.length }} 条结果</span>
+          <button class="secondary-button compact" type="button" :disabled="!selectableFilteredRecords.length" @click="selectAllFilteredRecords">
+            {{ allFilteredRecordsSelected ? "取消全选" : `全选结果 ${selectableFilteredRecords.length}` }}
+          </button>
           <button class="secondary-button compact" type="button" @click="startCreate">
             <Plus :size="15" />
             新增成绩
@@ -545,6 +562,9 @@ function scoreBarStyle(record) {
           <h2>成绩列表</h2>
           <div class="topbar-tools">
             <span v-if="selectedRecords.length" class="selection-count">已选择 {{ selectedRecords.length }} 条</span>
+            <button class="secondary-button compact" type="button" :disabled="!selectableFilteredRecords.length" @click="selectAllFilteredRecords">
+              {{ allFilteredRecordsSelected ? "取消全选" : "全选当前结果" }}
+            </button>
           </div>
         </div>
         <div v-if="selectedRecords.length" class="composite-selection-bar">

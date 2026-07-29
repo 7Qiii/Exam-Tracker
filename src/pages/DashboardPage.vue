@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { Download, FilePlus2, Upload } from "@lucide/vue";
+import { Calculator, Download, FilePlus2, Target, TrendingUp, Trophy, Upload } from "@lucide/vue";
 import MetricCard from "../components/MetricCard.vue";
 import RecordForm from "../components/RecordForm.vue";
 import ScoreCharts from "../components/ScoreCharts.vue";
@@ -9,6 +9,7 @@ import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
 const selectedSubject = ref("");
+const selectedAverageSubject = ref("");
 const importFile = ref(null);
 
 const weekCount = computed(() => {
@@ -33,6 +34,36 @@ const subjectStats = computed(() =>
     };
   })
 );
+const defaultAverageSubjectId = computed(() => subjectStats.value.find((subject) => subject.count)?.id || store.visibleSubjects[0]?.id || "");
+const averageSubjectId = computed(() => selectedAverageSubject.value || defaultAverageSubjectId.value);
+const averageSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === averageSubjectId.value) || null);
+const averageSubjectStats = computed(() => {
+  const records = store.records.filter((record) => record.subjectId === averageSubjectId.value && record.recordType !== "composite");
+  const scoredRecords = records.filter((record) => Number(record.fullScore) > 0);
+  const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
+  const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
+  const durations = records
+    .map((record) => normalizeDuration(record.durationMinutes))
+    .filter((value) => value !== "");
+  const latest = [...records].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] || null;
+  const best = scoredRecords.reduce((winner, record) => (!winner || normalizeScoreValue(record.score) / normalizeScoreValue(record.fullScore) > normalizeScoreValue(winner.score) / normalizeScoreValue(winner.fullScore) ? record : winner), null);
+  const avgScore = scoredRecords.length ? totalScore / scoredRecords.length : 0;
+  const avgFullScore = scoredRecords.length ? totalFullScore / scoredRecords.length : 0;
+  const rate = totalFullScore ? Math.round((totalScore / totalFullScore) * 100) : 0;
+  const avgDuration = durations.length ? Math.round(durations.reduce((sum, value) => sum + Number(value), 0) / durations.length) : "";
+  return {
+    records,
+    count: records.length,
+    scoredCount: scoredRecords.length,
+    avgScore,
+    avgFullScore,
+    rate,
+    avgDuration,
+    latest,
+    best,
+    isReady: scoredRecords.length > 0
+  };
+});
 
 async function exportData() {
   const data = await store.exportData();
@@ -64,6 +95,23 @@ function formatDuration(minutes) {
   const rest = value % 60;
   if (!hours) return `${value} 分钟`;
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
+}
+
+function normalizeDuration(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const minutes = Number(value);
+  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
+}
+
+function normalizeScoreValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function formatScoreValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
 }
 
 function recordTitle(record) {
@@ -104,6 +152,57 @@ function recordTitle(record) {
       <MetricCard label="近 7 天练习" :value="weekCount" hint="保持节奏更重要" tone="green" />
       <MetricCard label="错题记录" :value="store.mistakes.length" hint="解析与图片复盘" tone="orange" />
       <MetricCard label="最近成绩" :value="latestRecords[0] ? `${latestRecords[0].score}/${latestRecords[0].fullScore}` : '--'" hint="最近一套卷" tone="purple" />
+    </section>
+
+    <section class="average-dashboard-panel">
+      <div class="average-dashboard-main">
+        <div class="average-dashboard-head">
+          <span><Calculator :size="16" />科目均分</span>
+          <select v-model="selectedAverageSubject">
+            <option value="">自动选择记录最多科目</option>
+            <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+          </select>
+        </div>
+        <div class="average-score-display">
+          <small>{{ averageSubject?.name || "暂无科目" }}</small>
+          <strong v-if="averageSubjectStats.isReady">
+            {{ formatScoreValue(averageSubjectStats.avgScore) }} / {{ formatScoreValue(averageSubjectStats.avgFullScore) }}
+          </strong>
+          <strong v-else>--</strong>
+          <p>{{ averageSubjectStats.isReady ? `${averageSubjectStats.count} 条记录参与统计，合成成绩已排除` : "选择一个已有成绩的科目后显示平均分。" }}</p>
+        </div>
+        <div class="average-ring-row">
+          <div class="average-ring" :style="{ '--rate': `${averageSubjectStats.rate}%`, '--color': averageSubject?.color || '#007aff' }">
+            <span>{{ averageSubjectStats.rate }}%</span>
+          </div>
+          <div>
+            <b>平均得分率</b>
+            <span>{{ averageSubjectStats.avgDuration ? `${formatDuration(averageSubjectStats.avgDuration)} 平均用时` : "暂无计时均值" }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="average-dashboard-metrics">
+        <article>
+          <Target :size="16" />
+          <span>统计样本</span>
+          <strong>{{ averageSubjectStats.count }}</strong>
+        </article>
+        <article>
+          <Trophy :size="16" />
+          <span>最高表现</span>
+          <strong>{{ averageSubjectStats.best ? `${averageSubjectStats.best.score}/${averageSubjectStats.best.fullScore}` : "--" }}</strong>
+        </article>
+        <article>
+          <TrendingUp :size="16" />
+          <span>最近一次</span>
+          <strong>{{ averageSubjectStats.latest ? `${averageSubjectStats.latest.score}/${averageSubjectStats.latest.fullScore}` : "--" }}</strong>
+        </article>
+        <article>
+          <Calculator :size="16" />
+          <span>有效分数</span>
+          <strong>{{ averageSubjectStats.scoredCount }}</strong>
+        </article>
+      </div>
     </section>
 
     <section class="content-grid">
