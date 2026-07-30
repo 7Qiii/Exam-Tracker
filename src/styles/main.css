@@ -4876,6 +4876,16 @@ th {
   gap: 8px;
 }
 
+.record-restore-empty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .record-restore-list article {
   border: 1px solid var(--line);
   border-radius: 8px;

@@ -18,6 +18,7 @@ const compositeForm = reactive({ paperName: "", date: "", note: "" });
 const compositeRows = reactive({});
 const isCompositeDialogOpen = ref(false);
 const isCompositeSaving = ref(false);
+const isRestorePanelOpen = ref(false);
 
 const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
@@ -138,6 +139,7 @@ const selectionProgress = computed(() => {
   const total = selectedRecords.value.length;
   return total >= 2 ? Math.min(100, Math.round((total / 4) * 100)) : total ? 25 : 0;
 });
+const shouldShowRestorePanel = computed(() => isRestorePanelOpen.value || store.deletedRecords.length > 0);
 
 watch(() => [filters.keyword, filters.subjectId], () => {
   page.value = 1;
@@ -269,6 +271,11 @@ function resetCompositeValues() {
 
 async function restoreDeletedRecord(entry) {
   await store.restoreDeletedRecord(entry.id);
+  if (!store.deletedRecords.length) isRestorePanelOpen.value = false;
+}
+
+function toggleRestorePanel() {
+  isRestorePanelOpen.value = !isRestorePanelOpen.value;
 }
 
 async function createCompositeRecord() {
@@ -566,12 +573,16 @@ function scoreBarStyle(record) {
           <h2>成绩列表</h2>
           <div class="topbar-tools">
             <span v-if="selectedRecords.length" class="selection-count">已选择 {{ selectedRecords.length }} 条</span>
+            <button class="secondary-button compact" type="button" @click="toggleRestorePanel">
+              <Trash2 :size="15" />
+              最近删除 {{ store.deletedRecords.length }}
+            </button>
             <button class="secondary-button compact" type="button" :disabled="!selectableFilteredRecords.length" @click="selectAllFilteredRecords">
               {{ allFilteredRecordsSelected ? "取消全选" : "全选当前结果" }}
             </button>
           </div>
         </div>
-        <div v-if="store.deletedRecords.length" class="record-restore-panel">
+        <div v-if="shouldShowRestorePanel" class="record-restore-panel">
           <div class="record-restore-head">
             <div>
               <strong>最近删除</strong>
@@ -579,7 +590,7 @@ function scoreBarStyle(record) {
             </div>
             <span>{{ store.deletedRecords.length }} 条</span>
           </div>
-          <div class="record-restore-list">
+          <div v-if="store.deletedRecords.length" class="record-restore-list">
             <article v-for="entry in store.deletedRecords" :key="entry.id">
               <div>
                 <strong>{{ recordTitle(entry.record) }}</strong>
@@ -587,6 +598,9 @@ function scoreBarStyle(record) {
               </div>
               <button class="secondary-button compact" type="button" @click="restoreDeletedRecord(entry)">恢复</button>
             </article>
+          </div>
+          <div v-else class="record-restore-empty">
+            暂无可恢复成绩。删除成绩后，这里会保留 24 小时。
           </div>
         </div>
         <div v-if="selectedRecords.length" class="composite-selection-bar">
