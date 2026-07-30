@@ -4919,6 +4919,7 @@ th {
 }
 
 .health-check-head,
+.health-check-actions,
 .batch-management-panel {
   min-width: 0;
   display: flex;
@@ -4951,7 +4952,12 @@ th {
   font-weight: 800;
 }
 
-.health-check-head > span {
+.health-check-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.health-check-actions > span {
   border-radius: 999px;
   background: rgba(245, 157, 34, 0.12);
   color: var(--orange);
@@ -4960,7 +4966,7 @@ th {
   font-weight: 900;
 }
 
-.health-check-head > span.good {
+.health-check-actions > span.good {
   background: rgba(32, 184, 117, 0.12);
   color: var(--green);
 }
@@ -5020,11 +5026,64 @@ th {
   color: var(--blue);
 }
 
+.health-issue-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
 .health-check-empty {
   border: 1px dashed var(--line);
   border-radius: 8px;
   padding: 12px;
   text-align: center;
+}
+
+.ignored-health-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 10px;
+}
+
+.ignored-health-head,
+.ignored-health-list article {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ignored-health-head strong,
+.ignored-health-list strong {
+  color: var(--ink);
+}
+
+.ignored-health-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ignored-health-list article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+}
+
+.ignored-health-list article > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.ignored-health-list span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .batch-management-panel {
@@ -5078,7 +5137,9 @@ th {
     flex-direction: column;
   }
 
-  .health-check-head {
+  .health-check-head,
+  .ignored-health-head,
+  .ignored-health-list article {
     align-items: flex-start;
     flex-direction: column;
   }

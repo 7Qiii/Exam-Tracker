@@ -11,9 +11,11 @@ import {
   ChevronRight,
   Clock3,
   Edit3,
+  EyeOff,
   MoveRight,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldCheck,
   Target,
@@ -24,6 +26,7 @@ import {
 import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
+const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
 const store = useTrackerStore();
 const router = useRouter();
 const page = ref(1);
@@ -40,6 +43,8 @@ const isCompositeSaving = ref(false);
 const isRestorePanelOpen = ref(false);
 const batchSubjectId = ref("");
 const isBatchWorking = ref(false);
+const ignoredHealthIssueIds = ref(readIgnoredHealthIssues());
+const isIgnoredHealthOpen = ref(false);
 
 const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
@@ -161,9 +166,16 @@ const selectionProgress = computed(() => {
   return total >= 2 ? Math.min(100, Math.round((total / 4) * 100)) : total ? 25 : 0;
 });
 const shouldShowRestorePanel = computed(() => isRestorePanelOpen.value || store.deletedRecords.length > 0);
-const healthIssues = computed(() => buildHealthIssues());
+const rawHealthIssues = computed(() => buildHealthIssues());
+const ignoredHealthIssues = computed(() => rawHealthIssues.value.filter((issue) => ignoredHealthIssueIds.value.includes(issue.id)));
+const healthIssues = computed(() => rawHealthIssues.value.filter((issue) => !ignoredHealthIssueIds.value.includes(issue.id)));
 const healthIssueCount = computed(() => healthIssues.value.reduce((sum, issue) => sum + issue.count, 0));
-const healthStatusText = computed(() => (healthIssueCount.value ? `${healthIssueCount.value} 个待整理点` : "数据状态良好"));
+const ignoredHealthIssueCount = computed(() => ignoredHealthIssues.value.length);
+const healthStatusText = computed(() => {
+  if (healthIssueCount.value) return `${healthIssueCount.value} 个待整理点`;
+  if (ignoredHealthIssueCount.value) return `已忽略 ${ignoredHealthIssueCount.value} 项`;
+  return "数据状态良好";
+});
 
 watch(() => [filters.keyword, filters.subjectId], () => {
   page.value = 1;
@@ -352,6 +364,37 @@ function selectHealthIssue(issue) {
   showForm.value = false;
   editingRecordId.value = "";
   selectedRecordIds.value = issue.records.filter((record) => record.recordType !== "composite").map((record) => record.id);
+}
+
+function ignoreHealthIssue(issue) {
+  if (!issue?.id || ignoredHealthIssueIds.value.includes(issue.id)) return;
+  saveIgnoredHealthIssues([...ignoredHealthIssueIds.value, issue.id]);
+  store.notify(`已忽略「${issue.title}」，之后不再显示。`, "success");
+}
+
+function restoreIgnoredHealthIssue(id) {
+  saveIgnoredHealthIssues(ignoredHealthIssueIds.value.filter((item) => item !== id));
+}
+
+function clearIgnoredHealthIssues() {
+  saveIgnoredHealthIssues([]);
+}
+
+function readIgnoredHealthIssues() {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HEALTH_IGNORE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveIgnoredHealthIssues(ids) {
+  ignoredHealthIssueIds.value = [...new Set(ids)];
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(HEALTH_IGNORE_KEY, JSON.stringify(ignoredHealthIssueIds.value));
+  }
 }
 
 async function createCompositeRecord() {
@@ -790,7 +833,13 @@ function scoreBarStyle(record) {
               <strong><ShieldCheck :size="16" />数据健康检查</strong>
               <span>{{ healthStatusText }} · 点击问题可自动选中相关成绩</span>
             </div>
-            <span :class="{ good: !healthIssueCount }">{{ healthIssueCount ? "需要整理" : "状态良好" }}</span>
+            <div class="health-check-actions">
+              <button v-if="ignoredHealthIssueCount" class="secondary-button compact" type="button" @click="isIgnoredHealthOpen = !isIgnoredHealthOpen">
+                <EyeOff :size="15" />
+                已忽略 {{ ignoredHealthIssueCount }}
+              </button>
+              <span :class="{ good: !healthIssueCount }">{{ healthIssueCount ? "需要整理" : "状态良好" }}</span>
+            </div>
           </div>
           <div v-if="healthIssues.length" class="health-issue-grid">
             <article v-for="issue in healthIssues" :key="issue.id" class="health-issue-card" :class="`tone-${issue.tone}`">
@@ -801,11 +850,36 @@ function scoreBarStyle(record) {
                 <b>{{ issue.count }}</b>
               </div>
               <p>{{ issue.description }}</p>
-              <button class="secondary-button compact" type="button" @click="selectHealthIssue(issue)">选中处理</button>
+              <div class="health-issue-actions">
+                <button class="secondary-button compact" type="button" @click="selectHealthIssue(issue)">选中处理</button>
+                <button class="secondary-button compact" type="button" @click="ignoreHealthIssue(issue)">
+                  <EyeOff :size="14" />
+                  忽略
+                </button>
+              </div>
             </article>
           </div>
           <div v-else class="health-check-empty">
             当前没有发现明显异常。保持这个状态，很漂亮。
+          </div>
+          <div v-if="isIgnoredHealthOpen" class="ignored-health-panel">
+            <div class="ignored-health-head">
+              <strong>已忽略项目</strong>
+              <button class="secondary-button compact" type="button" @click="clearIgnoredHealthIssues">
+                <RotateCcw :size="14" />
+                恢复全部
+              </button>
+            </div>
+            <div v-if="ignoredHealthIssues.length" class="ignored-health-list">
+              <article v-for="issue in ignoredHealthIssues" :key="issue.id">
+                <div>
+                  <strong>{{ issue.title }}</strong>
+                  <span>当前仍匹配 {{ issue.count }} 条，已隐藏。</span>
+                </div>
+                <button class="secondary-button compact" type="button" @click="restoreIgnoredHealthIssue(issue.id)">恢复显示</button>
+              </article>
+            </div>
+            <div v-else class="health-check-empty">暂无仍然匹配的已忽略项目。</div>
           </div>
         </div>
         <div v-if="selectedRecords.length" class="batch-management-panel">
