@@ -4900,6 +4900,144 @@ th {
   white-space: nowrap;
 }
 
+.health-check-panel,
+.batch-management-panel {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.035)),
+    var(--glass);
+  box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+
+.health-check-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.health-check-head,
+.batch-management-panel {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.health-check-head > div,
+.batch-management-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.health-check-head strong,
+.batch-management-copy strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+}
+
+.health-check-head span,
+.batch-management-copy span,
+.health-issue-card p,
+.health-check-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.health-check-head > span {
+  border-radius: 999px;
+  background: rgba(245, 157, 34, 0.12);
+  color: var(--orange);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.health-check-head > span.good {
+  background: rgba(32, 184, 117, 0.12);
+  color: var(--green);
+}
+
+.health-issue-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.health-issue-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 10px;
+}
+
+.health-issue-card > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.health-issue-card svg {
+  color: var(--blue);
+}
+
+.health-issue-card.tone-red svg,
+.health-issue-card.tone-red b {
+  color: var(--red);
+}
+
+.health-issue-card.tone-orange svg,
+.health-issue-card.tone-orange b {
+  color: var(--orange);
+}
+
+.health-issue-card.tone-purple svg,
+.health-issue-card.tone-purple b {
+  color: var(--purple);
+}
+
+.health-issue-card strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-issue-card b {
+  color: var(--blue);
+}
+
+.health-check-empty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.batch-management-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px) auto auto;
+  align-items: center;
+  padding: 12px;
+}
+
+.batch-management-panel select {
+  min-height: 36px;
+}
+
 :root[data-theme="light"] .selection-average-card {
   background:
     radial-gradient(circle at 12% 8%, rgba(0, 122, 255, 0.18), transparent 34%),
@@ -4938,6 +5076,16 @@ th {
   .record-restore-list article {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .health-check-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .health-issue-grid,
+  .batch-management-panel {
+    grid-template-columns: 1fr;
   }
 }
 

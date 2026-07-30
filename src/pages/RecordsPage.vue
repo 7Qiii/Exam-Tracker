@@ -1,7 +1,26 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { BarChart3, BookOpenCheck, Calculator, ChevronLeft, ChevronRight, Clock3, Edit3, Plus, RefreshCw, Search, Target, TrendingUp, Trash2, X } from "@lucide/vue";
+import {
+  AlertTriangle,
+  BarChart3,
+  BookOpenCheck,
+  Calculator,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Edit3,
+  MoveRight,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Target,
+  TrendingUp,
+  Trash2,
+  X
+} from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -19,6 +38,8 @@ const compositeRows = reactive({});
 const isCompositeDialogOpen = ref(false);
 const isCompositeSaving = ref(false);
 const isRestorePanelOpen = ref(false);
+const batchSubjectId = ref("");
+const isBatchWorking = ref(false);
 
 const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
@@ -140,6 +161,9 @@ const selectionProgress = computed(() => {
   return total >= 2 ? Math.min(100, Math.round((total / 4) * 100)) : total ? 25 : 0;
 });
 const shouldShowRestorePanel = computed(() => isRestorePanelOpen.value || store.deletedRecords.length > 0);
+const healthIssues = computed(() => buildHealthIssues());
+const healthIssueCount = computed(() => healthIssues.value.reduce((sum, issue) => sum + issue.count, 0));
+const healthStatusText = computed(() => (healthIssueCount.value ? `${healthIssueCount.value} 个待整理点` : "数据状态良好"));
 
 watch(() => [filters.keyword, filters.subjectId], () => {
   page.value = 1;
@@ -156,6 +180,9 @@ watch(selectedRecordIds, () => {
   syncCompositeRows();
   syncCompositeDefaults();
   if (!selectedRecords.value.length) isCompositeDialogOpen.value = false;
+  if (!batchSubjectId.value && selectedRecords.value[0]?.subjectId) {
+    batchSubjectId.value = selectedRecords.value[0].subjectId;
+  }
 });
 
 function applyFilters() {
@@ -278,6 +305,55 @@ function toggleRestorePanel() {
   isRestorePanelOpen.value = !isRestorePanelOpen.value;
 }
 
+async function batchMoveSelectedRecords() {
+  if (!selectedRecords.value.length || !batchSubjectId.value) return;
+  isBatchWorking.value = true;
+  try {
+    const records = [...selectedRecords.value];
+    for (const record of records) {
+      if (record.subjectId !== batchSubjectId.value) {
+        await store.updateRecord(record.id, buildRecordUpdatePayload(record, { subjectId: batchSubjectId.value }));
+      }
+    }
+    store.notify(`已批量调整 ${records.length} 条成绩科目。`, "success");
+  } catch (error) {
+    store.notify(error.message || "批量改科目失败。", "error", 6000);
+  } finally {
+    isBatchWorking.value = false;
+  }
+}
+
+async function batchDeleteSelectedRecords() {
+  if (!selectedRecords.value.length) return;
+  const count = selectedRecords.value.length;
+  if (typeof window !== "undefined" && !window.confirm(`确定删除选中的 ${count} 条成绩吗？24 小时内可以从最近删除恢复。`)) return;
+  isBatchWorking.value = true;
+  try {
+    const ids = selectedRecords.value.map((record) => record.id);
+    for (const id of ids) {
+      await store.removeRecord(id);
+    }
+    clearSelection();
+    isRestorePanelOpen.value = true;
+    store.notify(`${count} 条成绩已移入最近删除。`, "success", 5200);
+  } catch (error) {
+    store.notify(error.message || "批量删除失败。", "error", 6000);
+  } finally {
+    isBatchWorking.value = false;
+  }
+}
+
+function selectHealthIssue(issue) {
+  draftFilters.keyword = "";
+  draftFilters.subjectId = "";
+  filters.keyword = "";
+  filters.subjectId = "";
+  page.value = 1;
+  showForm.value = false;
+  editingRecordId.value = "";
+  selectedRecordIds.value = issue.records.filter((record) => record.recordType !== "composite").map((record) => record.id);
+}
+
 async function createCompositeRecord() {
   if (!canCreateComposite.value) return;
   isCompositeSaving.value = true;
@@ -314,6 +390,111 @@ function recordTitle(record) {
 function recordTypeLabel(record) {
   if (record.recordType === "composite") return "合成";
   return record.recordType === "exercise" ? "习题" : "试卷";
+}
+
+function buildRecordUpdatePayload(record, overrides = {}) {
+  const subjectId = overrides.subjectId || record.subjectId;
+  const targetIsMath = subjectId === "math1";
+  const recordType = !targetIsMath && record.recordType === "exercise" ? "paper" : record.recordType || "paper";
+  return {
+    subjectId,
+    recordType,
+    paperName: recordType === "exercise" ? record.paperName : recordTitle(record),
+    exerciseBookName: recordType === "exercise" ? record.exerciseBookName || "" : "",
+    exercisePage: recordType === "exercise" ? record.exercisePage || "" : "",
+    exerciseQuestion: recordType === "exercise" ? record.exerciseQuestion || "" : "",
+    score: record.score,
+    fullScore: record.fullScore,
+    durationMinutes: record.durationMinutes,
+    date: record.date,
+    note: store.displayRecordNote(record) || ""
+  };
+}
+
+function buildHealthIssues() {
+  const records = store.records.filter((record) => record.recordType !== "composite");
+  const issues = [];
+  const untimed = records.filter((record) => normalizeDuration(record.durationMinutes) === "");
+  const invalidScore = records.filter((record) => {
+    const score = Number(record.score);
+    const fullScore = Number(record.fullScore);
+    return !Number.isFinite(score) || !Number.isFinite(fullScore) || score < 0 || fullScore <= 0 || score > fullScore;
+  });
+  const pendingSync = records.filter((record) => record.pendingSync);
+  const exactDuplicates = duplicateGroups(records, exactRecordKey).flatMap((group) => group);
+  const sameNameRecords = duplicateGroups(records, nameRecordKey)
+    .filter((group) => new Set(group.map((record) => `${record.date}|${record.score}|${record.fullScore}`)).size > 1)
+    .flatMap((group) => group);
+
+  if (untimed.length) {
+    issues.push({
+      id: "untimed",
+      title: "未记录用时",
+      description: "这些成绩没有计时，会影响平均用时和节奏复盘。",
+      count: untimed.length,
+      tone: "blue",
+      records: untimed
+    });
+  }
+  if (invalidScore.length) {
+    issues.push({
+      id: "invalid-score",
+      title: "分数异常",
+      description: "包含得分超过满分、满分为空或负数等问题。",
+      count: invalidScore.length,
+      tone: "red",
+      records: invalidScore
+    });
+  }
+  if (exactDuplicates.length) {
+    issues.push({
+      id: "duplicates",
+      title: "疑似重复",
+      description: "科目、名称、日期和分数完全一致，可能是重复录入。",
+      count: exactDuplicates.length,
+      tone: "orange",
+      records: exactDuplicates
+    });
+  }
+  if (sameNameRecords.length) {
+    issues.push({
+      id: "same-name",
+      title: "同名记录",
+      description: "同一科目下存在同名成绩，适合检查是否需要重命名。",
+      count: sameNameRecords.length,
+      tone: "purple",
+      records: sameNameRecords
+    });
+  }
+  if (pendingSync.length) {
+    issues.push({
+      id: "pending-sync",
+      title: "待同步",
+      description: "这些记录还没有确认写入云端，建议稍后手动同步。",
+      count: pendingSync.length,
+      tone: "blue",
+      records: pendingSync
+    });
+  }
+  return issues;
+}
+
+function duplicateGroups(records, keyBuilder) {
+  const groups = new Map();
+  records.forEach((record) => {
+    const key = keyBuilder(record);
+    if (!key) return;
+    groups.set(key, [...(groups.get(key) || []), record]);
+  });
+  return [...groups.values()].filter((group) => group.length > 1);
+}
+
+function exactRecordKey(record) {
+  return [record.subjectId, record.recordType || "paper", normalizeSearch(recordTitle(record)), record.date, record.score, record.fullScore].join("|");
+}
+
+function nameRecordKey(record) {
+  return [record.subjectId, record.recordType || "paper", normalizeSearch(recordTitle(record))].join("|");
 }
 
 function commonYearLabel(records) {
@@ -602,6 +783,48 @@ function scoreBarStyle(record) {
           <div v-else class="record-restore-empty">
             暂无可恢复成绩。删除成绩后，这里会保留 24 小时。
           </div>
+        </div>
+        <div class="health-check-panel">
+          <div class="health-check-head">
+            <div>
+              <strong><ShieldCheck :size="16" />数据健康检查</strong>
+              <span>{{ healthStatusText }} · 点击问题可自动选中相关成绩</span>
+            </div>
+            <span :class="{ good: !healthIssueCount }">{{ healthIssueCount ? "需要整理" : "状态良好" }}</span>
+          </div>
+          <div v-if="healthIssues.length" class="health-issue-grid">
+            <article v-for="issue in healthIssues" :key="issue.id" class="health-issue-card" :class="`tone-${issue.tone}`">
+              <div>
+                <AlertTriangle v-if="issue.tone === 'red' || issue.tone === 'orange'" :size="16" />
+                <CheckCircle2 v-else :size="16" />
+                <strong>{{ issue.title }}</strong>
+                <b>{{ issue.count }}</b>
+              </div>
+              <p>{{ issue.description }}</p>
+              <button class="secondary-button compact" type="button" @click="selectHealthIssue(issue)">选中处理</button>
+            </article>
+          </div>
+          <div v-else class="health-check-empty">
+            当前没有发现明显异常。保持这个状态，很漂亮。
+          </div>
+        </div>
+        <div v-if="selectedRecords.length" class="batch-management-panel">
+          <div class="batch-management-copy">
+            <strong>批量管理</strong>
+            <span>已选 {{ selectedRecords.length }} 条，可统一改科目或移入最近删除。</span>
+          </div>
+          <select v-model="batchSubjectId">
+            <option value="">选择目标科目</option>
+            <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+          </select>
+          <button class="secondary-button compact" type="button" :disabled="isBatchWorking || !batchSubjectId" @click="batchMoveSelectedRecords">
+            <MoveRight :size="15" />
+            批量改科目
+          </button>
+          <button class="secondary-button compact danger-text" type="button" :disabled="isBatchWorking" @click="batchDeleteSelectedRecords">
+            <Trash2 :size="15" />
+            批量删除
+          </button>
         </div>
         <div v-if="selectedRecords.length" class="composite-selection-bar">
           <div class="composite-selection-info">
