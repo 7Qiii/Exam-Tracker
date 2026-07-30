@@ -37,10 +37,13 @@ const ACTIVE_FALLBACK_THROTTLE = 60 * 1000;
 const CLOUD_CALIBRATION_INTERVAL = 24 * 60 * 60 * 1000;
 const COMPOSITE_NOTE_META_PREFIX = "\n\n<!-- exam-tracker-composite:";
 const COMPOSITE_NOTE_META_SUFFIX = " -->";
+const RECORD_TRASH_KEY = "exam-tracker-deleted-records";
+const RECORD_TRASH_TTL = 24 * 60 * 60 * 1000;
 
 export const useTrackerStore = defineStore("tracker", () => {
   const subjects = ref([]);
   const records = ref([]);
+  const deletedRecords = ref(readDeletedRecords());
   const mistakes = ref([]);
   const images = ref([]);
   const isReady = ref(false);
@@ -67,6 +70,7 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
   const visibleSubjects = computed(() => subjects.value.filter((subject) => !subject.hidden));
+  const restorableDeletedRecords = computed(() => deletedRecords.value.filter(isDeletedRecordRestorable));
   const imageStorageStats = computed(() => {
     const totalBytes = images.value.reduce((sum, image) => sum + Number(image.size || image.blob?.size || 0), 0);
     const cloudCount = images.value.filter((image) => image.url || image.storageKey).length;
@@ -94,6 +98,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     const localData = await loadAllData();
     subjects.value = normalizeSubjects(localData.subjects);
     records.value = localData.records;
+    purgeExpiredDeletedRecords();
     mistakes.value = localData.mistakes;
     images.value = localData.images;
     syncMode.value = isSupabaseConfigured ? "signed-out" : "local";
@@ -307,10 +312,33 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function removeRecord(id) {
+    const record = records.value.find((item) => item.id === id);
+    if (record) saveDeletedRecord(record);
     await db.records.delete(id);
     await safeCloud(() => deleteRecordCloud(id));
     records.value = records.value.filter((record) => record.id !== id);
-    notify("成绩已删除。", "success");
+    notify("成绩已移入回收站，24 小时内可恢复。", "success", 5200);
+  }
+
+  async function restoreDeletedRecord(id) {
+    purgeExpiredDeletedRecords();
+    const entry = deletedRecords.value.find((item) => item.id === id);
+    if (!entry || !isDeletedRecordRestorable(entry)) {
+      notify("这条成绩已超过可恢复时间。", "error", 5200);
+      return;
+    }
+    const now = new Date().toISOString();
+    const record = {
+      ...entry.record,
+      pendingSync: true,
+      updatedAt: now
+    };
+    await db.records.put(record);
+    records.value = sortRecords([...records.value.filter((item) => item.id !== record.id), record]);
+    saveDeletedRecords(deletedRecords.value.filter((item) => item.id !== id));
+    const synced = await safeCloud(() => upsertRecord(record));
+    if (synced) await markRecordSynced(record.id);
+    notify("成绩已恢复。", "success");
   }
 
   async function addMistake(payload, files = []) {
@@ -1143,6 +1171,47 @@ export const useTrackerStore = defineStore("tracker", () => {
     return record?.durationMinutes !== "" && record?.durationMinutes !== null && record?.durationMinutes !== undefined;
   }
 
+  function saveDeletedRecord(record) {
+    const entry = {
+      id: record.id,
+      deletedAt: new Date().toISOString(),
+      record: { ...record, pendingSync: false }
+    };
+    saveDeletedRecords([entry, ...deletedRecords.value.filter((item) => item.id !== record.id)]);
+  }
+
+  function readDeletedRecords() {
+    try {
+      const parsed = JSON.parse(readLocalValue(RECORD_TRASH_KEY, "[]"));
+      return Array.isArray(parsed) ? parsed.filter(isDeletedRecordRestorable) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveDeletedRecords(entries) {
+    const next = entries
+      .filter(isDeletedRecordRestorable)
+      .sort((a, b) => new Date(b.deletedAt || 0).getTime() - new Date(a.deletedAt || 0).getTime());
+    deletedRecords.value = next;
+    writeLocalValue(RECORD_TRASH_KEY, JSON.stringify(next));
+  }
+
+  function purgeExpiredDeletedRecords() {
+    saveDeletedRecords(deletedRecords.value);
+  }
+
+  function isDeletedRecordRestorable(entry) {
+    const deletedAt = new Date(entry?.deletedAt || 0).getTime();
+    return Boolean(entry?.id && entry?.record?.id && deletedAt && Date.now() - deletedAt < RECORD_TRASH_TTL);
+  }
+
+  function deletedRecordRemainingHours(entry) {
+    const deletedAt = new Date(entry?.deletedAt || 0).getTime();
+    if (!deletedAt) return 0;
+    return Math.max(0, Math.ceil((RECORD_TRASH_TTL - (Date.now() - deletedAt)) / (60 * 60 * 1000)));
+  }
+
   function sortMistakes(entries) {
     return [...entries].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
   }
@@ -1215,6 +1284,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   return {
     subjects,
     records,
+    deletedRecords: restorableDeletedRecords,
     mistakes,
     images,
     isReady,
@@ -1247,6 +1317,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     addCompositeRecord,
     updateRecord,
     removeRecord,
+    restoreDeletedRecord,
+    deletedRecordRemainingHours,
     addMistake,
     updateMistake,
     removeMistake,

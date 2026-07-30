@@ -267,6 +267,10 @@ function resetCompositeValues() {
   compositeForm.paperName = defaultCompositeName.value;
 }
 
+async function restoreDeletedRecord(entry) {
+  await store.restoreDeletedRecord(entry.id);
+}
+
 async function createCompositeRecord() {
   if (!canCreateComposite.value) return;
   isCompositeSaving.value = true;
@@ -565,6 +569,24 @@ function scoreBarStyle(record) {
             <button class="secondary-button compact" type="button" :disabled="!selectableFilteredRecords.length" @click="selectAllFilteredRecords">
               {{ allFilteredRecordsSelected ? "取消全选" : "全选当前结果" }}
             </button>
+          </div>
+        </div>
+        <div v-if="store.deletedRecords.length" class="record-restore-panel">
+          <div class="record-restore-head">
+            <div>
+              <strong>最近删除</strong>
+              <span>24 小时内可以恢复，适合处理误删。</span>
+            </div>
+            <span>{{ store.deletedRecords.length }} 条</span>
+          </div>
+          <div class="record-restore-list">
+            <article v-for="entry in store.deletedRecords" :key="entry.id">
+              <div>
+                <strong>{{ recordTitle(entry.record) }}</strong>
+                <span>{{ store.subjectName(entry.record.subjectId) }} · {{ entry.record.score }}/{{ entry.record.fullScore }} · 还剩约 {{ store.deletedRecordRemainingHours(entry) }} 小时</span>
+              </div>
+              <button class="secondary-button compact" type="button" @click="restoreDeletedRecord(entry)">恢复</button>
+            </article>
           </div>
         </div>
         <div v-if="selectedRecords.length" class="composite-selection-bar">

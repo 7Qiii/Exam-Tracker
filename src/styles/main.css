@@ -4822,6 +4822,74 @@ th {
   font-weight: 900;
 }
 
+.record-restore-panel {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.035)),
+    var(--glass);
+  padding: 12px;
+  box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+
+.record-restore-head,
+.record-restore-list article {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.record-restore-head > div,
+.record-restore-list article > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.record-restore-head strong,
+.record-restore-list strong {
+  color: var(--ink);
+}
+
+.record-restore-head span,
+.record-restore-list span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.record-restore-head > span {
+  border-radius: 999px;
+  background: rgba(0, 122, 255, 0.1);
+  color: var(--blue);
+  padding: 5px 9px;
+}
+
+.record-restore-list {
+  display: grid;
+  gap: 8px;
+}
+
+.record-restore-list article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 10px;
+}
+
+.record-restore-list strong,
+.record-restore-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 :root[data-theme="light"] .selection-average-card {
   background:
     radial-gradient(circle at 12% 8%, rgba(0, 122, 255, 0.18), transparent 34%),
@@ -4854,6 +4922,12 @@ th {
 
   .selection-average-card strong {
     font-size: 24px;
+  }
+
+  .record-restore-head,
+  .record-restore-list article {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

@@ -9,17 +9,18 @@ import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
 const selectedSubject = ref("");
-const selectedAverageSubject = ref("");
 const importFile = ref(null);
 
+const scopedRecords = computed(() => (selectedSubject.value ? store.records.filter((record) => record.subjectId === selectedSubject.value) : store.records));
+const currentScopeName = computed(() => (selectedSubject.value ? store.subjectName(selectedSubject.value) : "全部科目"));
 const weekCount = computed(() => {
   const start = new Date();
   start.setDate(start.getDate() - 7);
-  return store.records.filter((record) => new Date(record.date) >= start).length;
+  return scopedRecords.value.filter((record) => new Date(record.date) >= start).length;
 });
 
 const latestRecords = computed(() =>
-  [...store.records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).slice(0, 5)
+  [...scopedRecords.value].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).slice(0, 5)
 );
 
 const subjectStats = computed(() =>
@@ -34,8 +35,9 @@ const subjectStats = computed(() =>
     };
   })
 );
+const displayedSubjectStats = computed(() => (selectedSubject.value ? subjectStats.value.filter((subject) => subject.id === selectedSubject.value) : subjectStats.value));
 const defaultAverageSubjectId = computed(() => subjectStats.value.find((subject) => subject.count)?.id || store.visibleSubjects[0]?.id || "");
-const averageSubjectId = computed(() => selectedAverageSubject.value || defaultAverageSubjectId.value);
+const averageSubjectId = computed(() => selectedSubject.value || defaultAverageSubjectId.value);
 const averageSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === averageSubjectId.value) || null);
 const averageSubjectStats = computed(() => {
   const records = store.records.filter((record) => record.subjectId === averageSubjectId.value && record.recordType !== "composite");
@@ -149,17 +151,17 @@ function recordTitle(record) {
 
     <section class="summary-grid">
       <MetricCard label="成绩记录" :value="store.records.length" hint="套试卷 / 专项练习" tone="blue" />
-      <MetricCard label="近 7 天练习" :value="weekCount" hint="保持节奏更重要" tone="green" />
+      <MetricCard label="近 7 天练习" :value="weekCount" :hint="`${currentScopeName} · 保持节奏`" tone="green" />
       <MetricCard label="错题记录" :value="store.mistakes.length" hint="解析与图片复盘" tone="orange" />
-      <MetricCard label="最近成绩" :value="latestRecords[0] ? `${latestRecords[0].score}/${latestRecords[0].fullScore}` : '--'" hint="最近一套卷" tone="purple" />
+      <MetricCard label="最近成绩" :value="latestRecords[0] ? `${latestRecords[0].score}/${latestRecords[0].fullScore}` : '--'" :hint="`${currentScopeName} · 最近一套`" tone="purple" />
     </section>
 
     <section class="average-dashboard-panel">
       <div class="average-dashboard-main">
         <div class="average-dashboard-head">
           <span><Calculator :size="16" />科目均分</span>
-          <select v-model="selectedAverageSubject">
-            <option value="">自动选择记录最多科目</option>
+          <select v-model="selectedSubject">
+            <option value="">全部科目 · 自动均分科目</option>
             <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
           </select>
         </div>
@@ -222,7 +224,7 @@ function recordTitle(record) {
           </select>
         </div>
         <div class="subject-list">
-          <article v-for="subject in subjectStats" :key="subject.id" class="subject-card">
+          <article v-for="subject in displayedSubjectStats" :key="subject.id" class="subject-card">
             <div>
               <strong>{{ subject.name }}</strong>
               <span>{{ subject.count }} 条记录</span>
