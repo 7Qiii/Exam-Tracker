@@ -9,10 +9,27 @@ import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
 const selectedSubject = ref("");
+const selectedPaperVariant = ref("all");
 const importFile = ref(null);
 
-const scopedRecords = computed(() => (selectedSubject.value ? store.records.filter((record) => record.subjectId === selectedSubject.value) : store.records));
-const currentScopeName = computed(() => (selectedSubject.value ? store.subjectName(selectedSubject.value) : "全部科目"));
+const paperVariantOptions = [
+  { value: "all", label: "全部" },
+  { value: "true", label: "真题" },
+  { value: "mock", label: "模拟卷" }
+];
+
+const isMathSubjectSelected = computed(() => selectedSubject.value === "math1");
+const chartPaperVariant = computed(() => (isMathSubjectSelected.value ? selectedPaperVariant.value : "all"));
+const scopedRecords = computed(() => {
+  const list = selectedSubject.value ? store.records.filter((record) => record.subjectId === selectedSubject.value) : store.records;
+  return isMathSubjectSelected.value ? list.filter(matchesSelectedPaperVariant) : list;
+});
+const currentScopeName = computed(() => {
+  if (!selectedSubject.value) return "全部科目";
+  const subjectName = store.subjectName(selectedSubject.value);
+  const suffix = isMathSubjectSelected.value ? paperVariantOptions.find((item) => item.value === selectedPaperVariant.value)?.label : "";
+  return suffix && suffix !== "全部" ? `${subjectName} · ${suffix}` : subjectName;
+});
 const weekCount = computed(() => {
   const start = new Date();
   start.setDate(start.getDate() - 7);
@@ -25,7 +42,7 @@ const latestRecords = computed(() =>
 
 const subjectStats = computed(() =>
   store.visibleSubjects.map((subject) => {
-    const records = store.records.filter((record) => record.subjectId === subject.id);
+    const records = subject.id === selectedSubject.value ? scopedRecords.value : store.records.filter((record) => record.subjectId === subject.id);
     const latest = [...records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0];
     return {
       ...subject,
@@ -40,7 +57,9 @@ const defaultAverageSubjectId = computed(() => subjectStats.value.find((subject)
 const averageSubjectId = computed(() => selectedSubject.value || defaultAverageSubjectId.value);
 const averageSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === averageSubjectId.value) || null);
 const averageSubjectStats = computed(() => {
-  const records = store.records.filter((record) => record.subjectId === averageSubjectId.value && record.recordType !== "composite");
+  const records = store.records
+    .filter((record) => record.subjectId === averageSubjectId.value && record.recordType !== "composite")
+    .filter((record) => (averageSubjectId.value === "math1" && selectedPaperVariant.value !== "all" ? matchesSelectedPaperVariant(record) : true));
   const scoredRecords = records.filter((record) => Number(record.fullScore) > 0);
   const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
   const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
@@ -88,6 +107,28 @@ async function onImport(event) {
   const payload = JSON.parse(await file.text());
   await store.importData(payload, true);
   event.target.value = "";
+}
+
+function matchesSelectedPaperVariant(record) {
+  if (selectedPaperVariant.value === "all") return true;
+  return record.subjectId === "math1" && (record.recordType || "paper") === "paper" && normalizePaperVariant(record) === selectedPaperVariant.value;
+}
+
+function normalizePaperVariant(record) {
+  const raw = String(record?.paperVariant || "").trim().toLowerCase();
+  if (raw === "true" || raw === "mock") return raw;
+  const name = String(record?.paperName || "").trim().toLowerCase();
+  if (/mock|模拟|模考/.test(name)) return "mock";
+  if (/真题|历年|历届/.test(name)) return "true";
+  return "";
+}
+
+function recordVariantLabel(record) {
+  if (record.subjectId !== "math1" || (record.recordType || "paper") !== "paper") return "";
+  const value = normalizePaperVariant(record);
+  if (value === "true") return "真题";
+  if (value === "mock") return "模拟卷";
+  return "未分类";
 }
 
 function formatDuration(minutes) {
@@ -165,8 +206,19 @@ function recordTitle(record) {
             <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
           </select>
         </div>
+        <div v-if="averageSubjectId === 'math1'" class="paper-kind-tabs">
+          <button
+            v-for="option in paperVariantOptions"
+            :key="option.value"
+            type="button"
+            :class="{ active: selectedPaperVariant === option.value }"
+            @click="selectedPaperVariant = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </div>
         <div class="average-score-display">
-          <small>{{ averageSubject?.name || "暂无科目" }}</small>
+          <small>{{ averageSubject?.name || "暂无科目" }}{{ averageSubjectId === 'math1' && selectedPaperVariant !== 'all' ? ` · ${paperVariantOptions.find((item) => item.value === selectedPaperVariant)?.label}` : "" }}</small>
           <strong v-if="averageSubjectStats.isReady">
             {{ formatScoreValue(averageSubjectStats.avgScore) }} / {{ formatScoreValue(averageSubjectStats.avgFullScore) }}
           </strong>
@@ -236,7 +288,7 @@ function recordTitle(record) {
       </div>
     </section>
 
-    <ScoreCharts :subject-id="selectedSubject" />
+    <ScoreCharts :subject-id="selectedSubject" :paper-variant="chartPaperVariant" />
 
     <section class="panel">
       <div class="section-head">
@@ -256,7 +308,10 @@ function recordTitle(record) {
           </thead>
           <tbody>
             <tr v-for="record in latestRecords" :key="record.id">
-              <td><RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink></td>
+              <td>
+                <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
+                <span v-if="recordVariantLabel(record)" class="paper-variant-pill">{{ recordVariantLabel(record) }}</span>
+              </td>
               <td>{{ store.subjectName(record.subjectId) }}</td>
               <td>{{ record.score }} / {{ record.fullScore }}</td>
               <td>{{ formatDuration(record.durationMinutes) }}</td>

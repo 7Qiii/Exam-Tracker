@@ -10,9 +10,15 @@ const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
 const isSaving = ref(false);
 
+const paperVariantOptions = [
+  { value: "true", label: "真题", hint: "历年真题、成套回顾" },
+  { value: "mock", label: "模拟卷", hint: "模考、套卷训练" }
+];
+
 const form = reactive({
   subjectId: "",
   recordType: "paper",
+  paperVariant: "",
   paperName: "",
   exerciseBookName: "",
   exercisePage: "",
@@ -28,6 +34,7 @@ const selectedSubject = computed(() => store.visibleSubjects.find((subject) => s
 const isEditing = computed(() => Boolean(props.record));
 const isComposite = computed(() => form.recordType === "composite");
 const isMathSubject = computed(() => selectedSubject.value?.id === "math1");
+const isMathPaper = computed(() => isMathSubject.value && form.recordType === "paper" && !isComposite.value);
 const exerciseBooks = computed(() => {
   const books = store.records
     .filter((record) => record.subjectId === "math1" && record.recordType === "exercise" && record.exerciseBookName)
@@ -42,6 +49,7 @@ watch(
     if (props.record) {
       form.subjectId = props.record.subjectId || "";
       form.recordType = props.record.recordType || "paper";
+      form.paperVariant = normalizePaperVariant(props.record.paperVariant, props.record.paperName);
       form.paperName = props.record.paperName || "";
       form.exerciseBookName = props.record.exerciseBookName || "";
       form.exercisePage = props.record.exercisePage || "";
@@ -51,11 +59,13 @@ watch(
       form.durationMinutes = props.record.durationMinutes ?? "";
       form.date = props.record.date || new Date().toISOString().slice(0, 10);
       form.note = store.displayRecordNote(props.record) || "";
+      ensurePaperVariant();
       return;
     }
     if ((!form.subjectId || !selectedSubject.value) && store.visibleSubjects.length) {
       form.subjectId = store.visibleSubjects[0].id;
     }
+    ensurePaperVariant();
   },
   { immediate: true }
 );
@@ -72,6 +82,7 @@ watch(
       form.exercisePage = "";
       form.exerciseQuestion = "";
     }
+    ensurePaperVariant();
   },
   { immediate: true }
 );
@@ -84,6 +95,7 @@ watch(
       form.exercisePage = "";
       form.exerciseQuestion = "";
     }
+    ensurePaperVariant();
   }
 );
 
@@ -91,6 +103,7 @@ async function submit() {
   if (Number(form.score) > Number(form.fullScore)) return;
   if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) return;
   if (form.recordType === "exercise" && !form.exerciseBookName.trim()) return;
+  ensurePaperVariant();
   isSaving.value = true;
   try {
     if (props.record) {
@@ -110,6 +123,7 @@ async function submit() {
       form.note = "";
       form.date = new Date().toISOString().slice(0, 10);
       form.fullScore = selectedSubject.value?.fullScore || "";
+      ensurePaperVariant();
     }
     emit("saved");
   } catch (error) {
@@ -117,6 +131,23 @@ async function submit() {
   } finally {
     isSaving.value = false;
   }
+}
+
+function ensurePaperVariant() {
+  if (isMathPaper.value) {
+    form.paperVariant = normalizePaperVariant(form.paperVariant, form.paperName) || "true";
+  } else {
+    form.paperVariant = "";
+  }
+}
+
+function normalizePaperVariant(value, paperName = "") {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "true" || raw === "mock") return raw;
+  const name = String(paperName || "").trim().toLowerCase();
+  if (/mock|模拟|模考/.test(name)) return "mock";
+  if (/真题|历年|历届/.test(name)) return "true";
+  return "";
 }
 </script>
 
@@ -133,6 +164,22 @@ async function submit() {
       <div class="segmented">
         <button type="button" :class="{ active: form.recordType === 'paper' }" @click="form.recordType = 'paper'">试卷</button>
         <button type="button" :class="{ active: form.recordType === 'exercise' }" @click="form.recordType = 'exercise'">习题</button>
+      </div>
+    </div>
+    <div v-if="isMathPaper" class="field-group paper-kind-field">
+      <span>数一卷型</span>
+      <div class="segmented paper-kind-segmented">
+        <button
+          v-for="option in paperVariantOptions"
+          :key="option.value"
+          type="button"
+          :class="{ active: form.paperVariant === option.value }"
+          :title="option.hint"
+          @click="form.paperVariant = option.value"
+        >
+          {{ option.label }}
+          <small>{{ option.hint }}</small>
+        </button>
       </div>
     </div>
     <label v-if="form.recordType !== 'exercise'">

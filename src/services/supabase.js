@@ -109,14 +109,14 @@ export async function upsertRecord(record) {
     if (isMissingRecordCompositeColumn(withoutUpdatedAtError)) {
       const { error: withoutBothError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAtAndComposite(record));
       if (!withoutBothError) return;
-      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError)) {
+      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError) || isMissingRecordVariantColumn(withoutBothError)) {
         const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
         if (legacyError) throw legacyError;
         return;
       }
       throw withoutBothError;
     }
-    if (isMissingRecordDurationColumn(withoutUpdatedAtError) || isMissingRecordSourceColumn(withoutUpdatedAtError)) {
+    if (isMissingRecordDurationColumn(withoutUpdatedAtError) || isMissingRecordSourceColumn(withoutUpdatedAtError) || isMissingRecordVariantColumn(withoutUpdatedAtError)) {
       const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
       if (legacyError) throw legacyError;
       return;
@@ -129,16 +129,21 @@ export async function upsertRecord(record) {
     if (isMissingRecordUpdatedAtColumn(withoutCompositeError)) {
       const { error: withoutBothError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAtAndComposite(record));
       if (!withoutBothError) return;
-      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError)) {
+      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError) || isMissingRecordVariantColumn(withoutBothError)) {
         const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
         if (legacyError) throw legacyError;
         return;
       }
       throw withoutBothError;
     }
+    if (isMissingRecordDurationColumn(withoutCompositeError) || isMissingRecordSourceColumn(withoutCompositeError) || isMissingRecordVariantColumn(withoutCompositeError)) {
+      const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
+      if (legacyError) throw legacyError;
+      return;
+    }
     throw withoutCompositeError;
   }
-  if (isMissingRecordDurationColumn(error) || isMissingRecordSourceColumn(error)) {
+  if (isMissingRecordDurationColumn(error) || isMissingRecordSourceColumn(error) || isMissingRecordVariantColumn(error)) {
     const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
     if (legacyError) throw legacyError;
     return;
@@ -275,6 +280,10 @@ function isMissingRecordSourceColumn(error) {
   return /record_type|exercise_book_name|exercise_page|exercise_question/i.test(`${error.message || ""} ${error.details || ""}`);
 }
 
+function isMissingRecordVariantColumn(error) {
+  return /paper_variant/i.test(`${error.message || ""} ${error.details || ""}`);
+}
+
 function isMissingRecordUpdatedAtColumn(error) {
   return /updated_at/i.test(`${error.message || ""} ${error.details || ""}`);
 }
@@ -290,6 +299,7 @@ function fromRecordRow(row) {
     subjectId: row.subject_id,
     recordType: row.record_type || "paper",
     paperName: row.paper_name,
+    paperVariant: row.paper_variant || inferPaperVariant(row.subject_id, row.record_type, row.paper_name),
     exerciseBookName: row.exercise_book_name || "",
     exercisePage: row.exercise_page || "",
     exerciseQuestion: row.exercise_question || "",
@@ -345,6 +355,7 @@ function toRecordRowWithoutUpdatedAt(record) {
     ...toLegacyRecordRow(record),
     duration_minutes: toDurationValue(record.durationMinutes),
     record_type: record.recordType === "exercise" || record.recordType === "composite" ? record.recordType : "paper",
+    paper_variant: toPaperVariantValue(record),
     exercise_book_name: record.recordType === "exercise" ? record.exerciseBookName || "" : "",
     exercise_page: record.recordType === "exercise" ? record.exercisePage || "" : "",
     exercise_question: record.recordType === "exercise" ? record.exerciseQuestion || "" : "",
@@ -365,10 +376,25 @@ function toLegacyRecordRow(record) {
   };
 }
 
+function toPaperVariantValue(record) {
+  if ((record.recordType || "paper") !== "paper" || record.subjectId !== "math1") return "";
+  return inferPaperVariant(record.subjectId, record.recordType, record.paperName, record.paperVariant);
+}
+
 function toDurationValue(value) {
   if (value === "" || value === null || value === undefined) return null;
   const minutes = Number(value);
   return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : null;
+}
+
+function inferPaperVariant(subjectId, recordType, paperName, paperVariant = "") {
+  const raw = String(paperVariant || "").trim().toLowerCase();
+  if (raw === "true" || raw === "mock") return raw;
+  if (subjectId !== "math1" || (recordType || "paper") !== "paper") return "";
+  const name = String(paperName || "").trim().toLowerCase();
+  if (/mock|模拟|模考/.test(name)) return "mock";
+  if (/真题|历年|历届/.test(name)) return "true";
+  return "";
 }
 
 function fromMistakeRow(row) {

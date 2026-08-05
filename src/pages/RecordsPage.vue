@@ -31,8 +31,8 @@ const store = useTrackerStore();
 const router = useRouter();
 const page = ref(1);
 const pageSize = 8;
-const filters = reactive({ keyword: "", subjectId: "" });
-const draftFilters = reactive({ keyword: "", subjectId: "" });
+const filters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
+const draftFilters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
 const showForm = ref(false);
 const editingRecordId = ref("");
 const selectedRecordIds = ref([]);
@@ -46,6 +46,13 @@ const isBatchWorking = ref(false);
 const ignoredHealthIssueIds = ref(readIgnoredHealthIssues());
 const isIgnoredHealthOpen = ref(false);
 
+const paperVariantOptions = [
+  { value: "all", label: "全部" },
+  { value: "true", label: "真题" },
+  { value: "mock", label: "模拟卷" }
+];
+const isMathDraftFilter = computed(() => draftFilters.subjectId === "math1");
+
 const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
   return [...store.records]
@@ -54,6 +61,7 @@ const filteredRecords = computed(() => {
       const haystack = normalizeSearch([
         record.paperName,
         recordTypeLabel(record),
+        recordVariantLabel(record),
         record.exerciseBookName,
         record.exercisePage,
         record.exerciseQuestion,
@@ -69,7 +77,8 @@ const filteredRecords = computed(() => {
       ].join(" "));
       return (
         (!keyword || haystack.includes(keyword)) &&
-        (!filters.subjectId || record.subjectId === filters.subjectId)
+        (!filters.subjectId || record.subjectId === filters.subjectId) &&
+        matchesPaperVariantFilter(record)
       );
     })
     .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
@@ -78,7 +87,7 @@ const filteredRecords = computed(() => {
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)));
 const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1) * pageSize, page.value * pageSize));
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
-const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId));
+const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId || filters.paperVariant !== "all"));
 const selectableFilteredRecords = computed(() => filteredRecords.value.filter((record) => record.recordType !== "composite"));
 const selectedRecords = computed(() =>
   selectedRecordIds.value
@@ -177,11 +186,20 @@ const healthStatusText = computed(() => {
   return "数据状态良好";
 });
 
-watch(() => [filters.keyword, filters.subjectId], () => {
+watch(() => [filters.keyword, filters.subjectId, filters.paperVariant], () => {
   page.value = 1;
   const validIds = new Set(selectableFilteredRecords.value.map((record) => record.id));
   selectedRecordIds.value = selectedRecordIds.value.filter((id) => validIds.has(id));
 });
+
+watch(
+  () => draftFilters.subjectId,
+  () => {
+    if (draftFilters.subjectId !== "math1") {
+      draftFilters.paperVariant = "all";
+    }
+  }
+);
 
 watch(selectedRecordIds, () => {
   const validIds = selectedRecordIds.value.filter((id) => store.records.some((record) => record.id === id && record.recordType !== "composite"));
@@ -200,6 +218,7 @@ watch(selectedRecordIds, () => {
 function applyFilters() {
   filters.keyword = draftFilters.keyword;
   filters.subjectId = draftFilters.subjectId;
+  filters.paperVariant = draftFilters.subjectId === "math1" ? draftFilters.paperVariant : "all";
   page.value = 1;
   showForm.value = false;
   editingRecordId.value = "";
@@ -208,6 +227,7 @@ function applyFilters() {
 function clearFilters() {
   draftFilters.keyword = "";
   draftFilters.subjectId = "";
+  draftFilters.paperVariant = "all";
   applyFilters();
 }
 
@@ -358,8 +378,10 @@ async function batchDeleteSelectedRecords() {
 function selectHealthIssue(issue) {
   draftFilters.keyword = "";
   draftFilters.subjectId = "";
+  draftFilters.paperVariant = "all";
   filters.keyword = "";
   filters.subjectId = "";
+  filters.paperVariant = "all";
   page.value = 1;
   showForm.value = false;
   editingRecordId.value = "";
@@ -435,6 +457,28 @@ function recordTypeLabel(record) {
   return record.recordType === "exercise" ? "习题" : "试卷";
 }
 
+function matchesPaperVariantFilter(record) {
+  if (filters.subjectId !== "math1" || filters.paperVariant === "all") return true;
+  return record.subjectId === "math1" && (record.recordType || "paper") === "paper" && normalizePaperVariant(record) === filters.paperVariant;
+}
+
+function recordVariantLabel(record) {
+  if (record.subjectId !== "math1" || (record.recordType || "paper") !== "paper") return "";
+  const value = normalizePaperVariant(record);
+  if (value === "true") return "真题";
+  if (value === "mock") return "模拟卷";
+  return "未分类";
+}
+
+function normalizePaperVariant(record) {
+  const raw = String(record?.paperVariant || "").trim().toLowerCase();
+  if (raw === "true" || raw === "mock") return raw;
+  const name = String(record?.paperName || "").trim().toLowerCase();
+  if (/mock|模拟|模考/.test(name)) return "mock";
+  if (/真题|历年|历届/.test(name)) return "true";
+  return "";
+}
+
 function buildRecordUpdatePayload(record, overrides = {}) {
   const subjectId = overrides.subjectId || record.subjectId;
   const targetIsMath = subjectId === "math1";
@@ -442,6 +486,7 @@ function buildRecordUpdatePayload(record, overrides = {}) {
   return {
     subjectId,
     recordType,
+    paperVariant: subjectId === "math1" && recordType === "paper" ? normalizePaperVariant(record) : "",
     paperName: recordType === "exercise" ? record.paperName : recordTitle(record),
     exerciseBookName: recordType === "exercise" ? record.exerciseBookName || "" : "",
     exercisePage: recordType === "exercise" ? record.exercisePage || "" : "",
@@ -533,11 +578,11 @@ function duplicateGroups(records, keyBuilder) {
 }
 
 function exactRecordKey(record) {
-  return [record.subjectId, record.recordType || "paper", normalizeSearch(recordTitle(record)), record.date, record.score, record.fullScore].join("|");
+  return [record.subjectId, record.recordType || "paper", normalizePaperVariant(record), normalizeSearch(recordTitle(record)), record.date, record.score, record.fullScore].join("|");
 }
 
 function nameRecordKey(record) {
-  return [record.subjectId, record.recordType || "paper", normalizeSearch(recordTitle(record))].join("|");
+  return [record.subjectId, record.recordType || "paper", normalizePaperVariant(record), normalizeSearch(recordTitle(record))].join("|");
 }
 
 function commonYearLabel(records) {
@@ -673,6 +718,17 @@ function scoreBarStyle(record) {
           <option value="">全部科目</option>
           <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
+        <div v-if="isMathDraftFilter" class="paper-kind-tabs compact">
+          <button
+            v-for="option in paperVariantOptions"
+            :key="option.value"
+            type="button"
+            :class="{ active: draftFilters.paperVariant === option.value }"
+            @click="draftFilters.paperVariant = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </div>
         <button class="primary-button" type="submit">
           <Search :size="16" />
           搜索
@@ -969,7 +1025,10 @@ function scoreBarStyle(record) {
                     @change="toggleSelect(record)"
                   />
                 </td>
-                <td><RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink></td>
+                <td>
+                  <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
+                  <span v-if="recordVariantLabel(record)" class="record-variant-pill">{{ recordVariantLabel(record) }}</span>
+                </td>
                 <td>{{ store.subjectName(record.subjectId) }}</td>
                 <td>{{ recordTypeLabel(record) }}</td>
                 <td>
@@ -1021,6 +1080,7 @@ function scoreBarStyle(record) {
                 <div class="record-card-title-row">
                   <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
                   <span class="record-type-pill">{{ recordTypeLabel(record) }}</span>
+                  <span v-if="recordVariantLabel(record)" class="record-variant-pill">{{ recordVariantLabel(record) }}</span>
                 </div>
                 <div class="record-card-meta-line">
                   <span>{{ store.subjectName(record.subjectId) }}</span>

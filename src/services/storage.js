@@ -161,13 +161,14 @@ export async function importPortableData(payload, merge = true) {
   });
 }
 
-function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, durationMinutes, note) {
+function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, durationMinutes, note, paperVariant = "") {
   const date = new Date();
   date.setDate(date.getDate() + daysAgo);
   return {
     id: crypto.randomUUID(),
     subjectId,
     paperName,
+    paperVariant,
     score,
     fullScore,
     durationMinutes,

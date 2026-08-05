@@ -524,6 +524,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     const exercisePage = cleanText(payload.exercisePage);
     const exerciseQuestion = cleanText(payload.exerciseQuestion);
     const compositeSources = recordType === "composite" ? normalizeCompositeSources(Array.isArray(payload.compositeSources) && payload.compositeSources.length ? payload.compositeSources : payload.note) : [];
+    const paperVariant = recordType === "paper" && cleanText(payload.subjectId) === "math1" ? normalizePaperVariant(payload.paperVariant, payload.paperName) : "";
     const paperName =
       recordType === "exercise"
         ? buildExerciseRecordName(exerciseBookName, exercisePage, exerciseQuestion)
@@ -535,6 +536,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       recordType,
       paperName,
       note,
+      paperVariant,
       exerciseBookName: recordType === "exercise" ? exerciseBookName : "",
       exercisePage: recordType === "exercise" ? exercisePage : "",
       exerciseQuestion: recordType === "exercise" ? exerciseQuestion : "",
@@ -556,6 +558,7 @@ export const useTrackerStore = defineStore("tracker", () => {
         subjectId: record.subjectId,
         paperName: record.paperName,
         recordType: record.recordType || "paper",
+        paperVariant: normalizePaperVariant(record.paperVariant, record.paperName),
         score: normalizeOptionalNumber(draft.score, record.score),
         fullScore: normalizeOptionalNumber(draft.fullScore, record.fullScore),
         durationMinutes: normalizeOptionalDuration(draft.durationMinutes, normalizeDuration(record.durationMinutes)),
@@ -576,6 +579,7 @@ export const useTrackerStore = defineStore("tracker", () => {
           subjectId: cleanText(item.subjectId),
           paperName: cleanText(item.paperName),
           recordType: item.recordType === "exercise" || item.recordType === "composite" ? item.recordType : "paper",
+          paperVariant: normalizePaperVariant(item.paperVariant, item.paperName),
           score: normalizeOptionalNumber(item.score, 0),
           fullScore: normalizeOptionalNumber(item.fullScore, 0),
           durationMinutes: normalizeOptionalDuration(item.durationMinutes, ""),
@@ -630,6 +634,7 @@ export const useTrackerStore = defineStore("tracker", () => {
         subjectId: source.subjectId,
         paperName: source.paperName,
         recordType: source.recordType || "paper",
+        paperVariant: normalizePaperVariant(source.paperVariant, source.paperName),
         score: Number(source.score || 0),
         fullScore: Number(source.fullScore || 0),
         durationMinutes: normalizeDuration(source.durationMinutes),
@@ -662,6 +667,15 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   function cleanText(value) {
     return String(value ?? "").trim();
+  }
+
+  function normalizePaperVariant(value, paperName = "") {
+    const raw = cleanText(value).toLowerCase();
+    if (raw === "true" || raw === "mock") return raw;
+    const name = cleanText(paperName).toLowerCase();
+    if (/mock|模拟|模考/.test(name)) return "mock";
+    if (/真题|历年|历届/.test(name)) return "true";
+    return "";
   }
 
   async function saveMistakeImages(mistakeId, files) {
@@ -1225,6 +1239,7 @@ export const useTrackerStore = defineStore("tracker", () => {
       a.subjectId === b.subjectId &&
       (a.recordType || "paper") === (b.recordType || "paper") &&
       a.paperName === b.paperName &&
+      normalizePaperVariant(a.paperVariant, a.paperName) === normalizePaperVariant(b.paperVariant, b.paperName) &&
       (a.exerciseBookName || "") === (b.exerciseBookName || "") &&
       (a.exercisePage || "") === (b.exercisePage || "") &&
       (a.exerciseQuestion || "") === (b.exerciseQuestion || "") &&

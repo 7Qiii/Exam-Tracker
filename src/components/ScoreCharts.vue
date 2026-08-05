@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useTrackerStore } from "../stores/tracker";
 
 const props = defineProps({
-  subjectId: { type: String, default: "" }
+  subjectId: { type: String, default: "" },
+  paperVariant: { type: String, default: "all" }
 });
 
 const store = useTrackerStore();
@@ -20,7 +21,8 @@ let systemThemeQuery = null;
 
 const scopedRecords = computed(() => {
   const list = props.subjectId ? store.records.filter((record) => record.subjectId === props.subjectId) : store.records;
-  return [...list].sort((a, b) => a.date.localeCompare(b.date));
+  const filtered = props.subjectId === "math1" && props.paperVariant !== "all" ? list.filter((record) => (record.recordType || "paper") === "paper" && normalizePaperVariant(record) === props.paperVariant) : list;
+  return [...filtered].sort((a, b) => a.date.localeCompare(b.date));
 });
 
 async function draw() {
@@ -160,6 +162,15 @@ function isDarkMode() {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 }
 
+function normalizePaperVariant(record) {
+  const raw = String(record?.paperVariant || "").trim().toLowerCase();
+  if (raw === "true" || raw === "mock") return raw;
+  const name = String(record?.paperName || "").trim().toLowerCase();
+  if (/mock|模拟|模考/.test(name)) return "mock";
+  if (/真题|历年|历届/.test(name)) return "true";
+  return "";
+}
+
 function resize() {
   trendChart?.resize();
   distributionChart?.resize();
@@ -200,7 +211,7 @@ onMounted(() => {
   window.addEventListener("resize", resize);
 });
 
-watch(() => [store.records.length, props.subjectId], () => {
+watch(() => [store.records.length, props.subjectId, props.paperVariant], () => {
   if (isChartReady.value) draw();
 });
 

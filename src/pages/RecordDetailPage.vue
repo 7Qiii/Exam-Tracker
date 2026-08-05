@@ -15,17 +15,15 @@ const relatedMistakes = computed(() => store.mistakes.filter((item) => item.sour
 const recordTitle = computed(() => {
   if (!record.value) return "";
   if (record.value.recordType !== "exercise") return record.value.paperName;
-  return [
-    record.value.exerciseBookName || record.value.paperName,
-    record.value.exercisePage ? `P${record.value.exercisePage}` : "",
-    record.value.exerciseQuestion ? `第 ${record.value.exerciseQuestion} 题` : ""
-  ]
+  return [record.value.exerciseBookName || record.value.paperName, record.value.exercisePage ? `P${record.value.exercisePage}` : "", record.value.exerciseQuestion ? `第 ${record.value.exerciseQuestion} 题` : ""]
     .filter(Boolean)
     .join(" · ");
 });
+const recordVariantText = computed(() => recordVariantLabel(record.value));
 const recordTypeText = computed(() => {
   if (record.value?.recordType === "composite") return "合成";
-  return record.value?.recordType === "exercise" ? "习题" : "试卷";
+  if (record.value?.recordType === "exercise") return "习题";
+  return recordVariantText.value ? `试卷 · ${recordVariantText.value}` : "试卷";
 });
 const compositeSources = computed(() => store.compositeSourcesForRecord(record.value));
 const compositeSourceTotal = computed(() =>
@@ -82,7 +80,26 @@ function normalizeScoreValue(value) {
 
 function sourceTypeText(source) {
   if (source.recordType === "composite") return "合成";
-  return source.recordType === "exercise" ? "习题" : "试卷";
+  if (source.recordType === "exercise") return "习题";
+  const variant = recordVariantLabel(source);
+  return variant ? `试卷 · ${variant}` : "试卷";
+}
+
+function recordVariantLabel(item) {
+  if (!item || item.subjectId !== "math1" || (item.recordType || "paper") !== "paper") return "";
+  const value = normalizePaperVariant(item);
+  if (value === "true") return "真题";
+  if (value === "mock") return "模拟卷";
+  return "未分类";
+}
+
+function normalizePaperVariant(item) {
+  const raw = String(item?.paperVariant || "").trim().toLowerCase();
+  if (raw === "true" || raw === "mock") return raw;
+  const name = String(item?.paperName || "").trim().toLowerCase();
+  if (/mock|模拟|模考/.test(name)) return "mock";
+  if (/真题|历年|历届/.test(name)) return "true";
+  return "";
 }
 
 function sourceChanged(source) {
@@ -127,7 +144,7 @@ function sourceChanged(source) {
           <div class="composite-breakdown-head">
             <div>
               <h3>分项构成</h3>
-              <p>{{ compositeSources.length ? `共 ${compositeSources.length} 条来源` : "没有找到来源记录。" }}</p>
+              <p>{{ compositeSources.length ? `共 ${compositeSources.length} 条来源记录` : "没有找到来源记录。" }}</p>
             </div>
             <strong v-if="compositeSources.length">{{ compositeSourceTotal.score }} / {{ compositeSourceTotal.fullScore }}</strong>
           </div>

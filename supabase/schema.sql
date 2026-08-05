@@ -21,6 +21,7 @@ create table if not exists public.records (
   user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
   subject_id text not null,
   paper_name text not null,
+  paper_variant text not null default '',
   score numeric not null,
   full_score numeric not null,
   record_type text not null default 'paper',
@@ -36,6 +37,7 @@ create table if not exists public.records (
 );
 
 alter table public.records add column if not exists duration_minutes integer;
+alter table public.records add column if not exists paper_variant text not null default '';
 alter table public.records add column if not exists record_type text not null default 'paper';
 alter table public.records add column if not exists exercise_book_name text not null default '';
 alter table public.records add column if not exists exercise_page text not null default '';
