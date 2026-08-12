@@ -294,12 +294,14 @@ function isMissingRecordCompositeColumn(error) {
 
 function fromRecordRow(row) {
   const note = row.note || "";
+  const recordType = row.record_type || "paper";
+  const paperVariant = normalizePaperVariantValue(row.paper_variant || parsePaperVariantFromNote(note), row.subject_id, recordType, row.paper_name);
   return {
     id: row.id,
     subjectId: row.subject_id,
-    recordType: row.record_type || "paper",
+    recordType,
     paperName: row.paper_name,
-    paperVariant: row.paper_variant || inferPaperVariant(row.subject_id, row.record_type, row.paper_name),
+    paperVariant,
     exerciseBookName: row.exercise_book_name || "",
     exercisePage: row.exercise_page || "",
     exerciseQuestion: row.exercise_question || "",
@@ -307,11 +309,11 @@ function fromRecordRow(row) {
     fullScore: row.full_score,
     durationMinutes: row.duration_minutes == null ? "" : Number(row.duration_minutes),
     date: row.date,
-    note,
+    note: stripPaperVariantMeta(note),
     createdAt: row.created_at,
     updatedAt: row.updated_at || row.created_at,
     compositeSourceIds: Array.isArray(row.composite_source_ids) ? row.composite_source_ids : [],
-    compositeSources: parseCompositeSourcesFromNote(note)
+    compositeSources: parseCompositeSourcesFromNote(stripPaperVariantMeta(note))
   };
 }
 
@@ -371,13 +373,15 @@ function toLegacyRecordRow(record) {
     score: Number(record.score),
     full_score: Number(record.fullScore),
     date: record.date,
-    note: record.note || "",
+    note: attachPaperVariantMeta(record.note || "", toPaperVariantValue(record)),
     created_at: record.createdAt
   };
 }
 
 function toPaperVariantValue(record) {
   if ((record.recordType || "paper") !== "paper" || record.subjectId !== "math1") return "";
+  const raw = String(record.paperVariant || "").trim().toLowerCase();
+  if (raw === "true" || raw === "mock") return raw;
   return inferPaperVariant(record.subjectId, record.recordType, record.paperName, record.paperVariant);
 }
 
@@ -395,6 +399,25 @@ function inferPaperVariant(subjectId, recordType, paperName, paperVariant = "") 
   if (/mock|模拟|模考/.test(name)) return "mock";
   if (/真题|历年|历届/.test(name)) return "true";
   return "";
+}
+
+function normalizePaperVariantValue(paperVariant, subjectId, recordType, paperName) {
+  return inferPaperVariant(subjectId, recordType, paperName, paperVariant);
+}
+
+function attachPaperVariantMeta(note, paperVariant) {
+  const cleanNote = stripPaperVariantMeta(note);
+  if (paperVariant !== "true" && paperVariant !== "mock") return cleanNote;
+  return `${cleanNote}\n\n<!-- exam-tracker-paper-variant:${paperVariant} -->`;
+}
+
+function parsePaperVariantFromNote(note) {
+  const match = String(note || "").match(/<!-- exam-tracker-paper-variant:(true|mock) -->/);
+  return match?.[1] || "";
+}
+
+function stripPaperVariantMeta(note) {
+  return String(note || "").replace(/\n?\n?<!-- exam-tracker-paper-variant:(true|mock) -->/g, "").trim();
 }
 
 function fromMistakeRow(row) {
