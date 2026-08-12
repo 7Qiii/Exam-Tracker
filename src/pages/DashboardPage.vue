@@ -35,11 +35,7 @@ const weekCount = computed(() => {
   start.setDate(start.getDate() - 7);
   return scopedRecords.value.filter((record) => new Date(record.date) >= start).length;
 });
-
-const latestRecords = computed(() =>
-  [...scopedRecords.value].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).slice(0, 5)
-);
-
+const latestRecords = computed(() => [...scopedRecords.value].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).slice(0, 5));
 const subjectStats = computed(() =>
   store.visibleSubjects.map((subject) => {
     const records = subject.id === selectedSubject.value ? scopedRecords.value : store.records.filter((record) => record.subjectId === subject.id);
@@ -63,27 +59,14 @@ const averageSubjectStats = computed(() => {
   const scoredRecords = records.filter((record) => Number(record.fullScore) > 0);
   const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
   const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
-  const durations = records
-    .map((record) => normalizeDuration(record.durationMinutes))
-    .filter((value) => value !== "");
+  const durations = records.map((record) => normalizeDuration(record.durationMinutes)).filter((value) => value !== "");
   const latest = [...records].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] || null;
   const best = scoredRecords.reduce((winner, record) => (!winner || normalizeScoreValue(record.score) / normalizeScoreValue(record.fullScore) > normalizeScoreValue(winner.score) / normalizeScoreValue(winner.fullScore) ? record : winner), null);
   const avgScore = scoredRecords.length ? totalScore / scoredRecords.length : 0;
   const avgFullScore = scoredRecords.length ? totalFullScore / scoredRecords.length : 0;
   const rate = totalFullScore ? Math.round((totalScore / totalFullScore) * 100) : 0;
   const avgDuration = durations.length ? Math.round(durations.reduce((sum, value) => sum + Number(value), 0) / durations.length) : "";
-  return {
-    records,
-    count: records.length,
-    scoredCount: scoredRecords.length,
-    avgScore,
-    avgFullScore,
-    rate,
-    avgDuration,
-    latest,
-    best,
-    isReady: scoredRecords.length > 0
-  };
+  return { records, count: records.length, scoredCount: scoredRecords.length, avgScore, avgFullScore, rate, avgDuration, latest, best, isReady: scoredRecords.length > 0 };
 });
 
 async function exportData() {
@@ -128,7 +111,7 @@ function recordVariantLabel(record) {
   const value = normalizePaperVariant(record);
   if (value === "true") return "真题";
   if (value === "mock") return "模拟卷";
-  return "未分类";
+  return "";
 }
 
 function formatDuration(minutes) {
@@ -206,22 +189,12 @@ function recordTitle(record) {
             <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
           </select>
         </div>
-        <div v-if="averageSubjectId === 'math1'" class="paper-kind-tabs">
-          <button
-            v-for="option in paperVariantOptions"
-            :key="option.value"
-            type="button"
-            :class="{ active: selectedPaperVariant === option.value }"
-            @click="selectedPaperVariant = option.value"
-          >
-            {{ option.label }}
-          </button>
+        <div v-if="averageSubjectId === 'math1'" class="paper-kind-tabs dashboard-paper-tabs">
+          <button v-for="option in paperVariantOptions" :key="option.value" type="button" :class="{ active: selectedPaperVariant === option.value }" @click="selectedPaperVariant = option.value">{{ option.label }}</button>
         </div>
         <div class="average-score-display">
           <small>{{ averageSubject?.name || "暂无科目" }}{{ averageSubjectId === 'math1' && selectedPaperVariant !== 'all' ? ` · ${paperVariantOptions.find((item) => item.value === selectedPaperVariant)?.label}` : "" }}</small>
-          <strong v-if="averageSubjectStats.isReady">
-            {{ formatScoreValue(averageSubjectStats.avgScore) }} / {{ formatScoreValue(averageSubjectStats.avgFullScore) }}
-          </strong>
+          <strong v-if="averageSubjectStats.isReady">{{ formatScoreValue(averageSubjectStats.avgScore) }} / {{ formatScoreValue(averageSubjectStats.avgFullScore) }}</strong>
           <strong v-else>--</strong>
           <p>{{ averageSubjectStats.isReady ? `${averageSubjectStats.count} 条记录参与统计，合成成绩已排除` : "选择一个已有成绩的科目后显示平均分。" }}</p>
         </div>
@@ -236,26 +209,10 @@ function recordTitle(record) {
         </div>
       </div>
       <div class="average-dashboard-metrics">
-        <article>
-          <Target :size="16" />
-          <span>统计样本</span>
-          <strong>{{ averageSubjectStats.count }}</strong>
-        </article>
-        <article>
-          <Trophy :size="16" />
-          <span>最高表现</span>
-          <strong>{{ averageSubjectStats.best ? `${averageSubjectStats.best.score}/${averageSubjectStats.best.fullScore}` : "--" }}</strong>
-        </article>
-        <article>
-          <TrendingUp :size="16" />
-          <span>最近一次</span>
-          <strong>{{ averageSubjectStats.latest ? `${averageSubjectStats.latest.score}/${averageSubjectStats.latest.fullScore}` : "--" }}</strong>
-        </article>
-        <article>
-          <Calculator :size="16" />
-          <span>有效分数</span>
-          <strong>{{ averageSubjectStats.scoredCount }}</strong>
-        </article>
+        <article><Target :size="16" /><span>统计样本</span><strong>{{ averageSubjectStats.count }}</strong></article>
+        <article><Trophy :size="16" /><span>最高表现</span><strong>{{ averageSubjectStats.best ? `${averageSubjectStats.best.score}/${averageSubjectStats.best.fullScore}` : "--" }}</strong></article>
+        <article><TrendingUp :size="16" /><span>最近一次</span><strong>{{ averageSubjectStats.latest ? `${averageSubjectStats.latest.score}/${averageSubjectStats.latest.fullScore}` : "--" }}</strong></article>
+        <article><Calculator :size="16" /><span>有效分数</span><strong>{{ averageSubjectStats.scoredCount }}</strong></article>
       </div>
     </section>
 
@@ -308,10 +265,7 @@ function recordTitle(record) {
           </thead>
           <tbody>
             <tr v-for="record in latestRecords" :key="record.id">
-              <td>
-                <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
-                <span v-if="recordVariantLabel(record)" class="paper-variant-pill">{{ recordVariantLabel(record) }}</span>
-              </td>
+              <td><RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink><span v-if="recordVariantLabel(record)" class="paper-variant-pill">{{ recordVariantLabel(record) }}</span></td>
               <td>{{ store.subjectName(record.subjectId) }}</td>
               <td>{{ record.score }} / {{ record.fullScore }}</td>
               <td>{{ formatDuration(record.durationMinutes) }}</td>

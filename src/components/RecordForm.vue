@@ -152,7 +152,7 @@ function normalizePaperVariant(value, paperName = "") {
 </script>
 
 <template>
-  <form class="form-grid" @submit.prevent="submit">
+  <form class="form-grid record-form" @submit.prevent="submit">
     <label>
       科目
       <select v-model="form.subjectId" required>

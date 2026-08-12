@@ -248,8 +248,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     };
     await db.records.put(record);
     records.value.push(record);
-    const synced = await safeCloud(() => upsertRecord(record));
-    if (synced) await markRecordSynced(record.id);
+    scheduleAutoSync(250, true);
     notify("成绩已保存。", "success");
     return record;
   }
@@ -268,11 +267,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     next.pendingSync = true;
     await db.records.update(id, next);
     records.value = records.value.map((record) => (record.id === id ? { ...record, ...next } : record));
-    const record = records.value.find((item) => item.id === id);
-    if (record) {
-      const synced = await safeCloud(() => upsertRecord(record));
-      if (synced) await markRecordSynced(id);
-    }
+    scheduleAutoSync(250, true);
     notify("成绩已更新。", "success");
   }
 
@@ -820,6 +815,7 @@ export const useTrackerStore = defineStore("tracker", () => {
         item.id,
         item.subjectId,
         item.recordType,
+        item.paperVariant,
         item.paperName,
         item.exerciseBookName,
         item.exercisePage,

@@ -45,6 +45,7 @@ const batchSubjectId = ref("");
 const isBatchWorking = ref(false);
 const ignoredHealthIssueIds = ref(readIgnoredHealthIssues());
 const isIgnoredHealthOpen = ref(false);
+const isHealthPanelExpanded = ref(false);
 
 const paperVariantOptions = [
   { value: "all", label: "全部" },
@@ -894,10 +895,15 @@ function scoreBarStyle(record) {
                 <EyeOff :size="15" />
                 已忽略 {{ ignoredHealthIssueCount }}
               </button>
+              <button v-if="healthIssueCount && isHealthPanelExpanded" class="secondary-button compact" type="button" @click="isHealthPanelExpanded = false">收起检查</button>
               <span :class="{ good: !healthIssueCount }">{{ healthIssueCount ? "需要整理" : "状态良好" }}</span>
             </div>
           </div>
-          <div v-if="healthIssues.length" class="health-issue-grid">
+          <div v-if="healthIssueCount && !isHealthPanelExpanded" class="health-check-compact">
+            <span>待整理项已收起，不影响新增和编辑成绩。</span>
+            <button class="secondary-button compact" type="button" @click="isHealthPanelExpanded = true">展开检查</button>
+          </div>
+          <div v-if="healthIssues.length && isHealthPanelExpanded" class="health-issue-grid">
             <article v-for="issue in healthIssues" :key="issue.id" class="health-issue-card" :class="`tone-${issue.tone}`">
               <div>
                 <AlertTriangle v-if="issue.tone === 'red' || issue.tone === 'orange'" :size="16" />
@@ -915,7 +921,7 @@ function scoreBarStyle(record) {
               </div>
             </article>
           </div>
-          <div v-else class="health-check-empty">
+          <div v-else-if="!healthIssues.length" class="health-check-empty">
             当前没有发现明显异常。保持这个状态，很漂亮。
           </div>
           <div v-if="isIgnoredHealthOpen" class="ignored-health-panel">
