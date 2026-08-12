@@ -20,6 +20,7 @@ import {
   Upload,
   X
 } from "@lucide/vue";
+import AnnouncementCenter from "./components/AnnouncementCenter.vue";
 import { useTrackerStore } from "./stores/tracker";
 
 const store = useTrackerStore();
@@ -324,6 +325,7 @@ onBeforeUnmount(() => {
           <button class="ghost-button icon-only" type="button" title="签名" aria-label="签名" @click="openSignatureDialog">
             <PenLine :size="18" />
           </button>
+          <AnnouncementCenter />
           <RouterLink class="account-pill" to="/login" :title="store.user ? '账号与同步' : '登录同步'">
             <span class="avatar-dot" :class="{ online: store.user }">{{ userInitial }}</span>
             <span>{{ syncLabel }}</span>
