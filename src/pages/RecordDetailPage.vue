@@ -9,6 +9,7 @@ const route = useRoute();
 const router = useRouter();
 const store = useTrackerStore();
 const isEditing = ref(false);
+const isRemoving = ref(false);
 
 const record = computed(() => store.records.find((item) => item.id === route.params.id));
 const relatedMistakes = computed(() => store.mistakes.filter((item) => item.sourceRecordId === route.params.id));
@@ -42,8 +43,15 @@ const compositeSourceTotal = computed(() =>
 
 async function remove() {
   if (!record.value) return;
-  await store.removeRecord(record.value.id);
-  router.push("/records");
+  const ok = typeof window === "undefined" || window.confirm(`确定删除「${recordTitle.value}」吗？24 小时内可以恢复。`);
+  if (!ok || isRemoving.value) return;
+  isRemoving.value = true;
+  try {
+    await store.removeRecord(record.value.id);
+    router.push("/records");
+  } finally {
+    isRemoving.value = false;
+  }
 }
 
 function startEdit() {
@@ -76,6 +84,10 @@ function normalizeDuration(value) {
 function normalizeScoreValue(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function subjectAccentStyle() {
+  return record.value ? { "--subject-color": store.subjectColor(record.value.subjectId) } : {};
 }
 
 function sourceTypeText(source) {
@@ -114,10 +126,15 @@ function sourceChanged(source) {
 <template>
   <div class="page-stack">
     <RouterLink class="text-link" to="/records"><ArrowLeft :size="16" />返回成绩列表</RouterLink>
-    <section v-if="record" class="detail-panel">
+    <section v-if="record" class="detail-panel subject-detail-panel" :style="subjectAccentStyle()">
       <div class="detail-head">
         <div class="detail-copy">
-          <p class="eyebrow">{{ store.subjectName(record.subjectId) }}</p>
+          <p class="eyebrow subject-eyebrow">
+            <span class="subject-chip compact">
+              <span class="subject-dot"></span>
+              {{ store.subjectName(record.subjectId) }}
+            </span>
+          </p>
           <h2>{{ recordTitle }}</h2>
           <div class="detail-meta-row">
             <span class="detail-pill">{{ record.date }}</span>
@@ -128,7 +145,7 @@ function sourceChanged(source) {
         <div class="detail-actions">
           <button v-if="!isEditing" class="secondary-button" type="button" @click="startEdit"><Edit3 :size="16" />编辑</button>
           <button v-else class="secondary-button" type="button" @click="closeEdit"><X :size="16" />关闭</button>
-          <button class="secondary-button danger-text" type="button" @click="remove"><Trash2 :size="16" />删除</button>
+          <button class="secondary-button danger-text" type="button" :disabled="isRemoving" @click="remove"><Trash2 :size="16" />{{ isRemoving ? '\u5220\u9664\u4e2d...' : '\u5220\u9664' }}</button>
         </div>
       </div>
       <RecordForm v-if="isEditing" :record="record" @saved="onSaved" />

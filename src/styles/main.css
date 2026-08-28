@@ -1823,6 +1823,120 @@ tbody tr.is-selected:hover {
   background: #e6f2ff;
 }
 
+.subject-record-row {
+  position: relative;
+  --subject-color: var(--blue);
+}
+
+.subject-record-row td:first-child {
+  position: relative;
+}
+
+.subject-record-row td:first-child::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: 0;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--subject-color);
+  opacity: 0.88;
+}
+
+.subject-record-row:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--subject-color) 10%, #ffffff), rgba(239, 248, 255, 0.72));
+}
+
+.subject-record-row.is-selected {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--subject-color) 16%, #eff8ff), #eff8ff);
+}
+
+.subject-chip {
+  min-height: 24px;
+  border: 1px solid color-mix(in srgb, var(--subject-color) 22%, var(--line));
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--subject-color) 10%, #ffffff);
+  color: color-mix(in srgb, var(--subject-color) 80%, var(--ink));
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.subject-chip.compact {
+  min-height: 22px;
+  padding: 0 8px;
+}
+
+.subject-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--subject-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--subject-color) 18%, transparent);
+  flex: 0 0 auto;
+}
+
+.subject-score-cell strong,
+.subject-score-badge strong {
+  color: color-mix(in srgb, var(--subject-color) 72%, var(--ink));
+}
+
+.subject-score-cell .progress i,
+.subject-score-badge .progress i {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--subject-color) 22%, transparent);
+}
+
+.subject-score-badge {
+  position: relative;
+  --subject-color: var(--blue);
+}
+
+.subject-score-badge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--subject-color) 12%, transparent), transparent 68%);
+  opacity: 0.8;
+}
+
+.subject-score-badge > * {
+  position: relative;
+  z-index: 1;
+}
+
+.subject-detail-panel {
+  position: relative;
+  overflow: hidden;
+  --subject-color: var(--blue);
+}
+
+.subject-detail-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--subject-color) 18%, transparent), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), transparent 42%);
+  opacity: 0.9;
+}
+
+.subject-detail-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.subject-eyebrow {
+  margin-bottom: 4px;
+}
+
 .score-cell {
   min-width: 116px;
   display: grid;
@@ -1884,6 +1998,7 @@ td a,
 
 .record-card {
   position: relative;
+  --subject-color: var(--blue);
   border: 1px solid rgba(228, 231, 236, 0.78);
   border-radius: 8px;
   display: grid;
@@ -1902,14 +2017,14 @@ td a,
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(23, 125, 220, 0.18), transparent 40%, rgba(18, 183, 106, 0.14));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--subject-color) 20%, transparent), transparent 42%, color-mix(in srgb, var(--subject-color) 12%, transparent));
   opacity: 0;
   transition: opacity 160ms ease;
 }
 
 .record-card:hover,
 .record-card.is-selected {
-  border-color: rgba(23, 125, 220, 0.28);
+  border-color: color-mix(in srgb, var(--subject-color) 28%, var(--line));
   box-shadow: 0 16px 34px rgba(16, 24, 40, 0.085);
 }
 
@@ -5651,6 +5766,26 @@ th {
   border-color: rgba(90, 167, 255, 0.28);
   background: rgba(90, 167, 255, 0.13);
   color: #8fc3ff;
+}
+
+:root[data-theme="dark"] .subject-chip {
+  border-color: color-mix(in srgb, var(--subject-color) 30%, rgba(255, 255, 255, 0.16));
+  background: color-mix(in srgb, var(--subject-color) 16%, rgba(11, 16, 23, 0.92));
+  color: color-mix(in srgb, var(--subject-color) 76%, #f4f7fb);
+}
+
+:root[data-theme="dark"] .subject-record-row {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--subject-color) 14%, rgba(11, 16, 23, 0.88)), rgba(11, 16, 23, 0.96));
+}
+
+:root[data-theme="dark"] .subject-record-row:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--subject-color) 18%, rgba(11, 16, 23, 0.9)), rgba(11, 16, 23, 0.98));
+}
+
+:root[data-theme="dark"] .subject-detail-panel::before {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--subject-color) 20%, transparent), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 42%);
 }
 
 .record-form {

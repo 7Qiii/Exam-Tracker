@@ -140,6 +140,10 @@ function formatScoreValue(value) {
   return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
 }
 
+function subjectAccentStyle(record) {
+  return { "--subject-color": store.subjectColor(record.subjectId) };
+}
+
 function recordTitle(record) {
   if (record.recordType !== "exercise") return record.paperName;
   return [record.exerciseBookName || record.paperName, record.exercisePage ? `P${record.exercisePage}` : "", record.exerciseQuestion ? `第 ${record.exerciseQuestion} 题` : ""]
@@ -264,10 +268,23 @@ function recordTitle(record) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="record in latestRecords" :key="record.id">
-              <td><RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink><span v-if="recordVariantLabel(record)" class="paper-variant-pill">{{ recordVariantLabel(record) }}</span></td>
-              <td>{{ store.subjectName(record.subjectId) }}</td>
-              <td>{{ record.score }} / {{ record.fullScore }}</td>
+            <tr v-for="record in latestRecords" :key="record.id" class="subject-record-row" :style="subjectAccentStyle(record)">
+              <td>
+                <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
+                <span v-if="recordVariantLabel(record)" class="paper-variant-pill">{{ recordVariantLabel(record) }}</span>
+              </td>
+              <td>
+                <span class="subject-chip compact">
+                  <span class="subject-dot"></span>
+                  {{ store.subjectName(record.subjectId) }}
+                </span>
+              </td>
+              <td>
+                <div class="score-cell subject-score-cell">
+                  <strong>{{ record.score }} / {{ record.fullScore }}</strong>
+                  <div class="progress micro"><i :style="{ width: `${record.fullScore ? Math.max(0, Math.min(100, Math.round((record.score / record.fullScore) * 100))) : 0}%`, background: `linear-gradient(90deg, ${store.subjectColor(record.subjectId)} 0%, #38bdf8 100%)` }"></i></div>
+                </div>
+              </td>
               <td>{{ formatDuration(record.durationMinutes) }}</td>
               <td>{{ record.date }}</td>
             </tr>

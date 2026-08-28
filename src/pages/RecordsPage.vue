@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import {
   AlertTriangle,
@@ -34,6 +34,7 @@ const pageSize = 8;
 const filters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
 const draftFilters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
 const showForm = ref(false);
+const formPanelRef = ref(null);
 const editingRecordId = ref("");
 const selectedRecordIds = ref([]);
 const compositeForm = reactive({ paperName: "", date: "", note: "" });
@@ -43,6 +44,7 @@ const isCompositeSaving = ref(false);
 const isRestorePanelOpen = ref(false);
 const batchSubjectId = ref("");
 const isBatchWorking = ref(false);
+const workingRecordActions = reactive(new Set());
 const ignoredHealthIssueIds = ref(readIgnoredHealthIssues());
 const isIgnoredHealthOpen = ref(false);
 const isHealthPanelExpanded = ref(false);
@@ -235,11 +237,14 @@ function clearFilters() {
 function startCreate() {
   editingRecordId.value = "";
   showForm.value = true;
+  revealRecordForm();
 }
 
 function startEdit(record) {
+  if (!record?.id || isRecordActionWorking(record, "delete")) return;
   editingRecordId.value = record.id;
   showForm.value = true;
+  revealRecordForm();
 }
 
 function closeForm() {
@@ -252,7 +257,46 @@ function onFormSaved() {
 }
 
 function createMistakeFromRecord(record) {
+  if (!record?.id || isRecordActionWorking(record, "delete")) return;
   router.push({ path: "/mistakes", query: { recordId: record.id } });
+}
+
+async function revealRecordForm() {
+  await nextTick();
+  formPanelRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function deleteRecord(record) {
+  if (!record?.id) return;
+  const ok = typeof window === "undefined" || window.confirm(`确定删除「${recordTitle(record)}」吗？24 小时内可以从最近删除恢复。`);
+  if (!ok) return;
+  await withRecordAction(record, "delete", async () => {
+    await store.removeRecord(record.id);
+    selectedRecordIds.value = selectedRecordIds.value.filter((id) => id !== record.id);
+    delete compositeRows[record.id];
+    isRestorePanelOpen.value = true;
+  });
+}
+
+async function withRecordAction(record, action, runner) {
+  const key = recordActionKey(record, action);
+  if (workingRecordActions.has(key)) return;
+  workingRecordActions.add(key);
+  try {
+    await runner();
+  } catch (error) {
+    store.notify(error.message || "成绩操作失败，请稍后重试。", "error", 6000);
+  } finally {
+    workingRecordActions.delete(key);
+  }
+}
+
+function recordActionKey(record, action) {
+  return `${record?.id || "unknown"}:${action}`;
+}
+
+function isRecordActionWorking(record, action) {
+  return workingRecordActions.has(recordActionKey(record, action));
 }
 
 function toggleSelect(record) {
@@ -622,6 +666,10 @@ function formatScoreValue(value) {
   return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
 }
 
+function subjectAccentStyle(record) {
+  return { "--subject-color": store.subjectColor(record.subjectId) };
+}
+
 function scorePercent(record) {
   const fullScore = normalizeScoreValue(record.fullScore);
   if (!fullScore) return 0;
@@ -631,7 +679,9 @@ function scorePercent(record) {
 
 function scoreBarStyle(record) {
   const percent = scorePercent(record);
-  const color = percent >= 90 ? "linear-gradient(90deg, #12b76a 0%, #22c55e 100%)" : percent >= 60 ? "linear-gradient(90deg, #177ddc 0%, #38bdf8 100%)" : "linear-gradient(90deg, #f79009 0%, #f97316 100%)";
+  const subjectColor = store.subjectColor(record.subjectId);
+  const performanceColor = percent >= 90 ? "#22c55e" : percent >= 60 ? "#38bdf8" : "#f97316";
+  const color = `linear-gradient(90deg, ${subjectColor} 0%, ${performanceColor} 100%)`;
   return { width: `${percent}%`, background: color };
 }
 </script>
@@ -741,7 +791,7 @@ function scoreBarStyle(record) {
       </form>
     </section>
 
-    <section v-if="showForm" class="panel">
+    <section v-if="showForm" ref="formPanelRef" class="panel">
       <div class="section-head">
         <h2>{{ editingRecord ? "编辑成绩" : "新增成绩" }}</h2>
         <button class="secondary-button compact" type="button" @click="closeForm">
@@ -749,7 +799,7 @@ function scoreBarStyle(record) {
           关闭
         </button>
       </div>
-      <RecordForm :record="editingRecord" @saved="onFormSaved" />
+      <RecordForm :key="editingRecordId || 'new-record'" :record="editingRecord" @saved="onFormSaved" />
     </section>
 
     <div v-if="isCompositeDialogOpen && selectedRecords.length" class="composite-dialog-backdrop" @mousedown.self="closeCompositeDialog">
@@ -1021,7 +1071,13 @@ function scoreBarStyle(record) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="record in pagedRecords" :key="record.id" :class="{ 'is-selected': isSelected(record.id) }">
+              <tr
+                v-for="record in pagedRecords"
+                :key="record.id"
+                class="subject-record-row"
+                :class="{ 'is-selected': isSelected(record.id) }"
+                :style="subjectAccentStyle(record)"
+              >
                 <td class="select-column">
                   <input
                     type="checkbox"
@@ -1035,10 +1091,15 @@ function scoreBarStyle(record) {
                   <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
                   <span v-if="recordVariantLabel(record)" class="record-variant-pill">{{ recordVariantLabel(record) }}</span>
                 </td>
-                <td>{{ store.subjectName(record.subjectId) }}</td>
+                <td>
+                  <span class="subject-chip">
+                    <span class="subject-dot"></span>
+                    {{ store.subjectName(record.subjectId) }}
+                  </span>
+                </td>
                 <td>{{ recordTypeLabel(record) }}</td>
                 <td>
-                  <div class="score-cell">
+                  <div class="score-cell subject-score-cell">
                     <strong>{{ record.score }} / {{ record.fullScore }}</strong>
                     <div class="progress micro"><i :style="scoreBarStyle(record)"></i></div>
                     <span>{{ scorePercent(record) }}%</span>
@@ -1048,13 +1109,13 @@ function scoreBarStyle(record) {
                 <td>{{ record.date }}</td>
                 <td>{{ record.pendingSync ? "待同步" : "已同步" }}</td>
                 <td class="table-actions">
-                  <button class="icon-button" type="button" title="编辑成绩" @click="startEdit(record)">
+                  <button class="icon-button" type="button" title="编辑成绩" aria-label="编辑成绩" :disabled="isRecordActionWorking(record, 'delete')" @click="startEdit(record)">
                     <Edit3 :size="15" />
                   </button>
-                  <button class="icon-button" type="button" title="基于本成绩新增错题" @click="createMistakeFromRecord(record)">
+                  <button class="icon-button" type="button" title="基于本成绩新增错题" aria-label="基于本成绩新增错题" :disabled="isRecordActionWorking(record, 'delete')" @click="createMistakeFromRecord(record)">
                     <BookOpenCheck :size="15" />
                   </button>
-                  <button class="icon-button danger" type="button" title="删除成绩" @click="store.removeRecord(record.id)">
+                  <button class="icon-button danger" type="button" title="删除成绩" aria-label="删除成绩" :disabled="isRecordActionWorking(record, 'delete')" @click="deleteRecord(record)">
                     <Trash2 :size="15" />
                   </button>
                 </td>
@@ -1071,6 +1132,7 @@ function scoreBarStyle(record) {
             :key="record.id"
             class="record-card"
             :class="{ 'is-selected': isSelected(record.id) }"
+            :style="subjectAccentStyle(record)"
           >
             <div class="record-card-top">
               <label class="record-card-check">
@@ -1089,12 +1151,15 @@ function scoreBarStyle(record) {
                   <span v-if="recordVariantLabel(record)" class="record-variant-pill">{{ recordVariantLabel(record) }}</span>
                 </div>
                 <div class="record-card-meta-line">
-                  <span>{{ store.subjectName(record.subjectId) }}</span>
+                  <span class="subject-chip compact">
+                    <span class="subject-dot"></span>
+                    {{ store.subjectName(record.subjectId) }}
+                  </span>
                   <span>{{ record.date }}</span>
                   <span>{{ record.pendingSync ? "待同步" : "已同步" }}</span>
                 </div>
               </div>
-              <div class="record-card-score">
+              <div class="record-card-score subject-score-badge">
                 <strong>{{ record.score }} / {{ record.fullScore }}</strong>
                 <span>{{ scorePercent(record) }}%</span>
               </div>
@@ -1104,13 +1169,13 @@ function scoreBarStyle(record) {
               <span>{{ formatDuration(record.durationMinutes) }}</span>
             </div>
             <div class="record-card-actions">
-              <button class="icon-button" type="button" title="编辑成绩" @click="startEdit(record)">
+              <button class="icon-button" type="button" title="编辑成绩" aria-label="编辑成绩" :disabled="isRecordActionWorking(record, 'delete')" @click="startEdit(record)">
                 <Edit3 :size="15" />
               </button>
-              <button class="icon-button" type="button" title="基于本成绩新增错题" @click="createMistakeFromRecord(record)">
+              <button class="icon-button" type="button" title="基于本成绩新增错题" aria-label="基于本成绩新增错题" :disabled="isRecordActionWorking(record, 'delete')" @click="createMistakeFromRecord(record)">
                 <BookOpenCheck :size="15" />
               </button>
-              <button class="icon-button danger" type="button" title="删除成绩" @click="store.removeRecord(record.id)">
+              <button class="icon-button danger" type="button" title="删除成绩" aria-label="删除成绩" :disabled="isRecordActionWorking(record, 'delete')" @click="deleteRecord(record)">
                 <Trash2 :size="15" />
               </button>
             </div>
