@@ -12,6 +12,7 @@ import {
   Clock3,
   Edit3,
   EyeOff,
+  FileSpreadsheet,
   MoveRight,
   Plus,
   RefreshCw,
@@ -24,6 +25,7 @@ import {
   X
 } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
+import { exportColumnOptions, exportRecordsToExcel, exportThemeOptions } from "../services/excelExport";
 import { useTrackerStore } from "../stores/tracker";
 
 const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
@@ -31,6 +33,7 @@ const store = useTrackerStore();
 const router = useRouter();
 const page = ref(1);
 const pageSize = 8;
+const sortBy = ref("date-desc");
 const filters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
 const draftFilters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
 const showForm = ref(false);
@@ -45,6 +48,16 @@ const isRestorePanelOpen = ref(false);
 const batchSubjectId = ref("");
 const isBatchWorking = ref(false);
 const workingRecordActions = reactive(new Set());
+const isExportDialogOpen = ref(false);
+const isExporting = ref(false);
+const exportForm = reactive({
+  scope: "filtered",
+  sheetMode: "single",
+  theme: "ocean",
+  filename: `成绩导出-${new Date().toISOString().slice(0, 10)}`,
+  includeSummary: true,
+  columns: ["record", "subject", "type", "score", "rate", "duration", "date", "sync"]
+});
 const ignoredHealthIssueIds = ref(readIgnoredHealthIssues());
 const isIgnoredHealthOpen = ref(false);
 const isHealthPanelExpanded = ref(false);
@@ -84,11 +97,22 @@ const filteredRecords = computed(() => {
         matchesPaperVariantFilter(record)
       );
     })
-    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    .sort(compareRecords);
 });
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)));
 const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1) * pageSize, page.value * pageSize));
+const exportSourceRecords = computed(() => {
+  if (exportForm.scope === "selected") return selectedRecords.value;
+  if (exportForm.scope === "all") return store.records;
+  return filteredRecords.value;
+});
+const exportSubjectCount = computed(() => new Set(exportSourceRecords.value.map((record) => record.subjectId)).size);
+const exportSelectionLabel = computed(() => {
+  if (exportForm.scope === "selected") return `已选 ${selectedRecords.value.length} 条`;
+  if (exportForm.scope === "all") return `全部 ${store.records.length} 条`;
+  return hasActiveFilters.value ? `当前筛选 ${filteredRecords.value.length} 条` : `当前列表 ${filteredRecords.value.length} 条`;
+});
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
 const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId || filters.paperVariant !== "all"));
 const selectableFilteredRecords = computed(() => filteredRecords.value.filter((record) => record.recordType !== "composite"));
@@ -232,6 +256,63 @@ function clearFilters() {
   draftFilters.subjectId = "";
   draftFilters.paperVariant = "all";
   applyFilters();
+}
+
+function compareRecords(a, b) {
+  if (sortBy.value === "date-asc") {
+    return String(a.date || "").localeCompare(String(b.date || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+  }
+  if (sortBy.value === "rate-desc" || sortBy.value === "rate-asc") {
+    const rateDiff = scorePercent(a) - scorePercent(b);
+    return (sortBy.value === "rate-desc" ? -rateDiff : rateDiff) || String(b.date || "").localeCompare(String(a.date || ""));
+  }
+  if (sortBy.value === "score-desc") {
+    const scoreDiff = normalizeScoreValue(a.score) - normalizeScoreValue(b.score);
+    return -scoreDiff || String(b.date || "").localeCompare(String(a.date || ""));
+  }
+  return String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+}
+
+function openExportDialog() {
+  if (!store.records.length) {
+    store.notify("暂无成绩可以导出。", "info");
+    return;
+  }
+  isExportDialogOpen.value = true;
+}
+
+function closeExportDialog() {
+  if (isExporting.value) return;
+  isExportDialogOpen.value = false;
+}
+
+function toggleExportColumn(columnId) {
+  const next = exportForm.columns.includes(columnId)
+    ? exportForm.columns.filter((id) => id !== columnId)
+    : [...exportForm.columns, columnId];
+  if (next.length) exportForm.columns = next;
+}
+
+async function exportExcel() {
+  if (isExporting.value || !exportSourceRecords.value.length || !exportForm.columns.length) return;
+  isExporting.value = true;
+  try {
+    await exportRecordsToExcel({
+      records: exportSourceRecords.value,
+      subjects: store.subjects,
+      columns: exportForm.columns,
+      sheetMode: exportForm.sheetMode,
+      theme: exportForm.theme,
+      filename: exportForm.filename,
+      includeSummary: exportForm.includeSummary
+    });
+    isExportDialogOpen.value = false;
+    store.notify(`Excel 已导出，共 ${exportSourceRecords.value.length} 条成绩。`, "success");
+  } catch (error) {
+    store.notify(error.message || "Excel 导出失败，请稍后重试。", "error", 6000);
+  } finally {
+    isExporting.value = false;
+  }
 }
 
 function startCreate() {
@@ -700,6 +781,10 @@ function scoreBarStyle(record) {
             <span>{{ topSubject.name }} · {{ topSubject.count }} 条</span>
           </div>
           <div class="records-hero-actions">
+            <button class="secondary-button" type="button" @click="openExportDialog">
+              <FileSpreadsheet :size="16" />
+              导出 Excel
+            </button>
             <button class="primary-button" type="button" @click="startCreate">
               <Plus :size="17" />
               新增成绩
@@ -789,6 +874,32 @@ function scoreBarStyle(record) {
           清空
         </button>
       </form>
+      <div class="records-query-status">
+        <div class="records-query-count">
+          <strong>{{ filteredRecords.length }}</strong>
+          <span>条成绩匹配当前查询</span>
+        </div>
+        <label class="records-sort-control">
+          <span>排序</span>
+          <select v-model="sortBy" aria-label="成绩排序">
+            <option value="date-desc">日期：新到旧</option>
+            <option value="date-asc">日期：旧到新</option>
+            <option value="rate-desc">得分率：高到低</option>
+            <option value="rate-asc">得分率：低到高</option>
+            <option value="score-desc">得分：高到低</option>
+          </select>
+        </label>
+        <div class="records-query-chips">
+          <span v-if="filters.keyword" class="query-chip">关键词：{{ filters.keyword }}</span>
+          <span v-if="filters.subjectId" class="query-chip">{{ store.subjectName(filters.subjectId) }}</span>
+          <span v-if="filters.paperVariant !== 'all'" class="query-chip">{{ recordVariantLabel({ subjectId: 'math1', recordType: 'paper', paperVariant: filters.paperVariant }) }}</span>
+          <span v-if="!hasActiveFilters" class="query-chip neutral">显示全部成绩</span>
+          <button v-if="hasActiveFilters" class="query-clear-button" type="button" @click="clearFilters">
+            <X :size="13" />
+            清除筛选
+          </button>
+        </div>
+      </div>
     </section>
 
     <section v-if="showForm" ref="formPanelRef" class="panel">
@@ -801,6 +912,128 @@ function scoreBarStyle(record) {
       </div>
       <RecordForm :key="editingRecordId || 'new-record'" :record="editingRecord" @saved="onFormSaved" />
     </section>
+
+    <div v-if="isExportDialogOpen" class="export-dialog-backdrop" @mousedown.self="closeExportDialog">
+      <section class="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+        <div class="export-dialog-head">
+          <div>
+            <p class="eyebrow">数据导出</p>
+            <h2 id="export-dialog-title">自定义 Excel</h2>
+            <span class="section-meta">{{ exportSelectionLabel }} · {{ exportSubjectCount }} 个科目 · 可在 Excel 中继续筛选</span>
+          </div>
+          <button class="icon-button" type="button" title="关闭导出设置" aria-label="关闭导出设置" :disabled="isExporting" @click="closeExportDialog">
+            <X :size="17" />
+          </button>
+        </div>
+
+        <div class="export-dialog-layout">
+          <div class="export-dialog-main">
+            <div class="export-option-section">
+              <div class="export-option-title">
+                <strong>导出范围</strong>
+                <span>选择要放进文件的成绩</span>
+              </div>
+              <div class="export-segmented">
+                <button type="button" :class="{ active: exportForm.scope === 'filtered' }" @click="exportForm.scope = 'filtered'">
+                  当前查询
+                  <small>{{ filteredRecords.length }} 条</small>
+                </button>
+                <button type="button" :class="{ active: exportForm.scope === 'selected' }" :disabled="!selectedRecords.length" @click="exportForm.scope = 'selected'">
+                  已选记录
+                  <small>{{ selectedRecords.length }} 条</small>
+                </button>
+                <button type="button" :class="{ active: exportForm.scope === 'all' }" @click="exportForm.scope = 'all'">
+                  全部成绩
+                  <small>{{ store.records.length }} 条</small>
+                </button>
+              </div>
+            </div>
+
+            <div class="export-option-section">
+              <div class="export-option-title">
+                <strong>工作表布局</strong>
+                <span>概览页会保留关键统计</span>
+              </div>
+              <div class="export-segmented two">
+                <button type="button" :class="{ active: exportForm.sheetMode === 'single' }" @click="exportForm.sheetMode = 'single'">
+                  单表明细
+                  <small>适合汇总查看</small>
+                </button>
+                <button type="button" :class="{ active: exportForm.sheetMode === 'subject' }" @click="exportForm.sheetMode = 'subject'">
+                  按科目分表
+                  <small>适合分类复盘</small>
+                </button>
+              </div>
+            </div>
+
+            <div class="export-option-section">
+              <div class="export-option-title">
+                <strong>导出字段</strong>
+                <span>至少保留一项，可按需要精简</span>
+              </div>
+              <div class="export-field-grid">
+                <button
+                  v-for="column in exportColumnOptions"
+                  :key="column.id"
+                  class="export-field-option"
+                  type="button"
+                  :class="{ active: exportForm.columns.includes(column.id) }"
+                  @click="toggleExportColumn(column.id)"
+                >
+                  <span class="export-field-check">{{ exportForm.columns.includes(column.id) ? "✓" : "" }}</span>
+                  {{ column.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <aside class="export-dialog-side">
+            <label class="export-input-label">
+              文件名
+              <input v-model.trim="exportForm.filename" placeholder="成绩导出" />
+            </label>
+            <div class="export-option-title">
+              <strong>表格颜色</strong>
+              <span>科目颜色会同步到科目列与得分率</span>
+            </div>
+            <div class="export-theme-list">
+              <button
+                v-for="theme in exportThemeOptions"
+                :key="theme.id"
+                class="export-theme-option"
+                type="button"
+                :class="{ active: exportForm.theme === theme.id }"
+                @click="exportForm.theme = theme.id"
+              >
+                <span class="export-theme-preview" :style="{ '--theme-color': `#${theme.header}`, '--theme-accent': `#${theme.accent}` }"></span>
+                <span>{{ theme.label }}</span>
+                <span v-if="exportForm.theme === theme.id" class="export-theme-selected">✓</span>
+              </button>
+            </div>
+            <label class="export-switch-row">
+              <input v-model="exportForm.includeSummary" type="checkbox" />
+              <span>
+                <strong>包含导出概览</strong>
+                <small>自动生成记录数量、累计分数和总体得分率</small>
+              </span>
+            </label>
+            <div class="export-preview-card">
+              <FileSpreadsheet :size="20" />
+              <strong>{{ exportSourceRecords.length }} 条成绩</strong>
+              <span>{{ exportForm.columns.length }} 个字段 · {{ exportForm.sheetMode === "subject" ? `${exportSubjectCount} 个明细表` : "1 个明细表" }}</span>
+            </div>
+          </aside>
+        </div>
+
+        <div class="export-dialog-footer">
+          <button class="secondary-button" type="button" :disabled="isExporting" @click="closeExportDialog">取消</button>
+          <button class="primary-button" type="button" :disabled="isExporting || !exportSourceRecords.length || !exportForm.columns.length" @click="exportExcel">
+            <FileSpreadsheet :size="17" />
+            {{ isExporting ? "正在生成..." : "生成 Excel" }}
+          </button>
+        </div>
+      </section>
+    </div>
 
     <div v-if="isCompositeDialogOpen && selectedRecords.length" class="composite-dialog-backdrop" @mousedown.self="closeCompositeDialog">
       <section class="composite-dialog" role="dialog" aria-modal="true" aria-labelledby="composite-dialog-title">
