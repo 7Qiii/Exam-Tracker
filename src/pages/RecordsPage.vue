@@ -3,6 +3,7 @@ import { computed, nextTick, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import {
   AlertTriangle,
+  ArrowDownUp,
   BarChart3,
   BookOpenCheck,
   Calculator,
@@ -25,7 +26,7 @@ import {
   X
 } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
-import { exportColumnOptions, exportRecordsToExcel, exportThemeOptions } from "../services/excelExport";
+import { exportColumnGroups, exportColumnOptions, exportRecordsToExcel, exportThemeOptions } from "../services/excelExport";
 import { useTrackerStore } from "../stores/tracker";
 
 const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
@@ -34,6 +35,16 @@ const router = useRouter();
 const page = ref(1);
 const pageSize = 8;
 const sortBy = ref("date-desc");
+const isSortMenuOpen = ref(false);
+const sortOptions = [
+  { value: "date-desc", label: "最近日期", shortLabel: "日期 ↓" },
+  { value: "date-asc", label: "最早日期", shortLabel: "日期 ↑" },
+  { value: "year-desc", label: "年份最新", shortLabel: "年份 ↓" },
+  { value: "year-asc", label: "年份最早", shortLabel: "年份 ↑" },
+  { value: "rate-desc", label: "得分率最高", shortLabel: "得分率 ↓" },
+  { value: "rate-asc", label: "得分率最低", shortLabel: "得分率 ↑" },
+  { value: "score-desc", label: "得分最高", shortLabel: "得分 ↓" }
+];
 const filters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
 const draftFilters = reactive({ keyword: "", subjectId: "", paperVariant: "all" });
 const showForm = ref(false);
@@ -55,8 +66,8 @@ const exportForm = reactive({
   sheetMode: "single",
   theme: "ocean",
   filename: `成绩导出-${new Date().toISOString().slice(0, 10)}`,
-  includeSummary: true,
-  columns: ["record", "subject", "type", "score", "rate", "duration", "date", "sync"]
+  includeSummary: false,
+  columns: ["subject", "year", "record", "score", "fullScore", "rate", "date", "duration"]
 });
 const ignoredHealthIssueIds = ref(readIgnoredHealthIssues());
 const isIgnoredHealthOpen = ref(false);
@@ -113,6 +124,7 @@ const exportSelectionLabel = computed(() => {
   if (exportForm.scope === "all") return `全部 ${store.records.length} 条`;
   return hasActiveFilters.value ? `当前筛选 ${filteredRecords.value.length} 条` : `当前列表 ${filteredRecords.value.length} 条`;
 });
+const currentSortOption = computed(() => sortOptions.find((option) => option.value === sortBy.value) || sortOptions[0]);
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
 const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId || filters.paperVariant !== "all"));
 const selectableFilteredRecords = computed(() => filteredRecords.value.filter((record) => record.recordType !== "composite"));
@@ -259,6 +271,10 @@ function clearFilters() {
 }
 
 function compareRecords(a, b) {
+  if (sortBy.value === "year-desc" || sortBy.value === "year-asc") {
+    const yearDiff = recordYear(a) - recordYear(b);
+    return (sortBy.value === "year-desc" ? -yearDiff : yearDiff) || String(b.date || "").localeCompare(String(a.date || ""));
+  }
   if (sortBy.value === "date-asc") {
     return String(a.date || "").localeCompare(String(b.date || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
   }
@@ -271,6 +287,18 @@ function compareRecords(a, b) {
     return -scoreDiff || String(b.date || "").localeCompare(String(a.date || ""));
   }
   return String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+}
+
+function recordYear(record) {
+  const dateYear = String(record?.date || "").match(/\d{4}/)?.[0];
+  if (dateYear) return Number(dateYear);
+  const titleYear = String(record?.paperName || "").match(/(?:19|20)\d{2}/)?.[0];
+  return titleYear ? Number(titleYear) : 0;
+}
+
+function chooseSort(value) {
+  sortBy.value = value;
+  isSortMenuOpen.value = false;
 }
 
 function openExportDialog() {
@@ -291,6 +319,14 @@ function toggleExportColumn(columnId) {
     ? exportForm.columns.filter((id) => id !== columnId)
     : [...exportForm.columns, columnId];
   if (next.length) exportForm.columns = next;
+}
+
+function selectAllExportColumns() {
+  exportForm.columns = exportColumnOptions.map((column) => column.id);
+}
+
+function resetExportColumns() {
+  exportForm.columns = ["subject", "year", "record", "score", "fullScore", "rate", "date", "duration"];
 }
 
 async function exportExcel() {
@@ -879,16 +915,25 @@ function scoreBarStyle(record) {
           <strong>{{ filteredRecords.length }}</strong>
           <span>条成绩匹配当前查询</span>
         </div>
-        <label class="records-sort-control">
-          <span>排序</span>
-          <select v-model="sortBy" aria-label="成绩排序">
-            <option value="date-desc">日期：新到旧</option>
-            <option value="date-asc">日期：旧到新</option>
-            <option value="rate-desc">得分率：高到低</option>
-            <option value="rate-asc">得分率：低到高</option>
-            <option value="score-desc">得分：高到低</option>
-          </select>
-        </label>
+        <div class="records-sort-menu">
+          <button class="records-sort-trigger" type="button" :aria-expanded="isSortMenuOpen" aria-haspopup="menu" @click="isSortMenuOpen = !isSortMenuOpen">
+            <ArrowDownUp :size="14" />
+            <span>{{ currentSortOption.shortLabel }}</span>
+          </button>
+          <div v-if="isSortMenuOpen" class="records-sort-popover" role="menu">
+            <button
+              v-for="option in sortOptions"
+              :key="option.value"
+              type="button"
+              role="menuitem"
+              :class="{ active: sortBy === option.value }"
+              @click="chooseSort(option.value)"
+            >
+              <span>{{ option.label }}</span>
+              <span v-if="sortBy === option.value">✓</span>
+            </button>
+          </div>
+        </div>
         <div class="records-query-chips">
           <span v-if="filters.keyword" class="query-chip">关键词：{{ filters.keyword }}</span>
           <span v-if="filters.subjectId" class="query-chip">{{ store.subjectName(filters.subjectId) }}</span>
@@ -971,9 +1016,16 @@ function scoreBarStyle(record) {
                 <strong>导出字段</strong>
                 <span>至少保留一项，可按需要精简</span>
               </div>
-              <div class="export-field-grid">
+              <div class="export-field-actions">
+                <button type="button" @click="resetExportColumns">恢复推荐</button>
+                <button type="button" @click="selectAllExportColumns">全选字段</button>
+              </div>
+              <div class="export-field-groups">
+                <div v-for="group in exportColumnGroups" :key="group.id" class="export-field-group">
+                  <strong>{{ group.label }}</strong>
+                  <div class="export-field-grid">
                 <button
-                  v-for="column in exportColumnOptions"
+                  v-for="column in group.columns"
                   :key="column.id"
                   class="export-field-option"
                   type="button"
@@ -985,6 +1037,8 @@ function scoreBarStyle(record) {
                 </button>
               </div>
             </div>
+          </div>
+          </div>
           </div>
 
           <aside class="export-dialog-side">

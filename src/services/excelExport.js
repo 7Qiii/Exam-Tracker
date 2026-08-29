@@ -1,16 +1,46 @@
-import ExcelJS from "exceljs";
-
-export const exportColumnOptions = [
-  { id: "record", label: "记录名称", width: 30 },
-  { id: "subject", label: "科目", width: 14 },
-  { id: "type", label: "类型", width: 12 },
-  { id: "score", label: "得分", width: 12 },
-  { id: "rate", label: "得分率", width: 12 },
-  { id: "duration", label: "用时", width: 14 },
-  { id: "date", label: "日期", width: 14 },
-  { id: "sync", label: "同步状态", width: 14 },
-  { id: "note", label: "复盘备注", width: 38 }
+export const exportColumnGroups = [
+  {
+    id: "basic",
+    label: "基础信息",
+    columns: [
+      { id: "subject", label: "科目", width: 14 },
+      { id: "year", label: "年份", width: 10 },
+      { id: "date", label: "日期", width: 14 },
+      { id: "record", label: "记录名称", width: 30 },
+      { id: "type", label: "类型", width: 12 },
+      { id: "variant", label: "卷型", width: 12 }
+    ]
+  },
+  {
+    id: "score",
+    label: "成绩信息",
+    columns: [
+      { id: "score", label: "得分", width: 12 },
+      { id: "fullScore", label: "满分", width: 12 },
+      { id: "rate", label: "得分率", width: 12 }
+    ]
+  },
+  {
+    id: "exercise",
+    label: "习题详情",
+    columns: [
+      { id: "exerciseBook", label: "习题册", width: 22 },
+      { id: "exercisePage", label: "页码", width: 10 },
+      { id: "exerciseQuestion", label: "题号", width: 10 }
+    ]
+  },
+  {
+    id: "review",
+    label: "复盘信息",
+    columns: [
+      { id: "duration", label: "用时", width: 14 },
+      { id: "sync", label: "同步状态", width: 14 },
+      { id: "note", label: "复盘备注", width: 38 }
+    ]
+  }
 ];
+
+export const exportColumnOptions = exportColumnGroups.flatMap((group) => group.columns);
 
 export const exportThemeOptions = [
   { id: "ocean", label: "清爽蓝", header: "2563EB", accent: "DBEAFE", stripe: "F8FBFF" },
@@ -26,35 +56,40 @@ export async function exportRecordsToExcel({
   sheetMode = "single",
   theme = "ocean",
   filename = "成绩导出",
-  includeSummary = true
+  includeSummary = false
 } = {}) {
+  const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   const themeConfig = exportThemeOptions.find((item) => item.id === theme) || exportThemeOptions[0];
   const subjectMap = new Map(subjects.map((subject) => [subject.id, subject]));
   const selectedColumns = exportColumnOptions.filter((column) => columns.includes(column.id));
-  const safeRecords = [...records].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const safeRecords = [...records].sort(
+    (a, b) =>
+      String(a.subjectId || "").localeCompare(String(b.subjectId || "")) ||
+      String(getYear(b) || "").localeCompare(String(getYear(a) || "")) ||
+      String(b.date || "").localeCompare(String(a.date || "")) ||
+      String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  );
 
   workbook.creator = "Exam Tracker";
   workbook.created = new Date();
   workbook.modified = new Date();
   workbook.properties.date1904 = false;
 
-  if (includeSummary) {
-    addSummarySheet(workbook, safeRecords, subjectMap, themeConfig);
-  }
-
-  let groups = sheetMode === "subject"
-    ? groupRecordsBySubject(safeRecords, subjectMap)
-    : [{ name: "成绩明细", records: safeRecords }];
-
-  if (!groups.length) groups = [{ name: "鎴愮哗鏄庣粏", records: [] }];
+  let groups =
+    sheetMode === "subject"
+      ? groupRecordsBySubject(safeRecords, subjectMap)
+      : [{ name: "成绩明细", records: safeRecords }];
+  if (!groups.length) groups = [{ name: "成绩明细", records: [] }];
   groups.forEach((group) => addRecordSheet(workbook, group.name, group.records, subjectMap, selectedColumns, themeConfig));
+
+  if (includeSummary) addSummarySheet(workbook, safeRecords, themeConfig);
 
   const buffer = await workbook.xlsx.writeBuffer();
   downloadBuffer(buffer, `${normalizeFilename(filename)}.xlsx`);
 }
 
-function addSummarySheet(workbook, records, subjectMap, theme) {
+function addSummarySheet(workbook, records, theme) {
   const sheet = workbook.addWorksheet("导出概览");
   const scoredRecords = records.filter((record) => Number(record.fullScore) > 0);
   const totalScore = scoredRecords.reduce((sum, record) => sum + numberOrZero(record.score), 0);
@@ -97,11 +132,8 @@ function addRecordSheet(workbook, name, records, subjectMap, selectedColumns, th
   });
   styleHeader(sheet.getRow(1), theme.header);
   sheet.getRow(1).height = 25;
-  sheet.freezePanes = { rows: 1 };
   sheet.views = [{ state: "frozen", ySplit: 1 }];
-  if (records.length) {
-    sheet.autoFilter = { from: "A1", to: `${columnName(selectedColumns.length)}${records.length + 1}` };
-  }
+  sheet.autoFilter = { from: "A1", to: `${columnName(Math.max(selectedColumns.length, 1))}${records.length + 1}` };
   sheet.pageSetup = {
     orientation: "landscape",
     fitToPage: true,
@@ -117,9 +149,7 @@ function styleHeader(row, color) {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${color}` } };
     cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
     cell.alignment = { vertical: "middle", horizontal: "center" };
-    cell.border = {
-      bottom: { style: "medium", color: { argb: `FF${color}` } }
-    };
+    cell.border = { bottom: { style: "medium", color: { argb: `FF${color}` } } };
   });
 }
 
@@ -127,12 +157,15 @@ function styleRecordRow(row, record, subjectMap, theme, index, keys) {
   const subject = subjectMap.get(record.subjectId);
   const subjectColor = toArgb(subject?.color || theme.header);
   row.height = 22;
+
   row.eachCell((cell) => {
-    cell.alignment = { vertical: "middle", wrapText: keys[cell.column - 1] === "record" || keys[cell.column - 1] === "note" };
+    const key = keys[cell.column - 1];
+    cell.alignment = { vertical: "middle", wrapText: key === "record" || key === "note" };
     cell.border = { bottom: { style: "hair", color: { argb: "FFE4E7EC" } } };
     if (index % 2 === 1) {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${theme.stripe}` } };
     }
+    if (key === "score" || key === "fullScore") cell.numFmt = "0.0";
   });
 
   const subjectColumn = keys.indexOf("subject") + 1;
@@ -144,33 +177,43 @@ function styleRecordRow(row, record, subjectMap, theme, index, keys) {
   }
 
   const rateColumn = keys.indexOf("rate") + 1;
-  row.eachCell((cell) => {
-    if (cell.value instanceof Date) cell.numFmt = "yyyy-mm-dd";
-    if (rateColumn > 0 && typeof cell.value === "number" && cell.value >= 0 && cell.value <= 1 && cell.column === rateColumn) {
-      cell.numFmt = "0%";
-      cell.font = { bold: true, color: { argb: subjectColor } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(subjectColor, "FFFFFF", 0.9)}` } };
-    }
-  });
+  if (rateColumn > 0) {
+    const cell = row.getCell(rateColumn);
+    cell.numFmt = "0%";
+    cell.font = { bold: true, color: { argb: subjectColor } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(subjectColor, "FFFFFF", 0.9)}` } };
+  }
 }
 
 function getCellValue(key, record, subjectMap) {
   const subject = subjectMap.get(record.subjectId);
   switch (key) {
-    case "record":
-      return recordTitle(record);
     case "subject":
       return subject?.name || "未分类";
-    case "type":
-      return recordTypeLabel(record);
-    case "score":
-      return `${formatNumber(record.score)} / ${formatNumber(record.fullScore)}`;
-    case "rate":
-      return numberOrZero(record.fullScore) ? numberOrZero(record.score) / numberOrZero(record.fullScore) : 0;
-    case "duration":
-      return formatDuration(record.durationMinutes);
+    case "year":
+      return getYear(record);
     case "date":
       return record.date || "";
+    case "record":
+      return recordTitle(record);
+    case "type":
+      return recordTypeLabel(record);
+    case "variant":
+      return recordVariantLabel(record);
+    case "score":
+      return numberOrZero(record.score);
+    case "fullScore":
+      return numberOrZero(record.fullScore);
+    case "rate":
+      return numberOrZero(record.fullScore) ? numberOrZero(record.score) / numberOrZero(record.fullScore) : 0;
+    case "exerciseBook":
+      return record.exerciseBookName || "";
+    case "exercisePage":
+      return record.exercisePage || "";
+    case "exerciseQuestion":
+      return record.exerciseQuestion || "";
+    case "duration":
+      return formatDuration(record.durationMinutes);
     case "sync":
       return record.pendingSync ? "待同步" : "已同步";
     case "note":
@@ -202,18 +245,27 @@ function recordTypeLabel(record) {
   return record.recordType === "exercise" ? "习题" : "试卷";
 }
 
+function recordVariantLabel(record) {
+  if (record.recordType !== "paper" || record.subjectId !== "math1") return "";
+  const raw = String(record.paperVariant || "").toLowerCase();
+  if (raw === "true") return "真题";
+  if (raw === "mock") return "模拟卷";
+  return "";
+}
+
+function getYear(record) {
+  const dateYear = String(record.date || "").match(/\d{4}/)?.[0];
+  if (dateYear) return Number(dateYear);
+  const titleYear = String(record.paperName || "").match(/(?:19|20)\d{2}/)?.[0];
+  return titleYear ? Number(titleYear) : "";
+}
+
 function formatDuration(value) {
   const minutes = Number(value);
   if (!Number.isFinite(minutes) || minutes <= 0) return "未记录";
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return hours ? `${hours}小时${rest ? `${rest}分钟` : ""}` : `${minutes}分钟`;
-}
-
-function formatNumber(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "0";
-  return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
 }
 
 function numberOrZero(value) {
@@ -256,9 +308,10 @@ function toArgb(color) {
 function mixHex(firstArgb, secondHex, amount) {
   const first = firstArgb.slice(2);
   const second = secondHex.replace("#", "");
-  const channel = (offset) => Math.round(parseInt(first.slice(offset, offset + 2), 16) * (1 - amount) + parseInt(second.slice(offset, offset + 2), 16) * amount)
-    .toString(16)
-    .padStart(2, "0");
+  const channel = (offset) =>
+    Math.round(parseInt(first.slice(offset, offset + 2), 16) * (1 - amount) + parseInt(second.slice(offset, offset + 2), 16) * amount)
+      .toString(16)
+      .padStart(2, "0");
   return `${channel(0)}${channel(2)}${channel(4)}`.toUpperCase();
 }
 
