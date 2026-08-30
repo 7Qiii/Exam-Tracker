@@ -7,6 +7,7 @@ import {
   BarChart3,
   BookOpenCheck,
   Calculator,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -61,13 +62,17 @@ const isBatchWorking = ref(false);
 const workingRecordActions = reactive(new Set());
 const isExportDialogOpen = ref(false);
 const isExporting = ref(false);
+const recommendedExportColumns = ["subject", "year", "record", "scoreText", "note"];
 const exportForm = reactive({
   scope: "filtered",
   sheetMode: "single",
   theme: "ocean",
   filename: `成绩导出-${new Date().toISOString().slice(0, 10)}`,
   includeSummary: false,
-  columns: ["subject", "year", "record", "score", "fullScore", "rate", "date", "duration"]
+  subjectIds: [],
+  recordType: "all",
+  paperVariant: "all",
+  columns: [...recommendedExportColumns]
 });
 const ignoredHealthIssueIds = ref(readIgnoredHealthIssues());
 const isIgnoredHealthOpen = ref(false);
@@ -77,6 +82,17 @@ const paperVariantOptions = [
   { value: "all", label: "全部" },
   { value: "true", label: "真题" },
   { value: "mock", label: "模拟卷" }
+];
+const exportRecordTypeOptions = [
+  { value: "all", label: "全部类型", hint: "试卷、习题、合成" },
+  { value: "paper", label: "试卷", hint: "成套成绩" },
+  { value: "exercise", label: "习题", hint: "单题或习题册" },
+  { value: "composite", label: "合成", hint: "汇总成绩" }
+];
+const exportPaperVariantOptions = [
+  { value: "all", label: "全部卷型", hint: "不限制真题/模拟" },
+  { value: "true", label: "真题", hint: "历年真题" },
+  { value: "mock", label: "模拟卷", hint: "模考套卷" }
 ];
 const isMathDraftFilter = computed(() => draftFilters.subjectId === "math1");
 
@@ -113,16 +129,37 @@ const filteredRecords = computed(() => {
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)));
 const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1) * pageSize, page.value * pageSize));
-const exportSourceRecords = computed(() => {
+const exportBaseRecords = computed(() => {
   if (exportForm.scope === "selected") return selectedRecords.value;
   if (exportForm.scope === "all") return store.records;
   return filteredRecords.value;
+});
+const exportSourceRecords = computed(() => exportBaseRecords.value.filter(matchesExportFilters));
+const exportAvailableSubjects = computed(() => {
+  const counts = new Map();
+  exportBaseRecords.value.forEach((record) => counts.set(record.subjectId, (counts.get(record.subjectId) || 0) + 1));
+  const knownSubjects = store.subjects.filter((subject) => counts.has(subject.id)).map((subject) => ({ ...subject, count: counts.get(subject.id) }));
+  const knownIds = new Set(knownSubjects.map((subject) => subject.id));
+  const unknownSubjects = [...counts.entries()]
+    .filter(([id]) => !knownIds.has(id))
+    .map(([id, count]) => ({ id, name: store.subjectName(id), color: store.subjectColor(id), count }));
+  return [...knownSubjects, ...unknownSubjects];
 });
 const exportSubjectCount = computed(() => new Set(exportSourceRecords.value.map((record) => record.subjectId)).size);
 const exportSelectionLabel = computed(() => {
   if (exportForm.scope === "selected") return `已选 ${selectedRecords.value.length} 条`;
   if (exportForm.scope === "all") return `全部 ${store.records.length} 条`;
   return hasActiveFilters.value ? `当前筛选 ${filteredRecords.value.length} 条` : `当前列表 ${filteredRecords.value.length} 条`;
+});
+const exportSubjectLabel = computed(() => {
+  if (!exportForm.subjectIds.length) return "全部科目";
+  if (exportForm.subjectIds.length === 1) return store.subjectName(exportForm.subjectIds[0]);
+  return `${exportForm.subjectIds.length} 个科目`;
+});
+const exportTypeLabel = computed(() => {
+  const type = exportRecordTypeOptions.find((option) => option.value === exportForm.recordType)?.label || "全部类型";
+  const variant = exportPaperVariantOptions.find((option) => option.value === exportForm.paperVariant)?.label || "全部卷型";
+  return exportForm.paperVariant === "all" ? type : `${type} · ${variant}`;
 });
 const currentSortOption = computed(() => sortOptions.find((option) => option.value === sortBy.value) || sortOptions[0]);
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
@@ -254,6 +291,14 @@ watch(selectedRecordIds, () => {
   }
 });
 
+watch(exportAvailableSubjects, () => {
+  const availableIds = new Set(exportAvailableSubjects.value.map((subject) => subject.id));
+  const nextIds = exportForm.subjectIds.filter((id) => availableIds.has(id));
+  if (nextIds.length !== exportForm.subjectIds.length) {
+    exportForm.subjectIds = nextIds;
+  }
+});
+
 function applyFilters() {
   filters.keyword = draftFilters.keyword;
   filters.subjectId = draftFilters.subjectId;
@@ -314,6 +359,37 @@ function closeExportDialog() {
   isExportDialogOpen.value = false;
 }
 
+function matchesExportFilters(record) {
+  if (exportForm.subjectIds.length && !exportForm.subjectIds.includes(record.subjectId)) return false;
+  if (exportForm.recordType !== "all" && (record.recordType || "paper") !== exportForm.recordType) return false;
+  if (exportForm.paperVariant !== "all") {
+    return (record.recordType || "paper") === "paper" && normalizePaperVariant(record) === exportForm.paperVariant;
+  }
+  return true;
+}
+
+function toggleExportSubject(subjectId) {
+  exportForm.subjectIds = exportForm.subjectIds.includes(subjectId)
+    ? exportForm.subjectIds.filter((id) => id !== subjectId)
+    : [...exportForm.subjectIds, subjectId];
+}
+
+function clearExportSubjects() {
+  exportForm.subjectIds = [];
+}
+
+function setExportRecordType(value) {
+  exportForm.recordType = value;
+  if (value !== "all" && value !== "paper") {
+    exportForm.paperVariant = "all";
+  }
+}
+
+function chooseExportPaperVariant(value) {
+  if (exportForm.recordType !== "all" && exportForm.recordType !== "paper") return;
+  exportForm.paperVariant = value;
+}
+
 function toggleExportColumn(columnId) {
   const next = exportForm.columns.includes(columnId)
     ? exportForm.columns.filter((id) => id !== columnId)
@@ -326,7 +402,7 @@ function selectAllExportColumns() {
 }
 
 function resetExportColumns() {
-  exportForm.columns = ["subject", "year", "record", "score", "fullScore", "rate", "date", "duration"];
+  exportForm.columns = [...recommendedExportColumns];
 }
 
 async function exportExcel() {
@@ -930,7 +1006,7 @@ function scoreBarStyle(record) {
               @click="chooseSort(option.value)"
             >
               <span>{{ option.label }}</span>
-              <span v-if="sortBy === option.value">✓</span>
+              <Check v-if="sortBy === option.value" :size="14" />
             </button>
           </div>
         </div>
@@ -973,6 +1049,19 @@ function scoreBarStyle(record) {
 
         <div class="export-dialog-layout">
           <div class="export-dialog-main">
+            <div class="export-summary-strip">
+              <article>
+                <span>导出明细</span>
+                <strong>{{ exportSourceRecords.length }}</strong>
+                <small>{{ exportSubjectLabel }} · {{ exportTypeLabel }}</small>
+              </article>
+              <article>
+                <span>字段列</span>
+                <strong>{{ exportForm.columns.length }}</strong>
+                <small>默认：科目 / 年份 / 名称 / 分数 / 备注</small>
+              </article>
+            </div>
+
             <div class="export-option-section">
               <div class="export-option-title">
                 <strong>导出范围</strong>
@@ -991,6 +1080,76 @@ function scoreBarStyle(record) {
                   全部成绩
                   <small>{{ store.records.length }} 条</small>
                 </button>
+              </div>
+            </div>
+
+            <div class="export-option-section">
+              <div class="export-option-title">
+                <strong>导出筛选</strong>
+                <span>可在导出前单独选择科目、试卷类型和真题 / 模拟卷</span>
+              </div>
+              <div class="export-filter-block">
+                <div class="export-filter-head">
+                  <strong>科目</strong>
+                  <button type="button" :class="{ active: !exportForm.subjectIds.length }" @click="clearExportSubjects">
+                    全部科目
+                  </button>
+                </div>
+                <div class="export-subject-grid">
+                  <button
+                    v-for="subject in exportAvailableSubjects"
+                    :key="subject.id"
+                    class="export-subject-option"
+                    type="button"
+                    :class="{ active: exportForm.subjectIds.includes(subject.id) }"
+                    :style="{ '--subject-color': subject.color }"
+                    @click="toggleExportSubject(subject.id)"
+                  >
+                    <span class="subject-dot"></span>
+                    <span>{{ subject.name }}</span>
+                    <small>{{ subject.count }} 条</small>
+                    <Check v-if="exportForm.subjectIds.includes(subject.id)" :size="14" />
+                  </button>
+                </div>
+              </div>
+              <div class="export-filter-split">
+                <div class="export-filter-block">
+                  <div class="export-filter-head">
+                    <strong>记录类型</strong>
+                  </div>
+                  <div class="export-choice-grid">
+                    <button
+                      v-for="option in exportRecordTypeOptions"
+                      :key="option.value"
+                      class="export-choice-option"
+                      type="button"
+                      :class="{ active: exportForm.recordType === option.value }"
+                      @click="setExportRecordType(option.value)"
+                    >
+                      <span>{{ option.label }}</span>
+                      <small>{{ option.hint }}</small>
+                    </button>
+                  </div>
+                </div>
+                <div class="export-filter-block">
+                  <div class="export-filter-head">
+                    <strong>卷型</strong>
+                  </div>
+                  <div class="export-choice-grid">
+                    <button
+                      v-for="option in exportPaperVariantOptions"
+                      :key="option.value"
+                      class="export-choice-option"
+                      type="button"
+                      :disabled="exportForm.recordType !== 'all' && exportForm.recordType !== 'paper'"
+                      :class="{ active: exportForm.paperVariant === option.value }"
+                      @click="chooseExportPaperVariant(option.value)"
+                    >
+                      <span>{{ option.label }}</span>
+                      <small>{{ option.hint }}</small>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1024,21 +1183,23 @@ function scoreBarStyle(record) {
                 <div v-for="group in exportColumnGroups" :key="group.id" class="export-field-group">
                   <strong>{{ group.label }}</strong>
                   <div class="export-field-grid">
-                <button
-                  v-for="column in group.columns"
-                  :key="column.id"
-                  class="export-field-option"
-                  type="button"
-                  :class="{ active: exportForm.columns.includes(column.id) }"
-                  @click="toggleExportColumn(column.id)"
-                >
-                  <span class="export-field-check">{{ exportForm.columns.includes(column.id) ? "✓" : "" }}</span>
-                  {{ column.label }}
-                </button>
+                    <button
+                      v-for="column in group.columns"
+                      :key="column.id"
+                      class="export-field-option"
+                      type="button"
+                      :class="{ active: exportForm.columns.includes(column.id) }"
+                      @click="toggleExportColumn(column.id)"
+                    >
+                      <span class="export-field-check">
+                        <Check v-if="exportForm.columns.includes(column.id)" :size="13" />
+                      </span>
+                      {{ column.label }}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          </div>
           </div>
 
           <aside class="export-dialog-side">
@@ -1061,7 +1222,7 @@ function scoreBarStyle(record) {
               >
                 <span class="export-theme-preview" :style="{ '--theme-color': `#${theme.header}`, '--theme-accent': `#${theme.accent}` }"></span>
                 <span>{{ theme.label }}</span>
-                <span v-if="exportForm.theme === theme.id" class="export-theme-selected">✓</span>
+                <Check v-if="exportForm.theme === theme.id" class="export-theme-selected" :size="15" />
               </button>
             </div>
             <label class="export-switch-row">
@@ -1074,7 +1235,8 @@ function scoreBarStyle(record) {
             <div class="export-preview-card">
               <FileSpreadsheet :size="20" />
               <strong>{{ exportSourceRecords.length }} 条成绩</strong>
-              <span>{{ exportForm.columns.length }} 个字段 · {{ exportForm.sheetMode === "subject" ? `${exportSubjectCount} 个明细表` : "1 个明细表" }}</span>
+              <span>{{ exportSubjectLabel }} · {{ exportForm.columns.length }} 个字段</span>
+              <span>{{ exportForm.sheetMode === "subject" ? `${exportSubjectCount} 个科目分表` : "1 个明细表" }}</span>
             </div>
           </aside>
         </div>

@@ -5,16 +5,17 @@ export const exportColumnGroups = [
     columns: [
       { id: "subject", label: "科目", width: 14 },
       { id: "year", label: "年份", width: 10 },
+      { id: "record", label: "名称", width: 32 },
       { id: "date", label: "日期", width: 14 },
-      { id: "record", label: "记录名称", width: 30 },
-      { id: "type", label: "类型", width: 12 },
-      { id: "variant", label: "卷型", width: 12 }
+      { id: "type", label: "记录类型", width: 12 },
+      { id: "variant", label: "真题/模拟", width: 12 }
     ]
   },
   {
     id: "score",
     label: "成绩信息",
     columns: [
+      { id: "scoreText", label: "分数", width: 14 },
       { id: "score", label: "得分", width: 12 },
       { id: "fullScore", label: "满分", width: 12 },
       { id: "rate", label: "得分率", width: 12 }
@@ -35,7 +36,7 @@ export const exportColumnGroups = [
     columns: [
       { id: "duration", label: "用时", width: 14 },
       { id: "sync", label: "同步状态", width: 14 },
-      { id: "note", label: "复盘备注", width: 38 }
+      { id: "note", label: "备注", width: 38 }
     ]
   }
 ];
@@ -166,6 +167,7 @@ function styleRecordRow(row, record, subjectMap, theme, index, keys) {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${theme.stripe}` } };
     }
     if (key === "score" || key === "fullScore") cell.numFmt = "0.0";
+    if (key === "year" || key === "scoreText") cell.alignment = { vertical: "middle", horizontal: "center", wrapText: false };
   });
 
   const subjectColumn = keys.indexOf("subject") + 1;
@@ -182,6 +184,13 @@ function styleRecordRow(row, record, subjectMap, theme, index, keys) {
     cell.numFmt = "0%";
     cell.font = { bold: true, color: { argb: subjectColor } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(subjectColor, "FFFFFF", 0.9)}` } };
+  }
+
+  const scoreTextColumn = keys.indexOf("scoreText") + 1;
+  if (scoreTextColumn > 0) {
+    const cell = row.getCell(scoreTextColumn);
+    cell.font = { bold: true, color: { argb: subjectColor } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(subjectColor, "FFFFFF", 0.91)}` } };
   }
 }
 
@@ -200,6 +209,8 @@ function getCellValue(key, record, subjectMap) {
       return recordTypeLabel(record);
     case "variant":
       return recordVariantLabel(record);
+    case "scoreText":
+      return `${formatScoreNumber(record.score)} / ${formatScoreNumber(record.fullScore)}`;
     case "score":
       return numberOrZero(record.score);
     case "fullScore":
@@ -271,6 +282,12 @@ function formatDuration(value) {
 function numberOrZero(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function formatScoreNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
 }
 
 function normalizeFilename(value) {

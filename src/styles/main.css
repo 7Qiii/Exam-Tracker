@@ -5993,6 +5993,34 @@ th {
   gap: 16px;
 }
 
+.export-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.export-summary-strip article {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 8%, var(--surface)), var(--surface-soft));
+  padding: 12px 13px;
+}
+
+.export-summary-strip span,
+.export-summary-strip small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.export-summary-strip strong {
+  display: block;
+  margin: 4px 0 2px;
+  color: var(--ink);
+  font-size: 20px;
+}
+
 .export-dialog-side {
   border-left: 1px solid var(--line);
   padding-left: 18px;
@@ -6001,6 +6029,42 @@ th {
 .export-option-section {
   display: grid;
   gap: 9px;
+}
+
+.export-filter-block {
+  display: grid;
+  gap: 9px;
+}
+
+.export-filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.export-filter-head strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.export-filter-head button {
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  padding: 0;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.export-filter-head button.active {
+  color: var(--ink);
+}
+
+.export-filter-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .export-option-title {
@@ -6087,6 +6151,93 @@ th {
   gap: 8px;
 }
 
+.export-choice-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.export-choice-option {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  padding: 8px 11px;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  text-align: left;
+}
+
+.export-choice-option span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.export-choice-option small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.export-choice-option.active {
+  border-color: color-mix(in srgb, var(--blue) 40%, var(--line));
+  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
+  color: var(--blue);
+  box-shadow: 0 8px 18px rgba(36, 120, 232, 0.09);
+}
+
+.export-choice-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.export-subject-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.export-subject-option {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--subject-color) 8%, var(--surface-soft));
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.export-subject-option span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.export-subject-option small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.export-subject-option .subject-dot {
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--subject-color) 18%, transparent);
+}
+
+.export-subject-option svg {
+  color: var(--subject-color);
+}
+
+.export-subject-option.active {
+  border-color: color-mix(in srgb, var(--subject-color) 42%, var(--line));
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.08);
+}
+
 .export-field-groups {
   display: grid;
   gap: 14px;
@@ -6151,6 +6302,10 @@ th {
 .export-field-option.active .export-field-check {
   border-color: var(--blue);
   background: var(--blue);
+}
+
+.export-field-option.active .export-field-check svg {
+  color: #ffffff;
 }
 
 .export-input-label {
@@ -6292,6 +6447,12 @@ th {
 
   .export-field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .export-summary-strip,
+  .export-filter-split,
+  .export-subject-grid {
+    grid-template-columns: 1fr;
   }
 }
 
