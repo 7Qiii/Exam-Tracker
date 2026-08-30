@@ -27,7 +27,7 @@ import {
   X
 } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
-import { exportColumnGroups, exportColumnOptions, exportThemeOptions } from "../services/excelExport";
+import { exportColumnGroups, exportColumnOptions, exportRecordsToExcel, exportThemeOptions } from "../services/excelExport";
 import { useTrackerStore } from "../stores/tracker";
 
 const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
@@ -61,6 +61,7 @@ const batchSubjectId = ref("");
 const isBatchWorking = ref(false);
 const workingRecordActions = reactive(new Set());
 const isExportDialogOpen = ref(false);
+const isExporting = ref(false);
 const recommendedExportColumns = ["subject", "record", "scoreText", "note"];
 const exportForm = reactive({
   scope: "filtered",
@@ -161,8 +162,9 @@ const exportTypeLabel = computed(() => {
   return exportForm.paperVariant === "all" ? type : `${type} · ${variant}`;
 });
 const exportPreviewColumns = computed(() => exportColumnOptions.filter((column) => exportForm.columns.includes(column.id)));
-const exportPreviewRows = computed(() => exportSourceRecords.value.map((record) => buildExportPreviewRow(record)));
-const exportPreviewAverageRow = computed(() => buildExportAverageRow(exportSourceRecords.value));
+const exportPreviewRecords = computed(() => [...exportSourceRecords.value].sort(compareExportRecordsByName));
+const exportPreviewRows = computed(() => exportPreviewRecords.value.map((record) => buildExportPreviewRow(record)));
+const exportPreviewAverageRow = computed(() => buildExportAverageRow(exportPreviewRecords.value));
 const exportPreviewCount = computed(() => exportPreviewRows.value.length + (exportPreviewAverageRow.value ? 1 : 0));
 const currentSortOption = computed(() => sortOptions.find((option) => option.value === sortBy.value) || sortOptions[0]);
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
@@ -358,6 +360,7 @@ function openExportDialog() {
 }
 
 function closeExportDialog() {
+  if (isExporting.value) return;
   isExportDialogOpen.value = false;
 }
 
@@ -407,8 +410,26 @@ function resetExportColumns() {
   exportForm.columns = [...recommendedExportColumns];
 }
 
-function exportExcel() {
-  closeExportDialog();
+async function exportExcel() {
+  if (isExporting.value || !exportPreviewRecords.value.length || !exportForm.columns.length) return;
+  isExporting.value = true;
+  try {
+    await exportRecordsToExcel({
+      records: exportPreviewRecords.value,
+      subjects: store.subjects,
+      columns: exportForm.columns,
+      sheetMode: exportForm.sheetMode,
+      theme: exportForm.theme,
+      filename: exportForm.filename,
+      includeSummary: exportForm.includeSummary
+    });
+    isExportDialogOpen.value = false;
+    store.notify(`Excel 已导出，共 ${exportPreviewRecords.value.length} 条成绩。`, "success");
+  } catch (error) {
+    store.notify(error.message || "Excel 导出失败，请稍后重试。", "error", 6000);
+  } finally {
+    isExporting.value = false;
+  }
 }
 
 function startCreate() {
@@ -862,6 +883,21 @@ function scoreBarStyle(record) {
   return { width: `${percent}%`, background: color };
 }
 
+function compareExportRecordsByName(a, b) {
+  return (
+    String(recordTitle(a) || "").localeCompare(String(recordTitle(b) || ""), "zh-Hans-CN", {
+      numeric: true,
+      sensitivity: "base"
+    }) ||
+    String(store.subjectName(a.subjectId) || "").localeCompare(String(store.subjectName(b.subjectId) || ""), "zh-Hans-CN", {
+      numeric: true,
+      sensitivity: "base"
+    }) ||
+    String(a.date || "").localeCompare(String(b.date || "")) ||
+    String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+  );
+}
+
 function buildExportPreviewRow(record) {
   const score = formatScoreValue(record.score);
   const fullScore = formatScoreValue(record.fullScore);
@@ -936,7 +972,7 @@ function buildExportAverageRow(records) {
           <div class="records-hero-actions">
             <button class="secondary-button" type="button" @click="openExportDialog">
               <FileSpreadsheet :size="16" />
-              在线预览
+              导出 Excel
             </button>
             <button class="primary-button" type="button" @click="startCreate">
               <Plus :size="17" />
@@ -1333,10 +1369,10 @@ function buildExportAverageRow(records) {
         </div>
 
         <div class="export-dialog-footer">
-          <button class="secondary-button" type="button" @click="closeExportDialog">关闭</button>
-          <button class="primary-button" type="button" :disabled="!exportSourceRecords.length || !exportForm.columns.length" @click="exportExcel">
+          <button class="secondary-button" type="button" :disabled="isExporting" @click="closeExportDialog">关闭</button>
+          <button class="primary-button" type="button" :disabled="isExporting || !exportPreviewRecords.length || !exportForm.columns.length" @click="exportExcel">
             <FileSpreadsheet :size="17" />
-            完成
+            {{ isExporting ? "正在导出..." : "导出 Excel" }}
           </button>
         </div>
       </section>

@@ -64,13 +64,7 @@ export async function exportRecordsToExcel({
   const themeConfig = exportThemeOptions.find((item) => item.id === theme) || exportThemeOptions[0];
   const subjectMap = new Map(subjects.map((subject) => [subject.id, subject]));
   const selectedColumns = exportColumnOptions.filter((column) => columns.includes(column.id));
-  const safeRecords = [...records].sort(
-    (a, b) =>
-      String(a.subjectId || "").localeCompare(String(b.subjectId || "")) ||
-      String(getYear(b) || "").localeCompare(String(getYear(a) || "")) ||
-      String(b.date || "").localeCompare(String(a.date || "")) ||
-      String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-  );
+  const safeRecords = [...records].sort((a, b) => compareExportRecordsByName(a, b, subjectMap));
 
   workbook.creator = "Exam Tracker";
   workbook.created = new Date();
@@ -336,6 +330,22 @@ function formatScoreNumber(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "0";
   return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
+}
+
+function compareExportRecordsByName(a, b, subjectMap) {
+  return (
+    String(recordTitle(a) || "").localeCompare(String(recordTitle(b) || ""), "zh-Hans-CN", {
+      numeric: true,
+      sensitivity: "base"
+    }) ||
+    String(subjectMap.get(a.subjectId)?.name || "").localeCompare(String(subjectMap.get(b.subjectId)?.name || ""), "zh-Hans-CN", {
+      numeric: true,
+      sensitivity: "base"
+    }) ||
+    String(getYear(a) || "").localeCompare(String(getYear(b) || "")) ||
+    String(a.date || "").localeCompare(String(b.date || "")) ||
+    String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+  );
 }
 
 function normalizeFilename(value) {
