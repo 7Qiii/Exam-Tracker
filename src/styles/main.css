@@ -6400,6 +6400,102 @@ th {
   font-weight: 800;
 }
 
+.export-preview-section {
+  gap: 10px;
+}
+
+.export-preview-table-wrap {
+  min-width: 0;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.export-preview-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", "Arial", sans-serif;
+}
+
+.export-preview-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--blue) 94%, #ffffff) 0%, color-mix(in srgb, var(--blue) 88%, #ffffff) 100%);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: left;
+  padding: 11px 12px;
+  white-space: nowrap;
+}
+
+.export-preview-table tbody td {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 12px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.export-preview-table tbody tr:nth-child(odd) td {
+  background: color-mix(in srgb, var(--blue) 3%, var(--surface));
+}
+
+.export-preview-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--blue) 7%, var(--surface));
+}
+
+.export-preview-table tbody td.subject-cell {
+  color: color-mix(in srgb, var(--blue) 80%, var(--ink));
+  font-weight: 900;
+  font-size: 13px;
+}
+
+.export-preview-table tbody td.score-cell {
+  color: color-mix(in srgb, var(--blue) 84%, var(--ink));
+  font-weight: 900;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.export-preview-table tbody td.is-summary {
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+  border-top: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line));
+}
+
+.summary-preview-row td {
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+}
+
+.summary-preview-row td.subject-cell,
+.summary-preview-row td.score-cell {
+  color: color-mix(in srgb, var(--blue) 88%, var(--ink));
+  font-size: 13px;
+}
+
+.export-preview-table td:last-child,
+.export-preview-table th:last-child {
+  border-right: 0;
+}
+
+.export-preview-table td:first-child,
+.export-preview-table th:first-child {
+  padding-left: 14px;
+}
+
+.export-preview-table td:last-child {
+  padding-right: 14px;
+}
+
 .export-dialog-footer {
   border-top: 1px solid var(--line);
   justify-content: flex-end;
@@ -6453,6 +6549,10 @@ th {
   .export-filter-split,
   .export-subject-grid {
     grid-template-columns: 1fr;
+  }
+
+  .export-preview-table-wrap {
+    max-height: 300px;
   }
 }
 

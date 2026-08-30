@@ -128,6 +128,12 @@ function addRecordSheet(workbook, name, records, subjectMap, selectedColumns, th
     styleRecordRow(row, record, subjectMap, theme, index, keys);
   });
 
+  const averageRow = buildAverageRow(records, keys);
+  if (averageRow) {
+    const row = sheet.addRow(keys.map((key) => averageRow[key] ?? ""));
+    styleAverageRow(row, theme, keys);
+  }
+
   selectedColumns.forEach((column, index) => {
     sheet.getColumn(index + 1).width = column.width;
   });
@@ -148,7 +154,7 @@ function addRecordSheet(workbook, name, records, subjectMap, selectedColumns, th
 function styleHeader(row, color) {
   row.eachCell((cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${color}` } };
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    cell.font = { name: "Microsoft YaHei UI", bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
     cell.alignment = { vertical: "middle", horizontal: "center" };
     cell.border = { bottom: { style: "medium", color: { argb: `FF${color}` } } };
   });
@@ -161,6 +167,7 @@ function styleRecordRow(row, record, subjectMap, theme, index, keys) {
 
   row.eachCell((cell) => {
     const key = keys[cell.column - 1];
+    cell.font = { name: "Microsoft YaHei UI", size: 11 };
     cell.alignment = { vertical: "middle", wrapText: key === "record" || key === "note" };
     cell.border = { bottom: { style: "hair", color: { argb: "FFE4E7EC" } } };
     if (index % 2 === 1) {
@@ -174,7 +181,7 @@ function styleRecordRow(row, record, subjectMap, theme, index, keys) {
   if (subjectColumn > 0) {
     const cell = row.getCell(subjectColumn);
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(subjectColor, "FFFFFF", 0.82)}` } };
-    cell.font = { bold: true, color: { argb: subjectColor } };
+    cell.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: subjectColor } };
     cell.alignment = { vertical: "middle", horizontal: "center" };
   }
 
@@ -182,16 +189,57 @@ function styleRecordRow(row, record, subjectMap, theme, index, keys) {
   if (rateColumn > 0) {
     const cell = row.getCell(rateColumn);
     cell.numFmt = "0%";
-    cell.font = { bold: true, color: { argb: subjectColor } };
+    cell.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: subjectColor } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(subjectColor, "FFFFFF", 0.9)}` } };
   }
 
   const scoreTextColumn = keys.indexOf("scoreText") + 1;
   if (scoreTextColumn > 0) {
     const cell = row.getCell(scoreTextColumn);
-    cell.font = { bold: true, color: { argb: subjectColor } };
+    cell.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: subjectColor } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(subjectColor, "FFFFFF", 0.91)}` } };
   }
+}
+
+function styleAverageRow(row, theme, keys) {
+  row.height = 23;
+  row.eachCell((cell) => {
+    const key = keys[cell.column - 1];
+    cell.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: "FF2563EB" } };
+    cell.alignment = { vertical: "middle", wrapText: key === "record" || key === "note" };
+    cell.border = {
+      top: { style: "medium", color: { argb: `FF${theme.header}` } },
+      bottom: { style: "hair", color: { argb: "FFE4E7EC" } }
+    };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(toArgb(theme.header), "FFFFFF", 0.9)}` } };
+    if (key === "score" || key === "fullScore") cell.numFmt = "0.0";
+    if (key === "rate") cell.numFmt = "0%";
+    if (key === "subject" || key === "record" || key === "scoreText") {
+      cell.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: toArgb(theme.header) } };
+    }
+    if (key === "subject") cell.alignment = { vertical: "middle", horizontal: "center" };
+    if (key === "scoreText") cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+}
+
+function buildAverageRow(records, keys) {
+  const scoredRecords = records.filter((record) => Number(record.fullScore) > 0);
+  if (!records.length) return null;
+  const totalScore = scoredRecords.reduce((sum, record) => sum + numberOrZero(record.score), 0);
+  const totalFullScore = scoredRecords.reduce((sum, record) => sum + numberOrZero(record.fullScore), 0);
+  const divisor = scoredRecords.length || records.length;
+  const averageScore = divisor ? totalScore / divisor : 0;
+  const averageFullScore = divisor ? totalFullScore / divisor : 0;
+  const averageRate = totalFullScore ? totalScore / totalFullScore : 0;
+  const row = Object.fromEntries(keys.map((key) => [key, ""]));
+  row.subject = "平均";
+  row.record = "平均分";
+  row.scoreText = `${formatScoreNumber(averageScore)} / ${formatScoreNumber(averageFullScore)}`;
+  row.score = averageScore;
+  row.fullScore = averageFullScore;
+  row.rate = averageRate;
+  row.note = `共 ${records.length} 条`;
+  return row;
 }
 
 function getCellValue(key, record, subjectMap) {

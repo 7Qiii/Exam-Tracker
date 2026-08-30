@@ -27,7 +27,7 @@ import {
   X
 } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
-import { exportColumnGroups, exportColumnOptions, exportRecordsToExcel, exportThemeOptions } from "../services/excelExport";
+import { exportColumnGroups, exportColumnOptions, exportThemeOptions } from "../services/excelExport";
 import { useTrackerStore } from "../stores/tracker";
 
 const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
@@ -61,8 +61,7 @@ const batchSubjectId = ref("");
 const isBatchWorking = ref(false);
 const workingRecordActions = reactive(new Set());
 const isExportDialogOpen = ref(false);
-const isExporting = ref(false);
-const recommendedExportColumns = ["subject", "year", "record", "scoreText", "note"];
+const recommendedExportColumns = ["subject", "record", "scoreText", "note"];
 const exportForm = reactive({
   scope: "filtered",
   sheetMode: "single",
@@ -161,6 +160,10 @@ const exportTypeLabel = computed(() => {
   const variant = exportPaperVariantOptions.find((option) => option.value === exportForm.paperVariant)?.label || "全部卷型";
   return exportForm.paperVariant === "all" ? type : `${type} · ${variant}`;
 });
+const exportPreviewColumns = computed(() => exportColumnOptions.filter((column) => exportForm.columns.includes(column.id)));
+const exportPreviewRows = computed(() => exportSourceRecords.value.map((record) => buildExportPreviewRow(record)));
+const exportPreviewAverageRow = computed(() => buildExportAverageRow(exportSourceRecords.value));
+const exportPreviewCount = computed(() => exportPreviewRows.value.length + (exportPreviewAverageRow.value ? 1 : 0));
 const currentSortOption = computed(() => sortOptions.find((option) => option.value === sortBy.value) || sortOptions[0]);
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
 const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId || filters.paperVariant !== "all"));
@@ -355,7 +358,6 @@ function openExportDialog() {
 }
 
 function closeExportDialog() {
-  if (isExporting.value) return;
   isExportDialogOpen.value = false;
 }
 
@@ -405,26 +407,8 @@ function resetExportColumns() {
   exportForm.columns = [...recommendedExportColumns];
 }
 
-async function exportExcel() {
-  if (isExporting.value || !exportSourceRecords.value.length || !exportForm.columns.length) return;
-  isExporting.value = true;
-  try {
-    await exportRecordsToExcel({
-      records: exportSourceRecords.value,
-      subjects: store.subjects,
-      columns: exportForm.columns,
-      sheetMode: exportForm.sheetMode,
-      theme: exportForm.theme,
-      filename: exportForm.filename,
-      includeSummary: exportForm.includeSummary
-    });
-    isExportDialogOpen.value = false;
-    store.notify(`Excel 已导出，共 ${exportSourceRecords.value.length} 条成绩。`, "success");
-  } catch (error) {
-    store.notify(error.message || "Excel 导出失败，请稍后重试。", "error", 6000);
-  } finally {
-    isExporting.value = false;
-  }
+function exportExcel() {
+  closeExportDialog();
 }
 
 function startCreate() {
@@ -877,6 +861,63 @@ function scoreBarStyle(record) {
   const color = `linear-gradient(90deg, ${subjectColor} 0%, ${performanceColor} 100%)`;
   return { width: `${percent}%`, background: color };
 }
+
+function buildExportPreviewRow(record) {
+  const score = formatScoreValue(record.score);
+  const fullScore = formatScoreValue(record.fullScore);
+  return {
+    id: record.id,
+    subject: store.subjectName(record.subjectId),
+    year: recordYear(record) || "",
+    record: recordTitle(record),
+    date: record.date || "",
+    type: recordTypeLabel(record),
+    variant: recordVariantLabel(record),
+    scoreText: `${score} / ${fullScore}`,
+    score,
+    fullScore,
+    rate: `${scorePercent(record)}%`,
+    exerciseBook: record.exerciseBookName || "",
+    exercisePage: record.exercisePage || "",
+    exerciseQuestion: record.exerciseQuestion || "",
+    duration: formatDuration(record.durationMinutes),
+    sync: record.pendingSync ? "待同步" : "已同步",
+    note: record.note || "",
+    subjectColor: store.subjectColor(record.subjectId),
+    isSummary: false
+  };
+}
+
+function buildExportAverageRow(records) {
+  const scoredRecords = records.filter((record) => Number(record.fullScore) > 0);
+  if (!records.length) return null;
+  const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
+  const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
+  const divisor = scoredRecords.length || records.length;
+  const avgScore = divisor ? totalScore / divisor : 0;
+  const avgFullScore = divisor ? totalFullScore / divisor : 0;
+  return {
+    id: "average-row",
+    subject: "平均",
+    year: "",
+    record: "平均分",
+    date: "",
+    type: "",
+    variant: "",
+    scoreText: `${formatScoreValue(avgScore)} / ${formatScoreValue(avgFullScore)}`,
+    score: formatScoreValue(avgScore),
+    fullScore: formatScoreValue(avgFullScore),
+    rate: totalFullScore ? `${Math.round((totalScore / totalFullScore) * 100)}%` : "0%",
+    exerciseBook: "",
+    exercisePage: "",
+    exerciseQuestion: "",
+    duration: "",
+    sync: "",
+    note: `共 ${records.length} 条`,
+    subjectColor: "#2563eb",
+    isSummary: true
+  };
+}
 </script>
 
 <template>
@@ -895,7 +936,7 @@ function scoreBarStyle(record) {
           <div class="records-hero-actions">
             <button class="secondary-button" type="button" @click="openExportDialog">
               <FileSpreadsheet :size="16" />
-              导出 Excel
+              在线预览
             </button>
             <button class="primary-button" type="button" @click="startCreate">
               <Plus :size="17" />
@@ -1038,11 +1079,11 @@ function scoreBarStyle(record) {
       <section class="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
         <div class="export-dialog-head">
           <div>
-            <p class="eyebrow">数据导出</p>
-            <h2 id="export-dialog-title">自定义 Excel</h2>
-            <span class="section-meta">{{ exportSelectionLabel }} · {{ exportSubjectCount }} 个科目 · 可在 Excel 中继续筛选</span>
+            <p class="eyebrow">在线预览</p>
+            <h2 id="export-dialog-title">Excel 表格预览</h2>
+            <span class="section-meta">{{ exportSelectionLabel }} · {{ exportSubjectCount }} 个科目 · 所见即所得</span>
           </div>
-          <button class="icon-button" type="button" title="关闭导出设置" aria-label="关闭导出设置" :disabled="isExporting" @click="closeExportDialog">
+          <button class="icon-button" type="button" title="关闭预览" aria-label="关闭预览" @click="closeExportDialog">
             <X :size="17" />
           </button>
         </div>
@@ -1051,14 +1092,14 @@ function scoreBarStyle(record) {
           <div class="export-dialog-main">
             <div class="export-summary-strip">
               <article>
-                <span>导出明细</span>
+                <span>预览明细</span>
                 <strong>{{ exportSourceRecords.length }}</strong>
                 <small>{{ exportSubjectLabel }} · {{ exportTypeLabel }}</small>
               </article>
               <article>
-                <span>字段列</span>
-                <strong>{{ exportForm.columns.length }}</strong>
-                <small>默认：科目 / 年份 / 名称 / 分数 / 备注</small>
+                <span>预览行数</span>
+                <strong>{{ exportPreviewCount }}</strong>
+                <small>底部附平均分</small>
               </article>
             </div>
 
@@ -1156,7 +1197,7 @@ function scoreBarStyle(record) {
             <div class="export-option-section">
               <div class="export-option-title">
                 <strong>工作表布局</strong>
-                <span>概览页会保留关键统计</span>
+                <span>按你习惯的方式显示单表或分科目</span>
               </div>
               <div class="export-segmented two">
                 <button type="button" :class="{ active: exportForm.sheetMode === 'single' }" @click="exportForm.sheetMode = 'single'">
@@ -1198,6 +1239,56 @@ function scoreBarStyle(record) {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div class="export-option-section export-preview-section">
+              <div class="export-option-title">
+                <strong>在线表格预览</strong>
+                <span>字体已加粗，科目和分数会更清楚，最后一行是平均分</span>
+              </div>
+              <div class="export-preview-table-wrap">
+                <table class="export-preview-table">
+                  <thead>
+                    <tr>
+                      <th v-for="column in exportPreviewColumns" :key="column.id">{{ column.label }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in exportPreviewRows" :key="row.id">
+                      <td
+                        v-for="column in exportPreviewColumns"
+                        :key="column.id"
+                        :class="[
+                          `preview-cell preview-cell-${column.id}`,
+                          {
+                            'subject-cell': column.id === 'subject',
+                            'score-cell': column.id === 'scoreText',
+                            'is-summary': row.isSummary
+                          }
+                        ]"
+                      >
+                        {{ row[column.id] ?? " " }}
+                      </td>
+                    </tr>
+                    <tr v-if="exportPreviewAverageRow" class="summary-preview-row">
+                      <td
+                        v-for="column in exportPreviewColumns"
+                        :key="column.id"
+                        :class="[
+                          `preview-cell preview-cell-${column.id}`,
+                          {
+                            'subject-cell': column.id === 'subject',
+                            'score-cell': column.id === 'scoreText',
+                            'is-summary': true
+                          }
+                        ]"
+                      >
+                        {{ exportPreviewAverageRow[column.id] ?? " " }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -1242,10 +1333,10 @@ function scoreBarStyle(record) {
         </div>
 
         <div class="export-dialog-footer">
-          <button class="secondary-button" type="button" :disabled="isExporting" @click="closeExportDialog">取消</button>
-          <button class="primary-button" type="button" :disabled="isExporting || !exportSourceRecords.length || !exportForm.columns.length" @click="exportExcel">
+          <button class="secondary-button" type="button" @click="closeExportDialog">关闭</button>
+          <button class="primary-button" type="button" :disabled="!exportSourceRecords.length || !exportForm.columns.length" @click="exportExcel">
             <FileSpreadsheet :size="17" />
-            {{ isExporting ? "正在生成..." : "生成 Excel" }}
+            完成
           </button>
         </div>
       </section>
