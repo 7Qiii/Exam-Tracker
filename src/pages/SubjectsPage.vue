@@ -78,6 +78,7 @@ async function remove(subject) {
     error.value = "默认科目不能删除。";
     return;
   }
+  if (!window.confirm(`确定删除科目“${subject.name}”吗？`)) return;
   try {
     await store.removeSubject(subject.id);
     message.value = "科目已删除。";

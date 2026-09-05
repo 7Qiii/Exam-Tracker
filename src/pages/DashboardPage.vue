@@ -1,7 +1,19 @@
 <script setup>
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { Calculator, Download, FilePlus2, Target, TrendingUp, Trophy, Upload } from "@lucide/vue";
+import {
+  ArrowUpRight,
+  BookOpenCheck,
+  ClipboardPlus,
+  Database,
+  FilePlus2,
+  Flame,
+  FolderCog,
+  Gauge,
+  History,
+  Upload
+} from "@lucide/vue";
+import ContributionHeatmap from "../components/ContributionHeatmap.vue";
 import MetricCard from "../components/MetricCard.vue";
 import RecordForm from "../components/RecordForm.vue";
 import ScoreCharts from "../components/ScoreCharts.vue";
@@ -9,65 +21,67 @@ import { useTrackerStore } from "../stores/tracker";
 
 const store = useTrackerStore();
 const selectedSubject = ref("");
-const selectedPaperVariant = ref("all");
+const showRecordForm = ref(false);
 const importFile = ref(null);
 
-const paperVariantOptions = [
-  { value: "all", label: "全部" },
-  { value: "true", label: "真题" },
-  { value: "mock", label: "模拟卷" }
-];
+const latestRecords = computed(() =>
+  [...store.records]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, 6)
+);
 
-const isMathSubjectSelected = computed(() => selectedSubject.value === "math1");
-const chartPaperVariant = computed(() => (isMathSubjectSelected.value ? selectedPaperVariant.value : "all"));
-const scopedRecords = computed(() => {
-  const list = selectedSubject.value ? store.records.filter((record) => record.subjectId === selectedSubject.value) : store.records;
-  return isMathSubjectSelected.value ? list.filter(matchesSelectedPaperVariant) : list;
-});
-const currentScopeName = computed(() => {
-  if (!selectedSubject.value) return "全部科目";
-  const subjectName = store.subjectName(selectedSubject.value);
-  const suffix = isMathSubjectSelected.value ? paperVariantOptions.find((item) => item.value === selectedPaperVariant.value)?.label : "";
-  return suffix && suffix !== "全部" ? `${subjectName} · ${suffix}` : subjectName;
-});
+const scopedRecords = computed(() =>
+  selectedSubject.value ? store.records.filter((record) => record.subjectId === selectedSubject.value) : store.records
+);
+
+const totalScore = computed(() =>
+  scopedRecords.value.reduce((sum, record) => sum + Number(record.score || 0), 0)
+);
+const totalFullScore = computed(() =>
+  scopedRecords.value.reduce((sum, record) => sum + Number(record.fullScore || 0), 0)
+);
+const averageRate = computed(() => (totalFullScore.value ? Math.round((totalScore.value / totalFullScore.value) * 100) : 0));
+const latestRecord = computed(() => latestRecords.value[0] || null);
 const weekCount = computed(() => {
   const start = new Date();
-  start.setDate(start.getDate() - 7);
-  return scopedRecords.value.filter((record) => new Date(record.date) >= start).length;
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - 6);
+  return store.records.filter((record) => new Date(record.date) >= start).length;
 });
-const latestRecords = computed(() => [...scopedRecords.value].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).slice(0, 5));
+const activeDays = computed(() => {
+  const days = new Set(store.records.map((record) => record.date).filter(Boolean));
+  return days.size;
+});
+
 const subjectStats = computed(() =>
   store.visibleSubjects.map((subject) => {
-    const records = subject.id === selectedSubject.value ? scopedRecords.value : store.records.filter((record) => record.subjectId === subject.id);
-    const latest = [...records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0];
-    return {
-      ...subject,
-      count: records.length,
-      latest,
-      progress: latest ? Math.min(100, Math.round((latest.score / latest.fullScore) * 100)) : 0
-    };
+    const records = store.records.filter((record) => record.subjectId === subject.id);
+    const latest = [...records].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    const score = records.reduce((sum, record) => sum + Number(record.score || 0), 0);
+    const fullScore = records.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
+    const rate = fullScore ? Math.round((score / fullScore) * 100) : 0;
+    const mistakes = store.mistakes.filter((item) => item.subjectId === subject.id).length;
+    return { ...subject, latest, rate, count: records.length, mistakes };
   })
 );
-const displayedSubjectStats = computed(() => (selectedSubject.value ? subjectStats.value.filter((subject) => subject.id === selectedSubject.value) : subjectStats.value));
-const defaultAverageSubjectId = computed(() => subjectStats.value.find((subject) => subject.count)?.id || store.visibleSubjects[0]?.id || "");
-const averageSubjectId = computed(() => selectedSubject.value || defaultAverageSubjectId.value);
-const averageSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === averageSubjectId.value) || null);
-const averageSubjectStats = computed(() => {
-  const records = store.records
-    .filter((record) => record.subjectId === averageSubjectId.value && record.recordType !== "composite")
-    .filter((record) => (averageSubjectId.value === "math1" && selectedPaperVariant.value !== "all" ? matchesSelectedPaperVariant(record) : true));
-  const scoredRecords = records.filter((record) => Number(record.fullScore) > 0);
-  const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
-  const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
-  const durations = records.map((record) => normalizeDuration(record.durationMinutes)).filter((value) => value !== "");
-  const latest = [...records].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] || null;
-  const best = scoredRecords.reduce((winner, record) => (!winner || normalizeScoreValue(record.score) / normalizeScoreValue(record.fullScore) > normalizeScoreValue(winner.score) / normalizeScoreValue(winner.fullScore) ? record : winner), null);
-  const avgScore = scoredRecords.length ? totalScore / scoredRecords.length : 0;
-  const avgFullScore = scoredRecords.length ? totalFullScore / scoredRecords.length : 0;
-  const rate = totalFullScore ? Math.round((totalScore / totalFullScore) * 100) : 0;
-  const avgDuration = durations.length ? Math.round(durations.reduce((sum, value) => sum + Number(value), 0) / durations.length) : "";
-  return { records, count: records.length, scoredCount: scoredRecords.length, avgScore, avgFullScore, rate, avgDuration, latest, best, isReady: scoredRecords.length > 0 };
-});
+
+const reminders = computed(() => [
+  {
+    tone: store.mistakes.length ? "warning" : "success",
+    title: store.mistakes.length ? `${store.mistakes.length} 道错题待复盘` : "错题库保持清爽",
+    detail: store.mistakes.length ? "优先处理最近新增的错题" : "可以继续记录新的薄弱点"
+  },
+  {
+    tone: store.lastBackupAt ? "success" : "info",
+    title: store.lastBackupAt ? "本地数据已有备份" : "建议创建第一份备份",
+    detail: store.lastBackupAt ? `上次备份于 ${new Date(store.lastBackupAt).toLocaleDateString("zh-CN")}` : "JSON 文件可用于迁移和恢复"
+  },
+  {
+    tone: latestRecord.value ? "info" : "neutral",
+    title: latestRecord.value ? "继续保持练习节奏" : "先记录一场练习",
+    detail: latestRecord.value ? `最近一次得分 ${latestRecord.value.score}/${latestRecord.value.fullScore}` : "从成绩或错题开始建立学习档案"
+  }
+]);
 
 async function exportData() {
   const data = await store.exportData();
@@ -78,6 +92,7 @@ async function exportData() {
   link.download = `exam-tracker-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   URL.revokeObjectURL(url);
+  store.markBackupExported();
 }
 
 function chooseImport() {
@@ -87,61 +102,14 @@ function chooseImport() {
 async function onImport(event) {
   const file = event.target.files?.[0];
   if (!file) return;
-  const payload = JSON.parse(await file.text());
-  await store.importData(payload, true);
-  event.target.value = "";
-}
-
-function matchesSelectedPaperVariant(record) {
-  if (selectedPaperVariant.value === "all") return true;
-  return record.subjectId === "math1" && (record.recordType || "paper") === "paper" && normalizePaperVariant(record) === selectedPaperVariant.value;
-}
-
-function normalizePaperVariant(record) {
-  const raw = String(record?.paperVariant || "").trim().toLowerCase();
-  if (raw === "true" || raw === "mock") return raw;
-  const name = String(record?.paperName || "").trim().toLowerCase();
-  if (/mock|模拟|模考/.test(name)) return "mock";
-  if (/真题|历年|历届/.test(name)) return "true";
-  return "";
-}
-
-function recordVariantLabel(record) {
-  if (record.subjectId !== "math1" || (record.recordType || "paper") !== "paper") return "";
-  const value = normalizePaperVariant(record);
-  if (value === "true") return "真题";
-  if (value === "mock") return "模拟卷";
-  return "";
-}
-
-function formatDuration(minutes) {
-  const value = Number(minutes);
-  if (!Number.isFinite(value) || value <= 0) return "未记录";
-  const hours = Math.floor(value / 60);
-  const rest = value % 60;
-  if (!hours) return `${value} 分钟`;
-  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
-}
-
-function normalizeDuration(value) {
-  if (value === "" || value === null || value === undefined) return "";
-  const minutes = Number(value);
-  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
-}
-
-function normalizeScoreValue(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : 0;
-}
-
-function formatScoreValue(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "0";
-  return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
-}
-
-function subjectAccentStyle(record) {
-  return { "--subject-color": store.subjectColor(record.subjectId) };
+  try {
+    await store.importData(JSON.parse(await file.text()), true);
+    store.notify("数据已合并导入", "success");
+  } catch (error) {
+    store.notify(error.message || "导入失败，请检查文件格式", "error", 6000);
+  } finally {
+    event.target.value = "";
+  }
 }
 
 function recordTitle(record) {
@@ -150,147 +118,164 @@ function recordTitle(record) {
     .filter(Boolean)
     .join(" · ");
 }
+
+function formatDuration(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return "未记录";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `${hours} 小时${rest ? ` ${rest} 分钟` : ""}` : `${rest} 分钟`;
+}
 </script>
 
 <template>
-  <div class="page-stack">
-    <section class="hero-panel dashboard-hero">
+  <div class="page-stack dashboard-page">
+    <section class="dashboard-welcome">
       <div>
-        <p class="eyebrow">今日</p>
-        <h2>今天继续推进</h2>
-        <p>集中处理成绩、错题和备份，页面更轻，重点更清楚。</p>
+        <p class="eyebrow">学习档案 · {{ new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" }) }}</p>
+        <h2>欢迎回来，继续推进今天的复盘。</h2>
+        <p class="dashboard-welcome-copy">把成绩、错题和备份集中在一个轻量工作台里，先处理最重要的一件事。</p>
       </div>
-      <div class="hero-actions">
-        <RouterLink class="primary-button" to="/mistakes">
-          <FilePlus2 :size="17" />
-          记录错题
+      <div class="dashboard-welcome-actions">
+        <button class="primary-button" type="button" @click="showRecordForm = !showRecordForm">
+          <ClipboardPlus :size="17" />
+          {{ showRecordForm ? "收起录入" : "记录成绩" }}
+        </button>
+        <RouterLink class="secondary-button" to="/mistakes">
+          <BookOpenCheck :size="17" />
+          添加错题
         </RouterLink>
-        <button class="secondary-button" type="button" @click="exportData">
-          <Download :size="17" />
-          导出
-        </button>
-        <button class="secondary-button" type="button" @click="chooseImport">
-          <Upload :size="17" />
-          导入
-        </button>
-        <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" @change="onImport" />
       </div>
     </section>
 
-    <section class="summary-grid">
-      <MetricCard label="成绩记录" :value="store.records.length" hint="套试卷 / 专项练习" tone="blue" />
-      <MetricCard label="近 7 天练习" :value="weekCount" :hint="`${currentScopeName} · 保持节奏`" tone="green" />
-      <MetricCard label="错题记录" :value="store.mistakes.length" hint="解析与图片复盘" tone="orange" />
-      <MetricCard label="最近成绩" :value="latestRecords[0] ? `${latestRecords[0].score}/${latestRecords[0].fullScore}` : '--'" :hint="`${currentScopeName} · 最近一套`" tone="purple" />
+    <section class="summary-grid dashboard-summary-grid">
+      <MetricCard label="成绩记录" :value="store.records.length" :hint="`${weekCount} 条发生在最近 7 天`" tone="blue" />
+      <MetricCard label="错题待复盘" :value="store.mistakes.length" hint="按科目进入连续复习" tone="orange" />
+      <MetricCard label="累计活跃日" :value="activeDays" hint="有成绩或错题记录的日期" tone="green" />
+      <MetricCard label="平均得分率" :value="`${averageRate}%`" :hint="selectedSubject ? store.subjectName(selectedSubject) : '全部科目'" tone="purple" />
     </section>
 
-    <section class="average-dashboard-panel">
-      <div class="average-dashboard-main">
-        <div class="average-dashboard-head">
-          <span><Calculator :size="16" />科目均分</span>
-          <select v-model="selectedSubject">
-            <option value="">全部科目 · 自动均分科目</option>
-            <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
-          </select>
-        </div>
-        <div v-if="averageSubjectId === 'math1'" class="paper-kind-tabs dashboard-paper-tabs">
-          <button v-for="option in paperVariantOptions" :key="option.value" type="button" :class="{ active: selectedPaperVariant === option.value }" @click="selectedPaperVariant = option.value">{{ option.label }}</button>
-        </div>
-        <div class="average-score-display">
-          <small>{{ averageSubject?.name || "暂无科目" }}{{ averageSubjectId === 'math1' && selectedPaperVariant !== 'all' ? ` · ${paperVariantOptions.find((item) => item.value === selectedPaperVariant)?.label}` : "" }}</small>
-          <strong v-if="averageSubjectStats.isReady">{{ formatScoreValue(averageSubjectStats.avgScore) }} / {{ formatScoreValue(averageSubjectStats.avgFullScore) }}</strong>
-          <strong v-else>--</strong>
-          <p>{{ averageSubjectStats.isReady ? `${averageSubjectStats.count} 条记录参与统计，合成成绩已排除` : "选择一个已有成绩的科目后显示平均分。" }}</p>
-        </div>
-        <div class="average-ring-row">
-          <div class="average-ring" :style="{ '--rate': `${averageSubjectStats.rate}%`, '--color': averageSubject?.color || '#007aff' }">
-            <span>{{ averageSubjectStats.rate }}%</span>
-          </div>
-          <div>
-            <b>平均得分率</b>
-            <span>{{ averageSubjectStats.avgDuration ? `${formatDuration(averageSubjectStats.avgDuration)} 平均用时` : "暂无计时均值" }}</span>
-          </div>
-        </div>
-      </div>
-      <div class="average-dashboard-metrics">
-        <article><Target :size="16" /><span>统计样本</span><strong>{{ averageSubjectStats.count }}</strong></article>
-        <article><Trophy :size="16" /><span>最高表现</span><strong>{{ averageSubjectStats.best ? `${averageSubjectStats.best.score}/${averageSubjectStats.best.fullScore}` : "--" }}</strong></article>
-        <article><TrendingUp :size="16" /><span>最近一次</span><strong>{{ averageSubjectStats.latest ? `${averageSubjectStats.latest.score}/${averageSubjectStats.latest.fullScore}` : "--" }}</strong></article>
-        <article><Calculator :size="16" /><span>有效分数</span><strong>{{ averageSubjectStats.scoredCount }}</strong></article>
-      </div>
-    </section>
-
-    <section class="content-grid">
-      <div class="panel">
-        <div class="section-head">
-          <h2>新增成绩</h2>
-        </div>
-        <RecordForm />
-      </div>
-
-      <div class="panel">
-        <div class="section-head">
-          <h2>科目状态</h2>
-          <select v-model="selectedSubject">
-            <option value="">全部科目</option>
-            <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
-          </select>
-        </div>
-        <div class="subject-list">
-          <article v-for="subject in displayedSubjectStats" :key="subject.id" class="subject-card">
-            <div>
-              <strong>{{ subject.name }}</strong>
-              <span>{{ subject.count }} 条记录</span>
-            </div>
-            <b>{{ subject.latest ? `${subject.latest.score} / ${subject.latest.fullScore}` : "--" }}</b>
-            <div class="progress"><i :style="{ width: `${subject.progress}%`, background: subject.color }"></i></div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <ScoreCharts :subject-id="selectedSubject" :paper-variant="chartPaperVariant" />
-
-    <section class="panel">
+    <section v-if="showRecordForm" class="panel quick-record-panel">
       <div class="section-head">
-        <h2>最近成绩</h2>
-        <RouterLink class="text-link" to="/records">查看全部</RouterLink>
+        <div>
+          <h2>快速记录成绩</h2>
+          <span class="section-meta">保存后会立即更新趋势和科目掌握进度</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="收起快速录入" title="收起快速录入" @click="showRecordForm = false">×</button>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>记录</th>
-              <th>科目</th>
-              <th>得分</th>
-              <th>用时</th>
-              <th>日期</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="record in latestRecords" :key="record.id" class="subject-record-row" :style="subjectAccentStyle(record)">
-              <td>
-                <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
-                <span v-if="recordVariantLabel(record)" class="paper-variant-pill">{{ recordVariantLabel(record) }}</span>
-              </td>
-              <td>
-                <span class="subject-chip compact">
-                  <span class="subject-dot"></span>
-                  {{ store.subjectName(record.subjectId) }}
-                </span>
-              </td>
-              <td>
-                <div class="score-cell subject-score-cell">
-                  <strong>{{ record.score }} / {{ record.fullScore }}</strong>
-                  <div class="progress micro"><i :style="{ width: `${record.fullScore ? Math.max(0, Math.min(100, Math.round((record.score / record.fullScore) * 100))) : 0}%`, background: `linear-gradient(90deg, ${store.subjectColor(record.subjectId)} 0%, #38bdf8 100%)` }"></i></div>
-                </div>
-              </td>
-              <td>{{ formatDuration(record.durationMinutes) }}</td>
-              <td>{{ record.date }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <RecordForm @saved="showRecordForm = false" />
+    </section>
+
+    <section class="dashboard-grid dashboard-primary-grid">
+      <div class="dashboard-main-column">
+        <ContributionHeatmap :records="store.records" :mistakes="store.mistakes" />
+
+        <section class="panel subject-progress-panel">
+          <div class="section-head">
+            <div>
+              <h2>科目掌握进度</h2>
+              <span class="section-meta">按成绩得分率与错题数量综合观察</span>
+            </div>
+            <select v-model="selectedSubject" class="compact-select" aria-label="选择科目">
+              <option value="">全部科目</option>
+              <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+            </select>
+          </div>
+          <div class="subject-progress-list">
+            <article v-for="subject in subjectStats.filter((item) => !selectedSubject || item.id === selectedSubject)" :key="subject.id" class="subject-progress-row">
+              <div class="subject-progress-title">
+                <span class="subject-chip" :style="{ '--subject-color': subject.color }"><span class="subject-dot"></span>{{ subject.name }}</span>
+                <strong>{{ subject.rate }}%</strong>
+              </div>
+              <div class="progress"><i :style="{ width: `${subject.rate}%`, background: subject.color }"></i></div>
+              <div class="subject-progress-meta">
+                <span>{{ subject.count }} 条成绩</span>
+                <span>{{ subject.mistakes }} 道错题</span>
+                <span>{{ subject.latest ? `最近 ${subject.latest.score}/${subject.latest.fullScore}` : "暂无成绩" }}</span>
+              </div>
+            </article>
+            <div v-if="!subjectStats.length" class="empty-state compact-empty">还没有可展示的科目。</div>
+          </div>
+        </section>
       </div>
+
+      <aside class="dashboard-side-column">
+        <section class="panel focus-panel">
+          <div class="section-head">
+            <div>
+              <h2>今日焦点</h2>
+              <span class="section-meta">把下一步安排得清楚一点</span>
+            </div>
+            <Flame :size="18" class="section-icon orange" />
+          </div>
+          <div class="focus-score">
+            <Gauge :size="22" />
+            <strong>{{ latestRecord ? latestRecord.score : "--" }}</strong>
+            <span>{{ latestRecord ? `最近一次 · ${store.subjectName(latestRecord.subjectId)}` : "还没有成绩记录" }}</span>
+          </div>
+          <div class="focus-links">
+            <RouterLink to="/records"><History :size="16" />查看成绩历史<ArrowUpRight :size="15" /></RouterLink>
+            <RouterLink to="/mistakes"><BookOpenCheck :size="16" />进入错题复习<ArrowUpRight :size="15" /></RouterLink>
+          </div>
+        </section>
+
+        <section class="panel reminder-panel">
+          <div class="section-head">
+            <div>
+              <h2>提醒</h2>
+              <span class="section-meta">来自你的学习档案</span>
+            </div>
+          </div>
+          <div class="reminder-list">
+            <article v-for="item in reminders" :key="item.title" class="reminder-item" :class="`tone-${item.tone}`">
+              <span class="reminder-dot"></span>
+              <div><strong>{{ item.title }}</strong><span>{{ item.detail }}</span></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel quick-links-panel">
+          <div class="section-head">
+            <h2>快捷入口</h2>
+          </div>
+          <div class="quick-links">
+            <RouterLink to="/records"><FilePlus2 :size="17" />成绩记录</RouterLink>
+            <RouterLink to="/mistakes"><BookOpenCheck :size="17" />错题库</RouterLink>
+            <RouterLink to="/subjects"><FolderCog :size="17" />科目管理</RouterLink>
+            <RouterLink to="/backup"><Database :size="17" />数据备份</RouterLink>
+            <button type="button" @click="exportData"><Upload :size="17" />快速导出</button>
+            <button type="button" @click="chooseImport"><Database :size="17" />合并导入</button>
+          </div>
+          <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" @change="onImport" />
+        </section>
+      </aside>
+    </section>
+
+    <ScoreCharts :subject-id="selectedSubject" />
+
+    <section class="panel recent-panel">
+      <div class="section-head">
+        <div>
+          <h2>最近成绩</h2>
+          <span class="section-meta">共 {{ store.records.length }} 条记录 · 点击进入详情</span>
+        </div>
+        <RouterLink class="text-link" to="/records">查看全部 <ArrowUpRight :size="15" /></RouterLink>
+      </div>
+      <div v-if="latestRecords.length" class="recent-record-list">
+        <RouterLink v-for="record in latestRecords" :key="record.id" :to="`/records/${record.id}`" class="recent-record-row">
+          <span class="recent-record-accent" :style="{ background: store.subjectColor(record.subjectId) }"></span>
+          <div class="recent-record-main">
+            <strong>{{ recordTitle(record) }}</strong>
+            <span>{{ store.subjectName(record.subjectId) }} · {{ record.date }} · {{ formatDuration(record.durationMinutes) }}</span>
+          </div>
+          <div class="recent-record-score">
+            <strong>{{ record.score }}/{{ record.fullScore }}</strong>
+            <span>{{ record.fullScore ? Math.round((record.score / record.fullScore) * 100) : 0 }}%</span>
+          </div>
+          <ArrowUpRight :size="16" />
+        </RouterLink>
+      </div>
+      <div v-else class="empty-state">还没有成绩记录，先从“记录成绩”开始。</div>
     </section>
   </div>
 </template>

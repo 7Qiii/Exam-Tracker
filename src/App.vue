@@ -30,7 +30,7 @@ const isSidebarOpen = ref(false);
 const isOnline = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const globalSearch = ref("");
 const isGlobalSearchOpen = ref(false);
-const themeMode = ref("system");
+const themeMode = ref("light");
 const themeStorageKey = "exam-tracker-theme-mode";
 const signatureStorageKey = "exam-tracker-signature";
 const signatureText = ref("稳住节奏，今天继续推进");
@@ -201,9 +201,8 @@ function updateOnlineState() {
 }
 
 onMounted(() => {
-  setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey)));
+  setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey) || "light"));
   signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
-  showSignatureSplash();
   store.load();
   window.addEventListener("online", updateOnlineState);
   window.addEventListener("offline", updateOnlineState);

@@ -18,6 +18,7 @@ const uploaderResetKey = ref(0);
 const isSaving = ref(false);
 const isAnalyzing = ref(false);
 const aiMessage = ref("");
+const formError = ref("");
 const focusedField = ref("");
 const hiddenHistory = ref(readHiddenHistory());
 
@@ -27,6 +28,7 @@ const form = reactive({
   knowledgePoint: "",
   reason: "concept",
   status: "待复盘",
+  difficulty: "中等",
   sourceRecordId: "",
   questionText: "",
   analysis: "",
@@ -176,6 +178,7 @@ watch(
     form.knowledgePoint = source.knowledgePoint || "";
     form.reason = source.reason || "concept";
     form.status = source.status || "待复盘";
+    form.difficulty = source.difficulty || "中等";
     form.sourceRecordId = source.sourceRecordId || queryRecord?.id || "";
     form.questionText = source.questionText || "";
     form.analysis = source.analysis || "";
@@ -189,6 +192,11 @@ watch(
 );
 
 async function submit() {
+  formError.value = "";
+  if (!form.title.trim()) {
+    formError.value = "请先填写错题标题。";
+    return;
+  }
   isSaving.value = true;
   try {
     if (props.mistake) {
@@ -214,6 +222,7 @@ async function submit() {
 
 <template>
   <form class="form-grid" @submit.prevent="submit">
+    <div v-if="formError" class="inline-alert danger">{{ formError }}</div>
     <div class="form-row two">
       <label>
         科目
@@ -239,6 +248,31 @@ async function submit() {
             </button>
           </div>
         </div>
+      </label>
+      <label>
+        难度
+        <select v-model="form.difficulty">
+          <option value="简单">简单</option>
+          <option value="中等">中等</option>
+          <option value="困难">困难</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="form-row two">
+      <label>
+        掌握状态
+        <select v-model="form.status">
+          <option value="待复盘">待复盘</option>
+          <option value="不熟">不熟</option>
+          <option value="不会">不会</option>
+          <option value="已整理">已整理</option>
+          <option value="已掌握">已掌握</option>
+        </select>
+      </label>
+      <label>
+        下次复习
+        <input v-model="form.nextReviewAt" type="date" />
       </label>
     </div>
 

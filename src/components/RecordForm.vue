@@ -9,6 +9,7 @@ const props = defineProps({
 const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
 const isSaving = ref(false);
+const formError = ref("");
 
 const paperVariantOptions = [
   { value: "true", label: "真题", hint: "历年真题、成套回顾" },
@@ -100,9 +101,19 @@ watch(
 );
 
 async function submit() {
-  if (Number(form.score) > Number(form.fullScore)) return;
-  if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) return;
-  if (form.recordType === "exercise" && !form.exerciseBookName.trim()) return;
+  formError.value = "";
+  if (Number(form.score) > Number(form.fullScore)) {
+    formError.value = "得分不能高于满分。";
+    return;
+  }
+  if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) {
+    formError.value = "用时不能小于 0 分钟。";
+    return;
+  }
+  if (form.recordType === "exercise" && !form.exerciseBookName.trim()) {
+    formError.value = "请填写习题册名称。";
+    return;
+  }
   ensurePaperVariant();
   isSaving.value = true;
   try {
@@ -153,6 +164,7 @@ function normalizePaperVariant(value, paperName = "") {
 
 <template>
   <form class="form-grid record-form" @submit.prevent="submit">
+    <div v-if="formError" class="inline-alert danger">{{ formError }}</div>
     <label>
       科目
       <select v-model="form.subjectId" required>

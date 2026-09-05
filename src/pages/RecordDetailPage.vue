@@ -27,6 +27,10 @@ const recordTypeText = computed(() => {
   return recordVariantText.value ? `试卷 · ${recordVariantText.value}` : "试卷";
 });
 const compositeSources = computed(() => store.compositeSourcesForRecord(record.value));
+const scoreRate = computed(() => {
+  if (!record.value || !Number(record.value.fullScore)) return 0;
+  return Math.round((Number(record.value.score || 0) / Number(record.value.fullScore)) * 100);
+});
 const compositeSourceTotal = computed(() =>
   compositeSources.value.reduce(
     (total, item) => ({
@@ -151,6 +155,7 @@ function sourceChanged(source) {
       <RecordForm v-if="isEditing" :record="record" @saved="onSaved" />
       <template v-else>
         <div class="detail-metrics">
+          <article><span>得分率</span><strong>{{ scoreRate }}%</strong></article>
           <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
           <article><span>用时</span><strong>{{ formatDuration(record.durationMinutes) }}</strong></article>
           <article><span>类型</span><strong>{{ recordTypeText }}</strong></article>
