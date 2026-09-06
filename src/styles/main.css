@@ -4910,6 +4910,22 @@ body {
   gap: 4px 16px;
 }
 
+.backup-mini-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.auth-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.compact-note {
+  min-height: 160px;
+  align-items: flex-start;
+}
+
 .recent-record-list {
   display: grid;
 }

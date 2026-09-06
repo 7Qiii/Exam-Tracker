@@ -8,24 +8,21 @@ const store = useTrackerStore();
 const mode = ref("login");
 const isBusy = ref(false);
 const message = ref("");
-const form = reactive({
-  email: "",
-  password: ""
-});
+const form = reactive({ email: "", password: "" });
 
 onMounted(() => {
   const url = new URL(window.location.href);
   if (url.searchParams.get("confirmed") === "1") {
-    message.value = "邮箱已确认，现在可以登录并开启同步。";
+    message.value = "邮箱已确认，现在可以登录并同步。";
     window.history.replaceState({}, "", "#/login");
   }
 });
 
 const statusText = computed(() => {
-  if (!isSupabaseConfigured) return "还没有配置 Supabase 环境变量";
+  if (!isSupabaseConfigured) return "未配置 Supabase 环境变量";
   if (store.syncError) return `同步失败：${store.syncError}`;
   if (store.user) return `已登录：${store.user.email}`;
-  return "可登录 / 注册后开启多设备同步";
+  return "可登录或注册后开启多设备同步";
 });
 const lastSyncText = computed(() => (store.lastSyncedAt ? new Date(store.lastSyncedAt).toLocaleString("zh-CN") : "暂无同步记录"));
 const imageSyncText = computed(() => {
@@ -39,10 +36,10 @@ async function submit() {
   try {
     if (mode.value === "login") {
       await store.login(form.email, form.password);
-      message.value = "已登录，实时同步已启动";
+      message.value = "登录成功，实时同步已开启。";
     } else {
       await store.register(form.email, form.password);
-      message.value = "注册完成。如果 Supabase 开启邮件确认，请先查收验证邮件。";
+      message.value = "注册完成，如开启邮箱确认请先查收邮件。";
     }
   } catch (error) {
     message.value = error.message || "账号操作失败";
@@ -53,7 +50,7 @@ async function submit() {
 
 async function logout() {
   await store.logout();
-  message.value = "已退出登录，当前回到本地缓存模式";
+  message.value = "已退出登录，当前回到本地模式。";
 }
 
 async function syncNow() {
@@ -61,7 +58,7 @@ async function syncNow() {
   message.value = "";
   try {
     await store.syncNow();
-    message.value = "快速同步已完成";
+    message.value = "同步完成。";
   } catch (error) {
     message.value = error.message || "同步失败";
   } finally {
@@ -74,7 +71,7 @@ async function calibrateCloud() {
   message.value = "";
   try {
     await store.calibrateCloud();
-    message.value = "云端校准已完成";
+    message.value = "云端校准完成。";
   } catch (error) {
     message.value = error.message || "云端校准失败";
   } finally {
@@ -84,30 +81,45 @@ async function calibrateCloud() {
 </script>
 
 <template>
-  <div class="login-layout">
-    <section class="login-panel auth-panel">
-      <div class="auth-hero">
-        <div class="brand-row">
-          <span class="brand-mark">ET</span>
-          <strong>Exam Tracker Console</strong>
-        </div>
-        <h2>账号同步</h2>
-        <p>Supabase 负责账号和成绩/错题数据，Cloudflare R2 负责错题图片。登录后手机、平板、电脑会读取同一份云端数据。</p>
-        <div class="auth-tags">
-          <span>Cloud Sync</span>
-          <span>R2 Images</span>
-          <span>Cross Device</span>
+  <div class="page-stack">
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>同步中心</h2>
+          <span class="section-meta">账号、成绩和错题的云端入口</span>
         </div>
       </div>
-      <div class="auth-stack">
-        <div class="sync-state" :class="{ online: store.user }">
-          <Database :size="18" />
-          <span>{{ statusText }}</span>
-        </div>
+      <div class="summary-grid auth-summary-grid">
+        <article class="metric-card">
+          <span>当前状态</span>
+          <strong>{{ store.user ? "已登录" : "未登录" }}</strong>
+          <small>{{ statusText }}</small>
+        </article>
+        <article class="metric-card">
+          <span>最近同步</span>
+          <strong>{{ store.lastSyncedAt ? "已同步" : "未同步" }}</strong>
+          <small>{{ lastSyncText }}</small>
+        </article>
+        <article class="metric-card">
+          <span>图片队列</span>
+          <strong>{{ store.pendingImages.length + store.failedImages.length }}</strong>
+          <small>{{ imageSyncText }}</small>
+        </article>
+        <article class="metric-card">
+          <span>设备</span>
+          <strong>{{ store.deviceName }}</strong>
+          <small>{{ store.autoSyncState }}</small>
+        </article>
+      </div>
+    </section>
 
-        <div class="sync-state">
-          <Cloud :size="18" />
-          <span>{{ store.deviceName }} · {{ store.autoSyncState }} · {{ imageSyncText }}</span>
+    <section class="content-grid">
+      <div class="panel">
+        <div class="section-head">
+          <div>
+            <h2>{{ store.user ? "云端操作" : "登录或注册" }}</h2>
+            <span class="section-meta">{{ store.user ? "同步、校准与退出" : "登录后开启多设备同步" }}</span>
+          </div>
         </div>
 
         <form v-if="!store.user" class="form-grid" @submit.prevent="submit">
@@ -136,13 +148,9 @@ async function calibrateCloud() {
         </form>
 
         <div v-else class="action-stack">
-          <div class="sync-state online">
-            <RefreshCw :size="17" />
-            <span>最后同步：{{ lastSyncText }}</span>
-          </div>
           <button class="primary-button" type="button" :disabled="isBusy || store.isSyncing" @click="syncNow">
             <RefreshCw :size="17" :class="{ spinning: store.isSyncing }" />
-            快速同步
+            立即同步
           </button>
           <button class="secondary-button" type="button" :disabled="isBusy || store.isSyncing" @click="calibrateCloud">
             <Database :size="17" />
@@ -155,9 +163,18 @@ async function calibrateCloud() {
         </div>
 
         <p v-if="message" class="dialog-hint">{{ message }}</p>
-        <div class="login-note">
+      </div>
+
+      <div class="panel">
+        <div class="section-head">
+          <div>
+            <h2>同步说明</h2>
+            <span class="section-meta">本地模式也能继续使用</span>
+          </div>
+        </div>
+        <div class="login-note compact-note">
           <Database :size="17" />
-          <span>需要在 Vercel 配置 Supabase 和 R2 环境变量；未配置时应用会继续使用本地 IndexedDB。</span>
+          <span>未配置 Supabase 时，应用会继续使用本地 IndexedDB。云端登录后，成绩、错题和图片会同步到同一账号。</span>
         </div>
       </div>
     </section>

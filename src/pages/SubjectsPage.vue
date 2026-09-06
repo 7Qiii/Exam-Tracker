@@ -9,12 +9,7 @@ const message = ref("");
 const error = ref("");
 const draggingId = ref("");
 
-const form = reactive({
-  name: "",
-  fullScore: 100,
-  color: "#177ddc"
-});
-
+const form = reactive({ name: "", fullScore: 100, color: "#177ddc" });
 const defaultIds = new Set(defaultSubjects.map((subject) => subject.id));
 
 const rows = computed(() =>
@@ -90,18 +85,44 @@ async function remove(subject) {
 
 <template>
   <div class="page-stack">
-    <section class="hero-panel compact-hero">
-      <div>
-        <h2>管理你的考试科目。</h2>
-        <p>默认科目按当前备考配置排序：数一、408、英一、政治。你也可以拖拽调整顺序，或隐藏暂时不用的科目。</p>
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>科目管理</h2>
+          <span class="section-meta">默认科目按备考顺序排列，可拖拽、隐藏和编辑</span>
+        </div>
+      </div>
+      <div class="summary-grid">
+        <article class="metric-card">
+          <span>总科目</span>
+          <strong>{{ rows.length }}</strong>
+          <small>当前全部配置</small>
+        </article>
+        <article class="metric-card">
+          <span>可见科目</span>
+          <strong>{{ visibleCount }}</strong>
+          <small>可用于新增与筛选</small>
+        </article>
+        <article class="metric-card">
+          <span>成绩关联</span>
+          <strong>{{ store.records.length }}</strong>
+          <small>历史成绩不会丢失</small>
+        </article>
+        <article class="metric-card">
+          <span>错题关联</span>
+          <strong>{{ store.mistakes.length }}</strong>
+          <small>错题也会保留</small>
+        </article>
       </div>
     </section>
 
     <section class="content-grid">
       <div class="panel">
         <div class="section-head">
-          <h2>新增科目</h2>
-          <span class="section-meta">自定义扩展</span>
+          <div>
+            <h2>新增科目</h2>
+            <span class="section-meta">支持自定义满分和颜色</span>
+          </div>
         </div>
         <form class="form-grid" @submit.prevent="add">
           <label>
@@ -130,8 +151,10 @@ async function remove(subject) {
 
       <div class="panel panel-wide">
         <div class="section-head">
-          <h2>科目列表</h2>
-          <span class="section-meta">{{ visibleCount }} / {{ rows.length }} 个可见</span>
+          <div>
+            <h2>科目列表</h2>
+            <span class="section-meta">{{ visibleCount }} / {{ rows.length }} 个可见</span>
+          </div>
         </div>
         <div v-if="message || error" class="inline-alert" :class="{ danger: error }">
           {{ error || message }}

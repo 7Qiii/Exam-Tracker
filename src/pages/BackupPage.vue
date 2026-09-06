@@ -22,9 +22,9 @@ const backupAgeDays = computed(() => {
   return Math.floor((Date.now() - new Date(store.lastBackupAt).getTime()) / 86400000);
 });
 const backupHint = computed(() => {
-  if (!hasData.value) return "暂无需要备份的数据。";
+  if (!hasData.value) return "当前还没有需要备份的数据。";
   if (!store.lastBackupAt) return "还没有导出过备份，建议先生成一份。";
-  if (backupAgeDays.value >= 7) return `上次备份已是 ${backupAgeDays.value} 天前，建议更新。`;
+  if (backupAgeDays.value >= 7) return `上次备份是 ${backupAgeDays.value} 天前，建议更新。`;
   return `上次备份：${new Date(store.lastBackupAt).toLocaleString("zh-CN")}`;
 });
 const shouldBackup = computed(() => hasData.value && (backupAgeDays.value >= 7 || !store.lastBackupAt));
@@ -73,25 +73,32 @@ async function clearData() {
   }
   await store.clearAll();
   confirmText.value = "";
-  message.value = "成绩、错题和图片记录已清空，科目配置已保留。";
+  message.value = "成绩、错题和图片已清空，科目配置保留。";
 }
 </script>
 
 <template>
   <div class="page-stack">
-    <section class="hero-panel compact-hero">
-      <div>
-        <h2>备份中心。</h2>
-        <p>{{ backupHint }}</p>
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>备份与恢复</h2>
+          <span class="section-meta">{{ backupHint }}</span>
+        </div>
+        <button class="primary-button" type="button" @click="exportData">
+          <Download :size="17" />
+          导出备份
+        </button>
       </div>
-      <button class="primary-button" type="button" @click="exportData">
-        <Download :size="17" />
-        导出备份
-      </button>
+      <div class="backup-mini-actions">
+        <span v-if="store.lastBackupAt" class="detail-pill">上次备份：{{ new Date(store.lastBackupAt).toLocaleString("zh-CN") }}</span>
+        <span v-else class="detail-pill">尚未导出过备份</span>
+        <span class="detail-pill">{{ hasData ? "可导出当前本地档案" : "当前没有可备份内容" }}</span>
+      </div>
     </section>
 
     <div v-if="shouldBackup" class="inline-alert">
-      数据越多越值得定期备份。建议每周导出一次 JSON 文件，尤其是错题图片较多时。
+      数据越多越值得定期备份。建议每周导出一份 JSON，尤其是错题图片较多时。
     </div>
 
     <section class="summary-grid">
@@ -105,8 +112,10 @@ async function clearData() {
     <section class="content-grid">
       <div class="panel">
         <div class="section-head">
-          <h2>导入恢复</h2>
-          <span class="section-meta">JSON 备份文件</span>
+          <div>
+            <h2>导入恢复</h2>
+            <span class="section-meta">支持合并或覆盖恢复</span>
+          </div>
         </div>
         <div class="action-stack">
           <button class="secondary-button" type="button" @click="chooseImport('merge')">
@@ -120,15 +129,17 @@ async function clearData() {
           <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" @change="onImport" />
           <p class="form-tip">
             <ShieldCheck :size="16" />
-            合并导入会保留现有数据；覆盖恢复会先替换当前成绩、错题、图片和科目配置。
+            合并导入会保留现有数据；覆盖恢复会替换当前成绩、错题、图片和科目配置。
           </p>
         </div>
       </div>
 
       <div class="panel">
         <div class="section-head">
-          <h2>危险操作</h2>
-          <span class="section-meta">保留科目配置</span>
+          <div>
+            <h2>危险操作</h2>
+            <span class="section-meta">清空时会保留科目配置</span>
+          </div>
         </div>
         <div class="form-grid">
           <label>
