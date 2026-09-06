@@ -5210,8 +5210,8 @@ textarea:focus {
 
 @media (min-width: 821px) and (max-width: 1180px) {
   .workspace {
-    width: calc(100% - 232px);
-    margin-left: 232px;
+    width: 100%;
+    margin-left: 0;
     padding: 18px 18px 34px;
   }
 
@@ -7764,8 +7764,8 @@ textarea:focus {
 
 @media (min-width: 821px) and (max-width: 1180px) {
   .workspace {
-    width: calc(100% - 232px) !important;
-    margin-left: 232px !important;
+    width: 100% !important;
+    margin-left: 0 !important;
     padding: 18px 18px 34px !important;
   }
 
@@ -7829,7 +7829,7 @@ textarea:focus {
   }
 
   .summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
   .dashboard-side-column {

@@ -60,6 +60,7 @@ const detailActionsStyle = computed(() =>
   isTabletViewport.value
     ? {
         justifyContent: "flex-start",
+        alignSelf: "flex-start",
         flexWrap: "wrap"
       }
     : {}
@@ -67,7 +68,8 @@ const detailActionsStyle = computed(() =>
 const detailMetricsStyle = computed(() =>
   isTabletViewport.value
     ? {
-        gridTemplateColumns: "repeat(2, minmax(0, 1fr))"
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        alignItems: "stretch"
       }
     : {}
 );
