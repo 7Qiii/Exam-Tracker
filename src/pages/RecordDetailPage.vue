@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { ArrowLeft, Edit3, Trash2, X } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
@@ -10,6 +10,7 @@ const router = useRouter();
 const store = useTrackerStore();
 const isEditing = ref(false);
 const isRemoving = ref(false);
+const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 
 const record = computed(() => store.records.find((item) => item.id === route.params.id));
 const relatedMistakes = computed(() => store.mistakes.filter((item) => item.sourceRecordId === route.params.id));
@@ -43,6 +44,32 @@ const compositeSourceTotal = computed(() =>
     }),
     { score: 0, fullScore: 0, durationMinutes: 0 }
   )
+);
+const isTabletViewport = computed(() => viewportWidth.value >= 821 && viewportWidth.value <= 1180);
+const detailHeadStyle = computed(() =>
+  isTabletViewport.value
+    ? {
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr)",
+        gap: "16px",
+        alignItems: "start"
+      }
+    : {}
+);
+const detailActionsStyle = computed(() =>
+  isTabletViewport.value
+    ? {
+        justifyContent: "flex-start",
+        flexWrap: "wrap"
+      }
+    : {}
+);
+const detailMetricsStyle = computed(() =>
+  isTabletViewport.value
+    ? {
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))"
+      }
+    : {}
 );
 
 async function remove() {
@@ -125,13 +152,26 @@ function sourceChanged(source) {
     String(normalizeDuration(source.durationMinutes)) !== String(normalizeDuration(source.originalDurationMinutes))
   );
 }
+
+function updateViewportWidth() {
+  viewportWidth.value = window.innerWidth;
+}
+
+onMounted(() => {
+  updateViewportWidth();
+  window.addEventListener("resize", updateViewportWidth);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", updateViewportWidth);
+});
 </script>
 
 <template>
   <div class="page-stack">
     <RouterLink class="text-link" to="/records"><ArrowLeft :size="16" />返回成绩列表</RouterLink>
     <section v-if="record" class="detail-panel subject-detail-panel" :style="subjectAccentStyle()">
-      <div class="detail-head">
+      <div class="detail-head" :style="detailHeadStyle">
         <div class="detail-copy">
           <p class="eyebrow subject-eyebrow">
             <span class="subject-chip compact">
@@ -146,7 +186,7 @@ function sourceChanged(source) {
             <span class="detail-pill">{{ record.pendingSync ? "待同步" : "已同步" }}</span>
           </div>
         </div>
-        <div class="detail-actions">
+        <div class="detail-actions" :style="detailActionsStyle">
           <button v-if="!isEditing" class="secondary-button" type="button" @click="startEdit"><Edit3 :size="16" />编辑</button>
           <button v-else class="secondary-button" type="button" @click="closeEdit"><X :size="16" />关闭</button>
           <button class="secondary-button danger-text" type="button" :disabled="isRemoving" @click="remove"><Trash2 :size="16" />{{ isRemoving ? '\u5220\u9664\u4e2d...' : '\u5220\u9664' }}</button>
@@ -154,7 +194,7 @@ function sourceChanged(source) {
       </div>
       <RecordForm v-if="isEditing" :record="record" @saved="onSaved" />
       <template v-else>
-        <div class="detail-metrics">
+        <div class="detail-metrics" :style="detailMetricsStyle">
           <article><span>得分率</span><strong>{{ scoreRate }}%</strong></article>
           <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
           <article><span>用时</span><strong>{{ formatDuration(record.durationMinutes) }}</strong></article>

@@ -37,6 +37,7 @@ const signatureText = ref("稳住节奏，今天继续推进");
 const signatureDraft = ref("");
 const isSignatureSplashVisible = ref(false);
 const isSignatureDialogOpen = ref(false);
+const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 let signatureTimer = null;
 const themeOptions = [
   { value: "system", label: "跟随系统", icon: Monitor },
@@ -58,6 +59,30 @@ const pageTitle = computed(() => {
   return matched?.title || "详情";
 });
 
+const isTabletViewport = computed(() => viewportWidth.value >= 821 && viewportWidth.value <= 1180);
+const tabletTopbarStyle = computed(() =>
+  isTabletViewport.value
+    ? {
+        alignItems: "flex-start",
+        flexWrap: "wrap",
+        gap: "12px",
+        minHeight: "60px",
+        padding: "8px 10px",
+        marginBottom: "18px"
+      }
+    : {}
+);
+const tabletTopbarTitleStyle = computed(() => (isTabletViewport.value ? { flex: "1 1 100%", width: "100%" } : {}));
+const tabletTopbarToolsStyle = computed(() =>
+  isTabletViewport.value
+    ? {
+        width: "100%",
+        justifyContent: "flex-start",
+        flexWrap: "wrap",
+        gap: "6px"
+      }
+    : {}
+);
 const latestRecord = computed(() =>
   [...store.records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0]
 );
@@ -179,6 +204,10 @@ function closeSignatureDialog() {
   isSignatureDialogOpen.value = false;
 }
 
+function updateViewportWidth() {
+  viewportWidth.value = window.innerWidth;
+}
+
 function saveSignature() {
   const next = signatureDraft.value.trim() || "稳住节奏，今天继续推进";
   signatureText.value = next;
@@ -204,12 +233,15 @@ onMounted(() => {
   setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey) || "light"));
   signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
   store.load();
+  updateViewportWidth();
+  window.addEventListener("resize", updateViewportWidth);
   window.addEventListener("online", updateOnlineState);
   window.addEventListener("offline", updateOnlineState);
 });
 
 onBeforeUnmount(() => {
   if (signatureTimer) window.clearTimeout(signatureTimer);
+  window.removeEventListener("resize", updateViewportWidth);
   window.removeEventListener("online", updateOnlineState);
   window.removeEventListener("offline", updateOnlineState);
 });
@@ -274,8 +306,8 @@ onBeforeUnmount(() => {
 
     <div class="workspace">
       <div v-if="!isOnline" class="offline-banner">当前离线，新增内容会先保存在本地。</div>
-      <header class="topbar">
-        <div class="topbar-title">
+      <header class="topbar" :style="tabletTopbarStyle">
+        <div class="topbar-title" :style="tabletTopbarTitleStyle">
           <button class="menu-button" type="button" aria-label="打开导航" @click="toggleSidebar">
             <Menu :size="20" />
           </button>
@@ -284,7 +316,7 @@ onBeforeUnmount(() => {
             <h1>{{ pageTitle }}</h1>
           </div>
         </div>
-        <div class="topbar-tools">
+        <div class="topbar-tools" :style="tabletTopbarToolsStyle">
           <form class="search-box global-search" @submit.prevent="openGlobalResult()">
             <Search :size="17" />
             <input
