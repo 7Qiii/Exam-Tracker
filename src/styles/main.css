@@ -297,6 +297,9 @@ p {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
+  max-width: 1240px;
+  margin-left: auto;
+  margin-right: auto;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: var(--soft-shadow);
   backdrop-filter: blur(14px);
@@ -2222,6 +2225,12 @@ td a,
   background: linear-gradient(180deg, #ffffff, #f8fbff);
 }
 
+.detail-actions .secondary-button.danger-text {
+  border-color: rgba(201, 80, 80, 0.22);
+  background: rgba(255, 245, 245, 0.96);
+  color: var(--red);
+}
+
 .auth-panel {
   padding: 24px;
 }
@@ -2829,14 +2838,27 @@ textarea,
 .sync-state,
 .segmented,
 .account-pill,
-.sync-pill,
+.sync-pill {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: none;
+}
+
 .secondary-button,
 .ghost-button,
 .icon-button,
-.pager button {
-  border-color: transparent;
-  background: #f5f5f7;
-  box-shadow: none;
+.pager button,
+.sync-pill,
+.account-pill {
+  color: var(--ink);
+}
+
+.ghost-button.icon-only,
+.topbar-tools .icon-only,
+.topbar-tools .icon-button,
+.topbar-tools .sync-pill,
+.topbar-tools .account-pill {
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .primary-button {
@@ -4181,10 +4203,6 @@ textarea,
 .search-box,
 .sync-state,
 .segmented,
-.secondary-button,
-.ghost-button,
-.icon-button,
-.pager button,
 .records-hero-tags span,
 .detail-pill,
 .auth-tags span,
@@ -4197,6 +4215,19 @@ textarea,
   background: rgba(232, 238, 246, 0.56);
   box-shadow: var(--soft-shadow);
   backdrop-filter: blur(18px) saturate(150%);
+}
+
+.secondary-button,
+.ghost-button,
+.icon-button,
+.pager button,
+.sync-pill,
+.account-pill,
+.topbar-tools .icon-button,
+.topbar-tools .icon-only,
+.drawer-close,
+.menu-button {
+  background: rgba(255, 255, 255, 0.94);
 }
 
 input:focus,
@@ -5655,6 +5686,17 @@ textarea:focus {
 :root[data-theme="light"] .selection-count {
   background: rgba(232, 238, 246, 0.56);
   color: var(--ink);
+}
+
+:root[data-theme="light"] .secondary-button,
+:root[data-theme="light"] .ghost-button,
+:root[data-theme="light"] .icon-button,
+:root[data-theme="light"] .pager button,
+:root[data-theme="light"] .sync-pill,
+:root[data-theme="light"] .account-pill,
+:root[data-theme="light"] .drawer-close,
+:root[data-theme="light"] .menu-button {
+  background: rgba(255, 255, 255, 0.94);
 }
 
 :root[data-theme="light"] .nav-item,
