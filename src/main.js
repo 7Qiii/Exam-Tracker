@@ -4,6 +4,7 @@ import App from "./App.vue";
 import router from "./router";
 import "./styles/main.css";
 import "./styles/mistakes-refresh.css";
+import "./styles/tablet.css";
 
 createApp(App).use(createPinia()).use(router).mount("#app");
 

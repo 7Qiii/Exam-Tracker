@@ -6,5 +6,6 @@ dist/
 .env.local
 .vercel/
 .claude/
+.workbuddy-ai/
 
 .vercel

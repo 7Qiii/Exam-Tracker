@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
 import {
   ArrowUpRight,
@@ -23,7 +23,6 @@ const store = useTrackerStore();
 const selectedSubject = ref("");
 const showRecordForm = ref(false);
 const importFile = ref(null);
-const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 
 const latestRecords = computed(() =>
   [...store.records]
@@ -83,57 +82,6 @@ const reminders = computed(() => [
     detail: latestRecord.value ? `最近一次得分 ${latestRecord.value.score}/${latestRecord.value.fullScore}` : "从成绩或错题开始建立学习档案"
   }
 ]);
-const isTabletViewport = computed(() => viewportWidth.value >= 821 && viewportWidth.value <= 1180);
-const dashboardWelcomeStyle = computed(() =>
-  isTabletViewport.value
-    ? {
-        alignItems: "flex-start",
-        flexDirection: "column",
-        gap: "18px"
-      }
-    : {}
-);
-const dashboardActionsStyle = computed(() =>
-  isTabletViewport.value
-    ? {
-        justifyContent: "flex-start"
-      }
-    : {}
-);
-const summaryGridStyle = computed(() =>
-  isTabletViewport.value
-    ? {
-        gridTemplateColumns: "repeat(2, minmax(0, 1fr))"
-      }
-    : {}
-);
-const dashboardGridStyle = computed(() =>
-  isTabletViewport.value
-    ? {
-        gridTemplateColumns: "minmax(0, 1fr)"
-      }
-    : {}
-);
-const dashboardSideColumnStyle = computed(() =>
-  isTabletViewport.value
-    ? {
-        gridTemplateColumns: "minmax(0, 1fr)"
-      }
-    : {}
-);
-
-function updateViewportWidth() {
-  viewportWidth.value = window.innerWidth;
-}
-
-onMounted(() => {
-  updateViewportWidth();
-  window.addEventListener("resize", updateViewportWidth);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener("resize", updateViewportWidth);
-});
 
 async function exportData() {
   const data = await store.exportData();
@@ -182,13 +130,13 @@ function formatDuration(value) {
 
 <template>
   <div class="page-stack dashboard-page">
-    <section class="dashboard-welcome" :style="dashboardWelcomeStyle">
+    <section class="dashboard-welcome">
       <div>
         <p class="eyebrow">学习档案 · {{ new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" }) }}</p>
         <h2>欢迎回来，继续推进今天的复盘。</h2>
         <p class="dashboard-welcome-copy">把成绩、错题和备份集中在一个轻量工作台里，先处理最重要的一件事。</p>
       </div>
-      <div class="dashboard-welcome-actions" :style="dashboardActionsStyle">
+      <div class="dashboard-welcome-actions">
         <button class="primary-button" type="button" @click="showRecordForm = !showRecordForm">
           <ClipboardPlus :size="17" />
           {{ showRecordForm ? "收起录入" : "记录成绩" }}
@@ -200,7 +148,7 @@ function formatDuration(value) {
       </div>
     </section>
 
-    <section class="summary-grid dashboard-summary-grid" :style="summaryGridStyle">
+    <section class="summary-grid dashboard-summary-grid">
       <MetricCard label="成绩记录" :value="store.records.length" :hint="`${weekCount} 条发生在最近 7 天`" tone="blue" />
       <MetricCard label="错题待复盘" :value="store.mistakes.length" hint="按科目进入连续复习" tone="orange" />
       <MetricCard label="累计活跃日" :value="activeDays" hint="有成绩或错题记录的日期" tone="green" />
@@ -218,7 +166,7 @@ function formatDuration(value) {
       <RecordForm @saved="showRecordForm = false" />
     </section>
 
-    <section class="dashboard-grid dashboard-primary-grid" :style="dashboardGridStyle">
+    <section class="dashboard-grid dashboard-primary-grid">
       <div class="dashboard-main-column">
         <ContributionHeatmap :records="store.records" :mistakes="store.mistakes" />
 
@@ -251,7 +199,7 @@ function formatDuration(value) {
         </section>
       </div>
 
-      <aside class="dashboard-side-column" :style="dashboardSideColumnStyle">
+      <aside class="dashboard-side-column">
         <section class="panel focus-panel">
           <div class="section-head">
             <div>
