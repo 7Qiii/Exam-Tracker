@@ -200,18 +200,28 @@ function updateOnlineState() {
   store.notify(isOnline.value ? "网络已恢复。" : "当前离线，操作会先保存在本地。", isOnline.value ? "success" : "info");
 }
 
+// >=1024px 时侧栏变成常驻的图标导航条（见 tablet.css），
+// 如果竖屏时抽屉是打开的，旋转到横屏后要收起来，否则 .open 样式会残留。
+function syncSidebarForViewport() {
+  if (window.innerWidth >= 1024) closeSidebar();
+}
+
 onMounted(() => {
   setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey) || "light"));
   signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
   store.load();
   window.addEventListener("online", updateOnlineState);
   window.addEventListener("offline", updateOnlineState);
+  window.addEventListener("resize", syncSidebarForViewport);
+  window.addEventListener("orientationchange", syncSidebarForViewport);
 });
 
 onBeforeUnmount(() => {
   if (signatureTimer) window.clearTimeout(signatureTimer);
   window.removeEventListener("online", updateOnlineState);
   window.removeEventListener("offline", updateOnlineState);
+  window.removeEventListener("resize", syncSidebarForViewport);
+  window.removeEventListener("orientationchange", syncSidebarForViewport);
 });
 </script>
 

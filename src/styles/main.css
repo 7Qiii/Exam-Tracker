@@ -2898,7 +2898,11 @@ textarea,
   }
 }
 
-@media (max-width: 1080px), (min-resolution: 1.5dppx) and (max-width: 1366px) and (pointer: coarse) {
+/* 平板及以上（>=1024px）的侧栏由 tablet.css 接管（图标导航条），
+   这里只负责 <1024px 的抽屉形态。原先额外挂了一条
+   (pointer: coarse) and (max-width:1366px) 条件，会把 iPad 横屏的侧栏
+   一起藏掉、而底部导航此时又不显示，导致整页没有导航入口。 */
+@media (max-width: 1023px) {
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
@@ -3726,7 +3730,7 @@ tbody tr:hover {
   box-shadow: none;
 }
 
-@media (max-width: 1080px), (min-resolution: 1.5dppx) and (max-width: 1366px) and (pointer: coarse) {
+@media (max-width: 1023px) {
   .sidebar.open {
     border-right: 0;
     background: rgba(251, 251, 253, 0.92);
