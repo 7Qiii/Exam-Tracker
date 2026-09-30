@@ -27,7 +27,15 @@ import {
   X
 } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
-import { exportColumnGroups, exportColumnOptions, exportRecordsToExcel, exportThemeOptions } from "../services/excelExport";
+import {
+  buildExportMatrix,
+  defaultMatrixFields,
+  exportColumnGroups,
+  exportColumnOptions,
+  exportMatrixFieldOptions,
+  exportRecordsToExcel,
+  exportThemeOptions
+} from "../services/excelExport";
 import { useTrackerStore } from "../stores/tracker";
 
 const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
@@ -63,9 +71,35 @@ const workingRecordActions = reactive(new Set());
 const isExportDialogOpen = ref(false);
 const isExporting = ref(false);
 const recommendedExportColumns = ["subject", "record", "scoreText", "note"];
+const exportLayoutStorageKey = "exam-tracker-export-layout";
+const exportMatrixFieldsStorageKey = "exam-tracker-export-matrix-fields";
+const exportLayoutOptions = [
+  { value: "rows", label: "明细行", hint: "一行一条成绩，字段做列" },
+  { value: "matrix", label: "按卷子分列", hint: "一套卷子占一列，竖着对比" }
+];
+
+function readExportLayout() {
+  if (typeof localStorage === "undefined") return "rows";
+  return localStorage.getItem(exportLayoutStorageKey) === "matrix" ? "matrix" : "rows";
+}
+
+function readExportMatrixFields() {
+  const fallback = [...defaultMatrixFields];
+  if (typeof localStorage === "undefined") return fallback;
+  try {
+    const saved = JSON.parse(localStorage.getItem(exportMatrixFieldsStorageKey) || "[]");
+    const valid = Array.isArray(saved) ? saved.filter((id) => exportMatrixFieldOptions.some((field) => field.id === id)) : [];
+    return valid.length ? valid : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const exportForm = reactive({
   scope: "filtered",
   sheetMode: "single",
+  layout: readExportLayout(),
+  matrixFields: readExportMatrixFields(),
   theme: "ocean",
   filename: `成绩导出-${new Date().toISOString().slice(0, 10)}`,
   includeSummary: false,
@@ -165,7 +199,35 @@ const exportPreviewColumns = computed(() => exportColumnOptions.filter((column) 
 const exportPreviewRecords = computed(() => [...exportSourceRecords.value].sort(compareExportRecordsByName));
 const exportPreviewRows = computed(() => exportPreviewRecords.value.map((record) => buildExportPreviewRow(record)));
 const exportPreviewAverageRow = computed(() => buildExportAverageRow(exportPreviewRecords.value));
-const exportPreviewCount = computed(() => exportPreviewRows.value.length + (exportPreviewAverageRow.value ? 1 : 0));
+const isMatrixExport = computed(() => exportForm.layout === "matrix");
+const exportMatrix = computed(() =>
+  buildExportMatrix({
+    records: exportPreviewRecords.value,
+    subjects: store.subjects,
+    fields: exportForm.matrixFields
+  })
+);
+const exportMatrixGroupCount = computed(() => exportMatrix.value.groups.length);
+const exportMatrixColumnCount = computed(() => exportMatrixGroupCount.value * exportMatrix.value.fields.length);
+// 把「组 × 子字段」摊平成一行表头，顺序与后端写表时完全一致
+const exportMatrixColumns = computed(() =>
+  exportMatrix.value.groups.flatMap((group) =>
+    exportMatrix.value.fields.map((field) => ({ groupKey: group.key, fieldId: field.id, fieldLabel: field.label }))
+  )
+);
+const exportPreviewCount = computed(() => {
+  if (isMatrixExport.value) return exportMatrix.value.rows.length + (exportMatrix.value.average ? 1 : 0);
+  return exportPreviewRows.value.length + (exportPreviewAverageRow.value ? 1 : 0);
+});
+const exportReady = computed(() => {
+  if (!exportPreviewRecords.value.length) return false;
+  return isMatrixExport.value ? exportForm.matrixFields.length > 0 : exportForm.columns.length > 0;
+});
+const exportLayoutHint = computed(() => {
+  if (!isMatrixExport.value) return "一行一条成绩，字段作为列，适合逐条核对";
+  if (!exportMatrixGroupCount.value) return "当前范围内没有可分组的数据";
+  return `${exportMatrixGroupCount.value} 套卷子 · 每套 ${exportMatrix.value.fields.length} 列 · 共 ${exportMatrixColumnCount.value} 列`;
+});
 const currentSortOption = computed(() => sortOptions.find((option) => option.value === sortBy.value) || sortOptions[0]);
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
 const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId || filters.paperVariant !== "all"));
@@ -410,8 +472,34 @@ function resetExportColumns() {
   exportForm.columns = [...recommendedExportColumns];
 }
 
+function setExportLayout(value) {
+  exportForm.layout = value === "matrix" ? "matrix" : "rows";
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(exportLayoutStorageKey, exportForm.layout);
+  }
+}
+
+function toggleExportMatrixField(fieldId) {
+  const next = exportForm.matrixFields.includes(fieldId)
+    ? exportForm.matrixFields.filter((id) => id !== fieldId)
+    : [...exportForm.matrixFields, fieldId];
+  if (!next.length) return;
+  // 按选项定义顺序排列，保证列的顺序稳定可预期
+  exportForm.matrixFields = exportMatrixFieldOptions.filter((field) => next.includes(field.id)).map((field) => field.id);
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(exportMatrixFieldsStorageKey, JSON.stringify(exportForm.matrixFields));
+  }
+}
+
+function resetExportMatrixFields() {
+  exportForm.matrixFields = [...defaultMatrixFields];
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(exportMatrixFieldsStorageKey, JSON.stringify(exportForm.matrixFields));
+  }
+}
+
 async function exportExcel() {
-  if (isExporting.value || !exportPreviewRecords.value.length || !exportForm.columns.length) return;
+  if (isExporting.value || !exportReady.value) return;
   isExporting.value = true;
   try {
     await exportRecordsToExcel({
@@ -419,12 +507,15 @@ async function exportExcel() {
       subjects: store.subjects,
       columns: exportForm.columns,
       sheetMode: exportForm.sheetMode,
+      layout: exportForm.layout,
+      matrixFields: exportForm.matrixFields,
       theme: exportForm.theme,
       filename: exportForm.filename,
       includeSummary: exportForm.includeSummary
     });
     isExportDialogOpen.value = false;
-    store.notify(`Excel 已导出，共 ${exportPreviewRecords.value.length} 条成绩。`, "success");
+    const suffix = isMatrixExport.value ? `，按 ${exportMatrixGroupCount.value} 套卷子分列` : "";
+    store.notify(`Excel 已导出，共 ${exportPreviewRecords.value.length} 条成绩${suffix}。`, "success");
   } catch (error) {
     store.notify(error.message || "Excel 导出失败，请稍后重试。", "error", 6000);
   } finally {
@@ -1133,9 +1224,9 @@ function buildExportAverageRow(records) {
                 <small>{{ exportSubjectLabel }} · {{ exportTypeLabel }}</small>
               </article>
               <article>
-                <span>预览行数</span>
-                <strong>{{ exportPreviewCount }}</strong>
-                <small>底部附平均分</small>
+                <span>{{ isMatrixExport ? "分列情况" : "预览行数" }}</span>
+                <strong>{{ isMatrixExport ? exportMatrixColumnCount : exportPreviewCount }}</strong>
+                <small>{{ isMatrixExport ? `${exportMatrixGroupCount} 套卷子 · 每套 ${exportMatrix.fields.length} 列` : "底部附平均分" }}</small>
               </article>
             </div>
 
@@ -1249,6 +1340,25 @@ function buildExportAverageRow(records) {
 
             <div class="export-option-section">
               <div class="export-option-title">
+                <strong>表格布局</strong>
+                <span>{{ exportLayoutHint }}</span>
+              </div>
+              <div class="export-segmented two">
+                <button
+                  v-for="option in exportLayoutOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ active: exportForm.layout === option.value }"
+                  @click="setExportLayout(option.value)"
+                >
+                  {{ option.label }}
+                  <small>{{ option.hint }}</small>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="!isMatrixExport" class="export-option-section">
+              <div class="export-option-title">
                 <strong>导出字段</strong>
                 <span>至少保留一项，可按需要精简</span>
               </div>
@@ -1278,12 +1388,92 @@ function buildExportAverageRow(records) {
               </div>
             </div>
 
+            <div v-else class="export-option-section">
+              <div class="export-option-title">
+                <strong>每组包含</strong>
+                <span>每套卷子下面并排显示的字段，至少保留一项</span>
+              </div>
+              <div class="export-field-actions">
+                <button type="button" @click="resetExportMatrixFields">恢复推荐</button>
+              </div>
+              <div class="export-field-grid export-field-grid-flat">
+                <button
+                  v-for="field in exportMatrixFieldOptions"
+                  :key="field.id"
+                  class="export-field-option"
+                  type="button"
+                  :class="{ active: exportForm.matrixFields.includes(field.id) }"
+                  @click="toggleExportMatrixField(field.id)"
+                >
+                  <span class="export-field-check">
+                    <Check v-if="exportForm.matrixFields.includes(field.id)" :size="13" />
+                  </span>
+                  {{ field.label }}
+                </button>
+              </div>
+            </div>
+
             <div class="export-option-section export-preview-section">
               <div class="export-option-title">
                 <strong>在线表格预览</strong>
-                <span>字体已加粗，科目和分数会更清楚，最后一行是平均分</span>
+                <span v-if="isMatrixExport">每一套卷子占一列，同一套卷子的多份成绩竖着排，最后一行是平均分</span>
+                <span v-else>字体已加粗，科目和分数会更清楚，最后一行是平均分</span>
               </div>
-              <div class="export-preview-table-wrap">
+
+              <div v-if="isMatrixExport" class="export-preview-table-wrap">
+                <table v-if="exportMatrix.groups.length" class="export-preview-table export-preview-table-matrix">
+                  <thead>
+                    <tr class="matrix-group-row">
+                      <th class="matrix-index-head" rowspan="2">#</th>
+                      <th
+                        v-for="group in exportMatrix.groups"
+                        :key="group.key"
+                        :colspan="group.span"
+                        class="matrix-group-head"
+                        :style="{ '--subject-color': group.subjectColor || '#2563eb' }"
+                        :title="`${group.subjectName} · ${group.label} · ${group.records.length} 条`"
+                      >
+                        <span class="matrix-group-name">{{ group.label }}</span>
+                        <small>{{ group.subjectName }} · {{ group.records.length }} 条</small>
+                      </th>
+                    </tr>
+                    <tr class="matrix-field-row">
+                      <th
+                        v-for="(column, index) in exportMatrixColumns"
+                        :key="`${column.groupKey}-${column.fieldId}-${index}`"
+                        :class="['matrix-field-head', `matrix-field-${column.fieldId}`]"
+                      >
+                        {{ column.fieldLabel }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in exportMatrix.rows" :key="row.key">
+                      <td class="matrix-index-cell">{{ row.index }}</td>
+                      <td
+                        v-for="(cell, index) in row.cells"
+                        :key="`${cell.groupKey}-${cell.fieldId}-${index}`"
+                        :class="['preview-cell', `preview-cell-${cell.fieldId}`, { 'score-cell': cell.fieldId === 'scoreText' || cell.fieldId === 'score' }]"
+                      >
+                        {{ cell.text || " " }}
+                      </td>
+                    </tr>
+                    <tr v-if="exportMatrix.average" class="summary-preview-row">
+                      <td class="matrix-index-cell">平均</td>
+                      <td
+                        v-for="(cell, index) in exportMatrix.average.cells"
+                        :key="`avg-${cell.groupKey}-${cell.fieldId}-${index}`"
+                        :class="['preview-cell', `preview-cell-${cell.fieldId}`, { 'score-cell': cell.fieldId === 'scoreText' || cell.fieldId === 'score' }]"
+                      >
+                        {{ cell.text || " " }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-else class="export-preview-empty">当前范围内没有可以按卷子分组的数据，换成「明细行」试试。</p>
+              </div>
+
+              <div v-else class="export-preview-table-wrap">
                 <table class="export-preview-table">
                   <thead>
                     <tr>
@@ -1362,15 +1552,16 @@ function buildExportAverageRow(records) {
             <div class="export-preview-card">
               <FileSpreadsheet :size="20" />
               <strong>{{ exportSourceRecords.length }} 条成绩</strong>
-              <span>{{ exportSubjectLabel }} · {{ exportForm.columns.length }} 个字段</span>
+              <span>{{ exportSubjectLabel }} · {{ isMatrixExport ? `${exportMatrixColumnCount} 列` : `${exportForm.columns.length} 个字段` }}</span>
               <span>{{ exportForm.sheetMode === "subject" ? `${exportSubjectCount} 个科目分表` : "1 个明细表" }}</span>
+              <span>{{ isMatrixExport ? `按卷子分列 · ${exportMatrixGroupCount} 套` : "明细行" }}</span>
             </div>
           </aside>
         </div>
 
         <div class="export-dialog-footer">
           <button class="secondary-button" type="button" :disabled="isExporting" @click="closeExportDialog">关闭</button>
-          <button class="primary-button" type="button" :disabled="isExporting || !exportPreviewRecords.length || !exportForm.columns.length" @click="exportExcel">
+          <button class="primary-button" type="button" :disabled="isExporting || !exportReady" @click="exportExcel">
             <FileSpreadsheet :size="17" />
             {{ isExporting ? "正在导出..." : "导出 Excel" }}
           </button>

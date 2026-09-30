@@ -5346,7 +5346,9 @@ textarea:focus {
     min-width: 0;
     padding-left: 2px;
     padding-right: 2px;
-    font-size: 10px;
+    /* 10px 在真机上几乎看不清，11px 仍能容纳两个汉字 */
+    font-size: 11px;
+    letter-spacing: -0.01em;
   }
 }
 
@@ -7447,6 +7449,134 @@ textarea:focus {
   padding-right: 14px;
 }
 
+/* --------------------------------------------------------------------------
+   「按卷子分列」矩阵预览：两行表头（组名跨列合并 + 子字段名），
+   序号列横向吸边，方便横向滚动时定位。
+   -------------------------------------------------------------------------- */
+.export-field-grid-flat {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
+.export-preview-table-matrix {
+  min-width: max-content;
+}
+
+/* 两行表头整体吸顶，比逐行 sticky 更好处理高度不固定的情况 */
+.export-preview-table-matrix thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.export-preview-table-matrix thead th {
+  position: static;
+  border-right: 1px solid color-mix(in srgb, #ffffff 22%, transparent);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.export-preview-table-matrix .matrix-group-row th {
+  padding: 8px 12px 6px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--subject-color, var(--blue)) 96%, #ffffff) 0%,
+    color-mix(in srgb, var(--subject-color, var(--blue)) 84%, #ffffff) 100%
+  );
+}
+
+.export-preview-table-matrix .matrix-group-head {
+  display: table-cell;
+}
+
+.export-preview-table-matrix .matrix-group-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.export-preview-table-matrix .matrix-group-head small {
+  display: block;
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.export-preview-table-matrix .matrix-field-row th {
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+  color: color-mix(in srgb, var(--blue) 78%, var(--ink));
+  font-size: 11px;
+  font-weight: 900;
+  border-bottom: 1px solid var(--line);
+}
+
+.export-preview-table-matrix .matrix-index-head,
+.export-preview-table-matrix .matrix-index-cell {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 44px;
+  min-width: 44px;
+  padding-left: 8px;
+  padding-right: 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.export-preview-table-matrix .matrix-index-head {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--blue) 94%, #ffffff) 0%, color-mix(in srgb, var(--blue) 88%, #ffffff) 100%);
+  border-right: 1px solid color-mix(in srgb, #ffffff 26%, transparent);
+}
+
+.export-preview-table-matrix .matrix-index-cell {
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.export-preview-table-matrix tbody tr:nth-child(odd) .matrix-index-cell {
+  background: color-mix(in srgb, var(--blue) 3%, var(--surface));
+}
+
+.export-preview-table-matrix tbody tr:hover .matrix-index-cell {
+  background: color-mix(in srgb, var(--blue) 7%, var(--surface));
+}
+
+.export-preview-table-matrix .summary-preview-row .matrix-index-cell {
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+  color: color-mix(in srgb, var(--blue) 88%, var(--ink));
+  border-top: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line));
+}
+
+.export-preview-table-matrix .preview-cell-record {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.export-preview-empty {
+  padding: 22px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* 深色主题下矩阵表头与序号列 */
+:root[data-theme="dark"] .export-preview-table-matrix .matrix-field-row th {
+  background: rgba(90, 167, 255, 0.16);
+  color: #dbeafe;
+}
+
+:root[data-theme="dark"] .export-preview-table-matrix .matrix-index-cell {
+  background: rgba(18, 24, 33, 0.92);
+  border-right-color: rgba(255, 255, 255, 0.12);
+}
+
 .export-dialog-footer {
   border-top: 1px solid var(--line);
   justify-content: flex-end;
@@ -7472,12 +7602,13 @@ textarea:focus {
     justify-content: flex-start;
   }
 
+  /* 全面屏手机上避开 home indicator 与状态栏，底部按钮才不会被遮住 */
   .export-dialog-backdrop {
-    padding: 10px;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(10px + env(safe-area-inset-bottom, 0px));
   }
 
   .export-dialog {
-    max-height: calc(100dvh - 20px);
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     padding: 14px;
   }
 
@@ -7504,6 +7635,28 @@ textarea:focus {
 
   .export-preview-table-wrap {
     max-height: 300px;
+  }
+
+  /* 手机上矩阵列窄一些，序号列更紧凑，尽量多露几套卷子 */
+  .export-preview-table-matrix thead th {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .export-preview-table-matrix .matrix-index-head,
+  .export-preview-table-matrix .matrix-index-cell {
+    width: 34px;
+    min-width: 34px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .export-preview-table-matrix .preview-cell-record {
+    max-width: 148px;
+  }
+
+  .export-preview-table-matrix .matrix-group-name {
+    font-size: 12px;
   }
 }
 

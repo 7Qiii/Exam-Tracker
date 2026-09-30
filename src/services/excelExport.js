@@ -43,6 +43,184 @@ export const exportColumnGroups = [
 
 export const exportColumnOptions = exportColumnGroups.flatMap((group) => group.columns);
 
+/**
+ * 「按卷子分列」模式下，每一列里可以放哪些字段。
+ * 只保留「同一条记录各不相同」的值字段 —— 科目 / 年份 / 卷型这类
+ * 同组内基本一致的字段放进去只会重复占列。
+ */
+export const exportMatrixFieldOptions = [
+  { id: "record", label: "名称", width: 22 },
+  { id: "scoreText", label: "分数", width: 13 },
+  { id: "score", label: "得分", width: 10 },
+  { id: "fullScore", label: "满分", width: 10 },
+  { id: "rate", label: "得分率", width: 10 },
+  { id: "date", label: "日期", width: 12 },
+  { id: "duration", label: "用时", width: 12 },
+  { id: "note", label: "备注", width: 22 }
+];
+
+export const defaultMatrixFields = ["record", "scoreText"];
+
+/**
+ * 从卷子名里推出「同一套卷子」的分组名。
+ * 26张八1 / 26张八2 / 26张八10 -> 26张八
+ * 只把 1–2 位尾号当序号；4 位年份（如 英语一2010）不拆，避免把年份误并。
+ */
+export function paperGroupName(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "未命名";
+  const match = text.match(/^(.*?)[\s\-_·#（(]*(\d+)[)）]?\s*$/);
+  if (match) {
+    const digits = match[2];
+    const base = match[1].replace(/[\s\-_·#（(]+$/, "").trim();
+    if (base && digits.length <= 2) return base;
+  }
+  return text;
+}
+
+function paperGroupSource(record) {
+  if (record?.recordType === "exercise") return record.exerciseBookName || record.paperName || "";
+  return record.paperName || "";
+}
+
+function naturalCompare(a, b) {
+  return String(a ?? "").localeCompare(String(b ?? ""), "zh-Hans-CN", { numeric: true, sensitivity: "base" });
+}
+
+/**
+ * 把成绩摊成「一列一套卷子」的矩阵。预览和真正的 Excel 导出都调用它，
+ * 保证所见即所得。
+ *
+ * 返回：
+ *   fields  实际使用的子字段（按 exportMatrixFieldOptions 顺序）
+ *   groups  每个卷子组，span = 该组占多少列
+ *   rows    [{ index, cells: [{ fieldId, groupKey, text, value }] }]，cells 顺序与 groups 展开一致
+ *   average 平均行，结构与 rows 相同（无数据时为 null）
+ */
+export function buildExportMatrix({ records = [], subjects = [], fields = defaultMatrixFields } = {}) {
+  const subjectMap = new Map(subjects.map((subject) => [subject.id, subject]));
+  const picked = exportMatrixFieldOptions.filter((field) => fields.includes(field.id));
+  const usedFields = picked.length ? picked : exportMatrixFieldOptions.filter((field) => defaultMatrixFields.includes(field.id));
+
+  const groupMap = new Map();
+  records.forEach((record) => {
+    const subject = subjectMap.get(record.subjectId);
+    const label = paperGroupName(paperGroupSource(record));
+    const key = `${record.subjectId || "unknown"}::${label}`;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        key,
+        label,
+        subjectName: subject?.name || "未分类",
+        subjectColor: subject?.color || "",
+        records: []
+      });
+    }
+    groupMap.get(key).records.push(record);
+  });
+
+  const groups = [...groupMap.values()]
+    .sort((a, b) => naturalCompare(a.subjectName, b.subjectName) || naturalCompare(a.label, b.label))
+    .map((group) => {
+      group.records.sort(
+        (a, b) =>
+          naturalCompare(recordTitle(a), recordTitle(b)) ||
+          String(a.date || "").localeCompare(String(b.date || "")) ||
+          String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+      );
+      return { ...group, span: usedFields.length };
+    });
+
+  const rowCount = groups.reduce((max, group) => Math.max(max, group.records.length), 0);
+  const rows = [];
+  for (let index = 0; index < rowCount; index += 1) {
+    const cells = [];
+    groups.forEach((group) => {
+      const record = group.records[index];
+      usedFields.forEach((field) => {
+        cells.push({
+          fieldId: field.id,
+          groupKey: group.key,
+          text: record ? matrixCellText(field.id, record) : "",
+          value: record ? matrixCellValue(field.id, record) : null
+        });
+      });
+    });
+    rows.push({ key: `matrix-row-${index}`, index: index + 1, cells });
+  }
+
+  return { fields: usedFields, groups, rows, average: buildMatrixAverage(groups, usedFields) };
+}
+
+function buildMatrixAverage(groups, usedFields) {
+  if (!groups.length) return null;
+  const cells = [];
+  groups.forEach((group) => {
+    const scored = group.records.filter((record) => numberOrZero(record.fullScore) > 0);
+    const totalScore = scored.reduce((sum, record) => sum + numberOrZero(record.score), 0);
+    const totalFullScore = scored.reduce((sum, record) => sum + numberOrZero(record.fullScore), 0);
+    const divisor = scored.length || group.records.length;
+    const avgScore = divisor ? totalScore / divisor : 0;
+    const avgFullScore = divisor ? totalFullScore / divisor : 0;
+    const avgRate = totalFullScore ? totalScore / totalFullScore : 0;
+
+    usedFields.forEach((field) => {
+      let text = "";
+      if (field.id === "record") text = "平均分";
+      else if (field.id === "score") text = formatScoreNumber(avgScore);
+      else if (field.id === "fullScore") text = formatScoreNumber(avgFullScore);
+      else if (field.id === "rate") text = totalFullScore ? `${Math.round(avgRate * 100)}%` : "—";
+      else if (field.id === "scoreText") text = `${formatScoreNumber(avgScore)} / ${formatScoreNumber(avgFullScore)}`;
+      else if (field.id === "note") text = `${group.records.length} 条`;
+      cells.push({ fieldId: field.id, groupKey: group.key, text, value: null });
+    });
+  });
+  return { key: "matrix-average", index: null, cells };
+}
+
+function matrixCellText(fieldId, record) {
+  switch (fieldId) {
+    case "record":
+      return recordTitle(record);
+    case "scoreText":
+      return `${formatScoreNumber(record.score)} / ${formatScoreNumber(record.fullScore)}`;
+    case "score":
+      return formatScoreNumber(record.score);
+    case "fullScore":
+      return formatScoreNumber(record.fullScore);
+    case "rate": {
+      const full = numberOrZero(record.fullScore);
+      return full ? `${Math.round((numberOrZero(record.score) / full) * 100)}%` : "—";
+    }
+    case "date":
+      return record.date || "";
+    case "duration":
+      return formatDurationValue(record.durationMinutes);
+    case "note":
+      return record.note || "";
+    default:
+      return "";
+  }
+}
+
+function matrixCellValue(fieldId, record) {
+  if (fieldId === "score") return numberOrZero(record.score);
+  if (fieldId === "fullScore") return numberOrZero(record.fullScore);
+  if (fieldId === "rate") {
+    const full = numberOrZero(record.fullScore);
+    return full ? numberOrZero(record.score) / full : null;
+  }
+  return null;
+}
+
+function formatDurationValue(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return "";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `${hours}小时${rest ? `${rest}分钟` : ""}` : `${minutes}分钟`;
+}
+
 export const exportThemeOptions = [
   { id: "ocean", label: "清爽蓝", header: "2563EB", accent: "DBEAFE", stripe: "F8FBFF" },
   { id: "forest", label: "森林绿", header: "047857", accent: "D1FAE5", stripe: "F7FCF9" },
@@ -55,6 +233,8 @@ export async function exportRecordsToExcel({
   subjects = [],
   columns = exportColumnOptions.map((column) => column.id),
   sheetMode = "single",
+  layout = "rows",
+  matrixFields = defaultMatrixFields,
   theme = "ocean",
   filename = "成绩导出",
   includeSummary = false
@@ -64,7 +244,10 @@ export async function exportRecordsToExcel({
   const themeConfig = exportThemeOptions.find((item) => item.id === theme) || exportThemeOptions[0];
   const subjectMap = new Map(subjects.map((subject) => [subject.id, subject]));
   const selectedColumns = exportColumnOptions.filter((column) => columns.includes(column.id));
-  const safeRecords = [...records].sort((a, b) => compareExportRecordsByName(a, b, subjectMap));
+  const isMatrix = layout === "matrix";
+  const safeRecords = isMatrix
+    ? [...records]
+    : [...records].sort((a, b) => compareExportRecordsByName(a, b, subjectMap));
 
   workbook.creator = "Exam Tracker";
   workbook.created = new Date();
@@ -76,7 +259,14 @@ export async function exportRecordsToExcel({
       ? groupRecordsBySubject(safeRecords, subjectMap)
       : [{ name: "成绩明细", records: safeRecords }];
   if (!groups.length) groups = [{ name: "成绩明细", records: [] }];
-  groups.forEach((group) => addRecordSheet(workbook, group.name, group.records, subjectMap, selectedColumns, themeConfig));
+
+  groups.forEach((group) => {
+    if (isMatrix) {
+      addMatrixSheet(workbook, group.name, group.records, subjectMap, matrixFields, themeConfig);
+    } else {
+      addRecordSheet(workbook, group.name, group.records, subjectMap, selectedColumns, themeConfig);
+    }
+  });
 
   if (includeSummary) addSummarySheet(workbook, safeRecords, themeConfig);
 
@@ -143,6 +333,129 @@ function addRecordSheet(workbook, name, records, subjectMap, selectedColumns, th
     horizontalDpi: 200,
     verticalDpi: 200
   };
+}
+
+/**
+ * 「按卷子分列」工作表：序号列 + 每个卷子组一列块。
+ * 表头两行：第一行是组名（跨该组所有子列合并），第二行是子字段名。
+ */
+function addMatrixSheet(workbook, name, records, subjectMap, matrixFields, theme) {
+  const sheet = workbook.addWorksheet(normalizeSheetName(name, workbook));
+  const matrix = buildExportMatrix({ records, subjects: [...subjectMap.values()], fields: matrixFields });
+  const { groups, fields } = matrix;
+
+  if (!groups.length) {
+    sheet.addRow(["没有可导出的成绩"]);
+    sheet.getColumn(1).width = 28;
+    return;
+  }
+
+  const topRow = sheet.addRow(["序号", ...groups.flatMap((group) => [group.label, ...Array(group.span - 1).fill("")])]);
+  const subRow = sheet.addRow(["", ...groups.flatMap(() => fields.map((field) => field.label))]);
+  topRow.height = 26;
+  subRow.height = 20;
+
+  // 序号列跨两行合并
+  sheet.mergeCells(1, 1, 2, 1);
+
+  let cursor = 2;
+  groups.forEach((group) => {
+    if (group.span > 1) sheet.mergeCells(1, cursor, 1, cursor + group.span - 1);
+    const color = toArgb(group.subjectColor || theme.header);
+    const master = topRow.getCell(cursor);
+    master.fill = { type: "pattern", pattern: "solid", fgColor: { argb: color } };
+    master.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+    master.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    master.border = { bottom: { style: "thin", color: { argb: `FF${mixHex(color, "FFFFFF", 0.5)}` } } };
+    cursor += group.span;
+  });
+
+  const indexHead = topRow.getCell(1);
+  indexHead.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${theme.header}` } };
+  indexHead.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+  indexHead.alignment = { vertical: "middle", horizontal: "center" };
+
+  subRow.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+    if (columnNumber === 1) return;
+    const groupIndex = groupIndexForColumn(groups, columnNumber);
+    const group = groups[groupIndex];
+    const color = toArgb(group?.subjectColor || theme.header);
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(color, "FFFFFF", 0.82)}` } };
+    cell.font = { name: "Microsoft YaHei UI", bold: true, size: 10, color: { argb: color } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+
+  const rowStyleByField = (cell, fieldId) => {
+    cell.font = { name: "Microsoft YaHei UI", size: 11 };
+    cell.alignment = { vertical: "middle", wrapText: fieldId === "record" || fieldId === "note" };
+    cell.border = { bottom: { style: "hair", color: { argb: "FFE4E7EC" } } };
+    if (fieldId === "score" || fieldId === "fullScore") cell.numFmt = "0.0";
+    if (fieldId === "rate") cell.numFmt = "0%";
+    if (fieldId === "record" || fieldId === "scoreText" || fieldId === "date" || fieldId === "duration") {
+      cell.alignment = { vertical: "middle", horizontal: fieldId === "record" ? "left" : "center", wrapText: fieldId === "record" };
+    }
+  };
+
+  matrix.rows.forEach((row, rowIndex) => {
+    const sheetRow = sheet.addRow([row.index, ...row.cells.map((cell) => (cell.value === null ? cell.text : cell.value))]);
+    sheetRow.height = 22;
+    sheetRow.getCell(1).alignment = { vertical: "middle", horizontal: "center" };
+    sheetRow.getCell(1).font = { name: "Microsoft YaHei UI", size: 10, color: { argb: "FF98A2B3" } };
+    row.cells.forEach((cell, cellIndex) => {
+      const target = sheetRow.getCell(cellIndex + 2);
+      rowStyleByField(target, cell.fieldId);
+      if (rowIndex % 2 === 1) {
+        target.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${theme.stripe}` } };
+      }
+      if (cell.fieldId === "scoreText" || cell.fieldId === "score") {
+        const group = groups[groupIndexForColumn(groups, cellIndex + 2)];
+        const color = toArgb(group?.subjectColor || theme.header);
+        target.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: color } };
+      }
+    });
+  });
+
+  if (matrix.average) {
+    const sheetRow = sheet.addRow(["平均", ...matrix.average.cells.map((cell) => cell.text)]);
+    sheetRow.height = 23;
+    sheetRow.getCell(1).alignment = { vertical: "middle", horizontal: "center" };
+    sheetRow.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+      cell.font = { name: "Microsoft YaHei UI", bold: true, size: 11, color: { argb: `FF${theme.header}` } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${mixHex(toArgb(theme.header), "FFFFFF", 0.9)}` } };
+      cell.border = { top: { style: "medium", color: { argb: `FF${theme.header}` } } };
+      if (columnNumber === 1) return;
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
+  }
+
+  sheet.getColumn(1).width = 6;
+  let widthCursor = 2;
+  groups.forEach((group) => {
+    fields.forEach((field) => {
+      sheet.getColumn(widthCursor).width = field.width;
+      widthCursor += 1;
+    });
+  });
+
+  sheet.views = [{ state: "frozen", xSplit: 1, ySplit: 2 }];
+  sheet.pageSetup = {
+    orientation: "landscape",
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    horizontalDpi: 200,
+    verticalDpi: 200
+  };
+}
+
+function groupIndexForColumn(groups, columnNumber) {
+  let cursor = 2;
+  for (let index = 0; index < groups.length; index += 1) {
+    const next = cursor + groups[index].span;
+    if (columnNumber >= cursor && columnNumber < next) return index;
+    cursor = next;
+  }
+  return groups.length - 1;
 }
 
 function styleHeader(row, color) {

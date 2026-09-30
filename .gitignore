@@ -7,5 +7,6 @@ dist/
 .vercel/
 .claude/
 .workbuddy-ai/
+导出示例-*.xlsx
 
 .vercel

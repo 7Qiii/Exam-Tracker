@@ -339,6 +339,41 @@
   .signature-dialog {
     width: min(460px, 100%) !important;
   }
+
+  /* 竖屏平板上导出弹窗改成单列：左右分栏在这个宽度会把预览压得太窄，
+     而「按卷子分列」的矩阵表本来就需要横向空间 */
+  .export-dialog-backdrop {
+    padding: 20px;
+  }
+
+  .export-dialog {
+    width: min(760px, 100%) !important;
+    max-height: calc(100dvh - 40px) !important;
+    padding: 16px !important;
+  }
+
+  .export-dialog-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .export-dialog-side {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    padding-top: 16px;
+    padding-left: 0;
+  }
+
+  .export-preview-table-wrap {
+    max-height: 340px;
+  }
+
+  .export-field-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .export-field-grid-flat {
+    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  }
 }
 
 /* --------------------------------------------------------------------------
