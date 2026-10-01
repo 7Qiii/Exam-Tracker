@@ -1,10 +1,15 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
-import { GripVertical, Palette, Plus, Save, Trash2 } from "@lucide/vue";
+import { BookOpenCheck, ClipboardList, Eye, Layers, GripVertical, Palette, Plus, Save, Trash2 } from "@lucide/vue";
 import { defaultSubjects, isDefaultSubject } from "../services/storage";
+import { useConfirm } from "../composables/useConfirm";
 import { useTrackerStore } from "../stores/tracker";
+import DsPageHeader from "../components/ds/DsPageHeader.vue";
+import DsSection from "../components/ds/DsSection.vue";
+import DsStatCard from "../components/ds/DsStatCard.vue";
 
 const store = useTrackerStore();
+const { confirm } = useConfirm();
 const message = ref("");
 const error = ref("");
 const draggingId = ref("");
@@ -73,7 +78,12 @@ async function remove(subject) {
     error.value = "默认科目不能删除。";
     return;
   }
-  if (!window.confirm(`确定删除科目“${subject.name}”吗？`)) return;
+  const ok = await confirm({
+    title: "删除这个科目？",
+    message: `「${subject.name}」将从科目列表移除。已记录的成绩和错题会保留，但不再出现在筛选里。`,
+    confirmText: "删除"
+  });
+  if (!ok) return;
   try {
     await store.removeSubject(subject.id);
     message.value = "科目已删除。";
@@ -85,77 +95,45 @@ async function remove(subject) {
 
 <template>
   <div class="page-stack">
-    <section class="panel">
-      <div class="section-head">
-        <div>
-          <h2>科目管理</h2>
-          <span class="section-meta">默认科目按备考顺序排列，可拖拽、隐藏和编辑</span>
-        </div>
-      </div>
-      <div class="summary-grid">
-        <article class="metric-card">
-          <span>总科目</span>
-          <strong>{{ rows.length }}</strong>
-          <small>当前全部配置</small>
-        </article>
-        <article class="metric-card">
-          <span>可见科目</span>
-          <strong>{{ visibleCount }}</strong>
-          <small>可用于新增与筛选</small>
-        </article>
-        <article class="metric-card">
-          <span>成绩关联</span>
-          <strong>{{ store.records.length }}</strong>
-          <small>历史成绩不会丢失</small>
-        </article>
-        <article class="metric-card">
-          <span>错题关联</span>
-          <strong>{{ store.mistakes.length }}</strong>
-          <small>错题也会保留</small>
-        </article>
-      </div>
+    <DsPageHeader title="科目管理" description="默认科目按备考顺序排列，可拖拽、隐藏和编辑" />
+
+    <section class="ds-stats">
+      <DsStatCard label="总科目" :value="rows.length" unit="个" hint="当前全部配置" :icon="Layers" />
+      <DsStatCard label="可见科目" :value="visibleCount" unit="个" hint="可用于新增与筛选" :icon="Eye" />
+      <DsStatCard label="成绩关联" :value="store.records.length" unit="条" hint="历史成绩不会丢失" :icon="ClipboardList" />
+      <DsStatCard label="错题关联" :value="store.mistakes.length" unit="条" hint="错题也会保留" :icon="BookOpenCheck" />
     </section>
 
-    <section class="content-grid">
-      <div class="panel">
-        <div class="section-head">
-          <div>
-            <h2>新增科目</h2>
-            <span class="section-meta">支持自定义满分和颜色</span>
-          </div>
-        </div>
-        <form class="form-grid" @submit.prevent="add">
+    <section class="subjects-layout">
+      <DsSection class="subject-create-panel" title="新增科目" description="支持自定义满分和颜色">
+        <form class="subject-create-form" @submit.prevent="add">
           <label>
             科目名称
             <input v-model.trim="form.name" required />
           </label>
-          <div class="form-row two">
-            <label>
-              满分
-              <input v-model="form.fullScore" type="number" min="1" step="1" required />
-            </label>
-            <label>
-              颜色
-              <span class="color-field">
-                <input v-model="form.color" type="color" />
-                <input v-model.trim="form.color" required />
-              </span>
-            </label>
-          </div>
+          <label>
+            满分
+            <input v-model="form.fullScore" type="number" min="1" step="1" required />
+          </label>
+          <label>
+            颜色
+            <span class="color-field">
+              <input v-model="form.color" type="color" />
+              <input v-model.trim="form.color" required />
+            </span>
+          </label>
           <button class="primary-button" type="submit">
             <Plus :size="17" />
             新增科目
           </button>
         </form>
-      </div>
+      </DsSection>
 
-      <div class="panel panel-wide">
-        <div class="section-head">
-          <div>
-            <h2>科目列表</h2>
-            <span class="section-meta">{{ visibleCount }} / {{ rows.length }} 个可见</span>
-          </div>
-        </div>
+      <DsSection
+        class="panel-wide"
+        title="科目列表"
+        :description="`${visibleCount} / ${rows.length} 个可见 · 拖拽可调整顺序`"
+      >
         <div v-if="message || error" class="inline-alert" :class="{ danger: error }">
           {{ error || message }}
         </div>
@@ -215,7 +193,7 @@ async function remove(subject) {
           <Palette :size="16" />
           拖拽可以调整所有科目的显示顺序；隐藏只影响新增和筛选入口，不会删除历史记录。
         </p>
-      </div>
+      </DsSection>
     </section>
   </div>
 </template>

@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
-import { Cloud, Database, KeyRound, LogOut, Mail, RefreshCw, UserPlus } from "@lucide/vue";
+import { Cloud, Database, Image, KeyRound, LogOut, Mail, Monitor, RefreshCw, UserPlus } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
 import { isSupabaseConfigured } from "../services/supabase";
+import DsPageHeader from "../components/ds/DsPageHeader.vue";
+import DsSection from "../components/ds/DsSection.vue";
+import DsStatCard from "../components/ds/DsStatCard.vue";
 
 const store = useTrackerStore();
 const mode = ref("login");
@@ -82,46 +85,26 @@ async function calibrateCloud() {
 
 <template>
   <div class="page-stack">
-    <section class="panel">
-      <div class="section-head">
-        <div>
-          <h2>同步中心</h2>
-          <span class="section-meta">账号、成绩和错题的云端入口</span>
-        </div>
-      </div>
-      <div class="summary-grid auth-summary-grid">
-        <article class="metric-card">
-          <span>当前状态</span>
-          <strong>{{ store.user ? "已登录" : "未登录" }}</strong>
-          <small>{{ statusText }}</small>
-        </article>
-        <article class="metric-card">
-          <span>最近同步</span>
-          <strong>{{ store.lastSyncedAt ? "已同步" : "未同步" }}</strong>
-          <small>{{ lastSyncText }}</small>
-        </article>
-        <article class="metric-card">
-          <span>图片队列</span>
-          <strong>{{ store.pendingImages.length + store.failedImages.length }}</strong>
-          <small>{{ imageSyncText }}</small>
-        </article>
-        <article class="metric-card">
-          <span>设备</span>
-          <strong>{{ store.deviceName }}</strong>
-          <small>{{ store.autoSyncState }}</small>
-        </article>
-      </div>
+    <DsPageHeader title="同步中心" description="账号、成绩和错题的云端入口" />
+
+    <section class="ds-stats">
+      <DsStatCard label="当前状态" :value="store.user ? '已登录' : '未登录'" :hint="statusText" :icon="Cloud" />
+      <DsStatCard label="最近同步" :value="store.lastSyncedAt ? '已同步' : '未同步'" :hint="lastSyncText" :icon="RefreshCw" />
+      <DsStatCard
+        label="图片队列"
+        :value="store.pendingImages.length + store.failedImages.length"
+        unit="张"
+        :hint="imageSyncText"
+        :icon="Image"
+      />
+      <DsStatCard label="设备" :value="store.deviceName" :hint="store.autoSyncState" :icon="Monitor" />
     </section>
 
     <section class="content-grid">
-      <div class="panel">
-        <div class="section-head">
-          <div>
-            <h2>{{ store.user ? "云端操作" : "登录或注册" }}</h2>
-            <span class="section-meta">{{ store.user ? "同步、校准与退出" : "登录后开启多设备同步" }}</span>
-          </div>
-        </div>
-
+      <DsSection
+        :title="store.user ? '云端操作' : '登录或注册'"
+        :description="store.user ? '同步、校准与退出' : '登录后开启多设备同步'"
+      >
         <form v-if="!store.user" class="form-grid" @submit.prevent="submit">
           <label>
             邮箱
@@ -163,20 +146,14 @@ async function calibrateCloud() {
         </div>
 
         <p v-if="message" class="dialog-hint">{{ message }}</p>
-      </div>
+      </DsSection>
 
-      <div class="panel">
-        <div class="section-head">
-          <div>
-            <h2>同步说明</h2>
-            <span class="section-meta">本地模式也能继续使用</span>
-          </div>
-        </div>
+      <DsSection title="同步说明" description="本地模式也能继续使用">
         <div class="login-note compact-note">
           <Database :size="17" />
           <span>未配置 Supabase 时，应用会继续使用本地 IndexedDB。云端登录后，成绩、错题和图片会同步到同一账号。</span>
         </div>
-      </div>
+      </DsSection>
     </section>
   </div>
 </template>

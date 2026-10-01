@@ -21,6 +21,7 @@ import {
   X
 } from "@lucide/vue";
 import AnnouncementCenter from "./components/AnnouncementCenter.vue";
+import DsConfirmHost from "./components/ds/DsConfirmHost.vue";
 import { useTrackerStore } from "./stores/tracker";
 
 const store = useTrackerStore();
@@ -44,18 +45,46 @@ const themeOptions = [
   { value: "dark", label: "深色", icon: Moon }
 ];
 
-const navItems = [
-  { to: "/", label: "总览", title: "总览", icon: Home },
-  { to: "/records", label: "成绩", title: "成绩", icon: ClipboardList },
-  { to: "/mistakes", label: "错题", title: "错题", icon: BookOpenCheck },
-  { to: "/login", label: "同步", title: "同步", icon: LogIn },
-  { to: "/subjects", label: "科目", title: "科目", icon: Settings },
-  { to: "/backup", label: "备份", title: "备份", icon: Database }
+// 侧栏按「学习 / 管理」分组，6 个入口不再平铺成一坨。
+const navSections = [
+  {
+    label: "学习",
+    items: [
+      { to: "/", label: "总览", title: "总览", icon: Home },
+      { to: "/records", label: "成绩", title: "成绩", icon: ClipboardList },
+      { to: "/mistakes", label: "错题", title: "错题", icon: BookOpenCheck }
+    ]
+  },
+  {
+    label: "管理",
+    items: [
+      { to: "/subjects", label: "科目", title: "科目", icon: Settings },
+      { to: "/backup", label: "备份", title: "备份", icon: Database },
+      { to: "/login", label: "同步", title: "同步", icon: LogIn }
+    ]
+  }
 ];
 
+const navItems = navSections.flatMap((section) => section.items);
+
+// 移动端底部标签栏只保留 5 个高频入口；「同步」仍可从顶栏账号区进入。
+const primaryNavPaths = ["/", "/records", "/mistakes", "/subjects", "/backup"];
+const primaryNavItems = computed(() =>
+  primaryNavPaths.map((path) => navItems.find((item) => item.to === path)).filter(Boolean)
+);
+
+// 路由是扁平注册的，vue-router 不会把 /records 认成 /records/123 的父级，
+// 详情页里侧栏会丢掉选中态，所以这里自己判定一次。
+function isNavActive(item) {
+  if (item.to === "/") return route.path === "/";
+  return route.path === item.to || route.path.startsWith(`${item.to}/`);
+}
+
 const pageTitle = computed(() => {
-  const matched = navItems.find((item) => item.to === route.path);
-  return matched?.title || "详情";
+  const exact = navItems.find((item) => item.to === route.path);
+  if (exact) return exact.title;
+  const nested = navItems.find((item) => item.to !== "/" && route.path.startsWith(`${item.to}/`));
+  return nested?.title || "详情";
 });
 
 const latestRecord = computed(() =>
@@ -257,20 +286,24 @@ onBeforeUnmount(() => {
         </span>
       </RouterLink>
 
-      <p class="sidebar-section-label">Workspace</p>
-      <nav class="nav-list" aria-label="主导航">
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.to"
-          :to="item.to"
-          class="nav-item"
-          :aria-label="item.label"
-          @click="closeSidebar"
-        >
-          <component :is="item.icon" :size="18" />
-          <span>{{ item.label }}</span>
-        </RouterLink>
-      </nav>
+      <template v-for="section in navSections" :key="section.label">
+        <p class="sidebar-section-label">{{ section.label }}</p>
+        <nav class="nav-list" :aria-label="section.label">
+          <RouterLink
+            v-for="item in section.items"
+            :key="item.to"
+            :to="item.to"
+            class="nav-item"
+            :class="{ 'router-link-active': isNavActive(item) }"
+            :aria-label="item.label"
+            :aria-current="isNavActive(item) ? 'page' : undefined"
+            @click="closeSidebar"
+          >
+            <component :is="item.icon" :size="18" />
+            <span>{{ item.label }}</span>
+          </RouterLink>
+        </nav>
+      </template>
 
       <div class="sidebar-card">
         <div class="sidebar-card-head">
@@ -367,7 +400,14 @@ onBeforeUnmount(() => {
     </div>
 
     <nav class="bottom-nav" aria-label="移动端导航">
-      <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" class="bottom-nav-item">
+      <RouterLink
+        v-for="item in primaryNavItems"
+        :key="item.to"
+        :to="item.to"
+        class="bottom-nav-item"
+        :class="{ 'router-link-active': isNavActive(item) }"
+        :aria-current="isNavActive(item) ? 'page' : undefined"
+      >
         <component :is="item.icon" :size="18" />
         <span>{{ item.label }}</span>
       </RouterLink>
@@ -418,5 +458,8 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+
+    <!-- 全局二次确认弹窗，配合 useConfirm() 使用 -->
+    <DsConfirmHost />
   </div>
 </template>

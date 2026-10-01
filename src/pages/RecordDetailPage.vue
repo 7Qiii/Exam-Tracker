@@ -1,13 +1,18 @@
 <script setup>
 import { computed, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { ArrowLeft, Edit3, Trash2, X } from "@lucide/vue";
+import { ArrowLeft, Award, BookOpen, Edit3, FileText, Layers, Target, Timer, Trash2, X } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
+import DsPageHeader from "../components/ds/DsPageHeader.vue";
+import DsSection from "../components/ds/DsSection.vue";
+import DsStatCard from "../components/ds/DsStatCard.vue";
+import { useConfirm } from "../composables/useConfirm";
 import { useTrackerStore } from "../stores/tracker";
 
 const route = useRoute();
 const router = useRouter();
 const store = useTrackerStore();
+const { confirm } = useConfirm();
 const isEditing = ref(false);
 const isRemoving = ref(false);
 
@@ -26,10 +31,32 @@ const recordTypeText = computed(() => {
   if (record.value?.recordType === "exercise") return "习题";
   return recordVariantText.value ? `试卷 · ${recordVariantText.value}` : "试卷";
 });
+const recordMetaLine = computed(() =>
+  record.value ? [record.value.date, recordTypeText.value, record.value.pendingSync ? "待同步" : "已同步"].filter(Boolean).join(" · ") : ""
+);
 const compositeSources = computed(() => store.compositeSourcesForRecord(record.value));
 const scoreRate = computed(() => {
   if (!record.value || !Number(record.value.fullScore)) return 0;
   return Math.round((Number(record.value.score || 0) / Number(record.value.fullScore)) * 100);
+});
+const recordStats = computed(() => {
+  if (!record.value) return [];
+  const items = [
+    { label: "得分率", value: `${scoreRate.value}%`, hint: "本次得分占满分比例", icon: Target },
+    { label: "得分", value: `${record.value.score} / ${record.value.fullScore}`, hint: "本次成绩", icon: Award },
+    { label: "用时", value: formatDuration(record.value.durationMinutes), hint: "作答耗时", icon: Timer },
+    { label: "类型", value: recordTypeText.value, hint: "成绩来源", icon: Layers }
+  ];
+  if (record.value.recordType === "exercise") {
+    items.push({ label: "习题册", value: record.value.exerciseBookName || "未填写", hint: "练习出处", icon: BookOpen });
+    items.push({
+      label: "页码 / 题号",
+      value: `${record.value.exercisePage || "--"} / ${record.value.exerciseQuestion || "--"}`,
+      hint: "定位",
+      icon: FileText
+    });
+  }
+  return items;
 });
 const compositeSourceTotal = computed(() =>
   compositeSources.value.reduce(
@@ -45,9 +72,13 @@ const compositeSourceTotal = computed(() =>
   )
 );
 async function remove() {
-  if (!record.value) return;
-  const ok = typeof window === "undefined" || window.confirm(`确定删除「${recordTitle.value}」吗？24 小时内可以恢复。`);
-  if (!ok || isRemoving.value) return;
+  if (!record.value || isRemoving.value) return;
+  const ok = await confirm({
+    title: "删除这条成绩？",
+    message: `「${recordTitle.value}」会移入最近删除，24 小时内可以恢复。`,
+    confirmText: "删除"
+  });
+  if (!ok) return;
   isRemoving.value = true;
   try {
     await store.removeRecord(record.value.id);
@@ -89,10 +120,6 @@ function normalizeScoreValue(value) {
   return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 
-function subjectAccentStyle() {
-  return record.value ? { "--subject-color": store.subjectColor(record.value.subjectId) } : {};
-}
-
 function sourceTypeText(source) {
   if (source.recordType === "composite") return "合成";
   if (source.recordType === "exercise") return "习题";
@@ -129,46 +156,48 @@ function sourceChanged(source) {
 <template>
   <div class="page-stack">
     <RouterLink class="text-link" to="/records"><ArrowLeft :size="16" />返回成绩列表</RouterLink>
-    <section v-if="record" class="detail-panel subject-detail-panel" :style="subjectAccentStyle()">
-      <div class="detail-head">
-        <div class="detail-copy">
-          <p class="eyebrow subject-eyebrow">
-            <span class="subject-chip compact">
-              <span class="subject-dot"></span>
-              {{ store.subjectName(record.subjectId) }}
-            </span>
-          </p>
-          <h2>{{ recordTitle }}</h2>
-          <div class="detail-meta-row">
-            <span class="detail-pill">{{ record.date }}</span>
-            <span class="detail-pill">{{ recordTypeText }}</span>
-            <span class="detail-pill">{{ record.pendingSync ? "待同步" : "已同步" }}</span>
-          </div>
-        </div>
-        <div class="detail-actions">
+
+    <template v-if="record">
+      <DsPageHeader
+        :eyebrow="store.subjectName(record.subjectId)"
+        :title="recordTitle"
+        :description="recordMetaLine"
+      >
+        <template #actions>
           <button v-if="!isEditing" class="secondary-button" type="button" @click="startEdit"><Edit3 :size="16" />编辑</button>
           <button v-else class="secondary-button" type="button" @click="closeEdit"><X :size="16" />关闭</button>
-          <button class="secondary-button danger-text" type="button" :disabled="isRemoving" @click="remove"><Trash2 :size="16" />{{ isRemoving ? '\u5220\u9664\u4e2d...' : '\u5220\u9664' }}</button>
-        </div>
-      </div>
-      <RecordForm v-if="isEditing" :record="record" @saved="onSaved" />
+          <button class="secondary-button danger-text" type="button" :disabled="isRemoving" @click="remove">
+            <Trash2 :size="16" />{{ isRemoving ? "删除中..." : "删除" }}
+          </button>
+        </template>
+      </DsPageHeader>
+
+      <DsSection v-if="isEditing" title="编辑成绩" description="保存后会立即更新统计与趋势">
+        <RecordForm :record="record" @saved="onSaved" />
+      </DsSection>
+
       <template v-else>
-        <div class="detail-metrics">
-          <article><span>得分率</span><strong>{{ scoreRate }}%</strong></article>
-          <article><span>得分</span><strong>{{ record.score }} / {{ record.fullScore }}</strong></article>
-          <article><span>用时</span><strong>{{ formatDuration(record.durationMinutes) }}</strong></article>
-          <article><span>类型</span><strong>{{ recordTypeText }}</strong></article>
-          <article v-if="record.recordType === 'exercise'"><span>习题册</span><strong>{{ record.exerciseBookName || "未填写" }}</strong></article>
-          <article v-if="record.recordType === 'exercise'"><span>页码 / 题号</span><strong>{{ record.exercisePage || "--" }} / {{ record.exerciseQuestion || "--" }}</strong></article>
-        </div>
-        <div v-if="record.recordType === 'composite'" class="note-block composite-breakdown">
-          <div class="composite-breakdown-head">
-            <div>
-              <h3>分项构成</h3>
-              <p>{{ compositeSources.length ? `共 ${compositeSources.length} 条来源记录` : "没有找到来源记录。" }}</p>
-            </div>
-            <strong v-if="compositeSources.length">{{ compositeSourceTotal.score }} / {{ compositeSourceTotal.fullScore }}</strong>
-          </div>
+        <section class="ds-stats">
+          <DsStatCard
+            v-for="item in recordStats"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+            :hint="item.hint"
+            :icon="item.icon"
+          />
+        </section>
+
+        <DsSection
+          v-if="record.recordType === 'composite'"
+          title="分项构成"
+          :description="compositeSources.length ? `共 ${compositeSources.length} 条来源记录` : '没有找到来源记录。'"
+        >
+          <template #meta>
+            <strong v-if="compositeSources.length" class="ds-section-total">
+              {{ compositeSourceTotal.score }} / {{ compositeSourceTotal.fullScore }}
+            </strong>
+          </template>
           <div v-if="compositeSources.length" class="composite-source-list detail-source-list">
             <article v-for="source in compositeSources" :key="source.id" class="detail-source-item">
               <div class="detail-source-main">
@@ -182,18 +211,18 @@ function sourceChanged(source) {
               <i v-if="sourceChanged(source)">已自定义计入</i>
             </article>
           </div>
-        </div>
-        <div class="note-block">
-          <h3>复盘备注</h3>
-          <p>{{ store.displayRecordNote(record) || "还没有填写复盘备注。" }}</p>
-        </div>
+        </DsSection>
+
+        <DsSection title="复盘备注" description="记录这次的问题与下一步">
+          <p class="note-text">{{ store.displayRecordNote(record) || "还没有填写复盘备注。" }}</p>
+        </DsSection>
       </template>
-    </section>
-    <section class="panel">
-      <div class="section-head">
-        <h2>关联错题</h2>
+    </template>
+
+    <DsSection title="关联错题" description="来自这条成绩的错题会出现在这里">
+      <template #actions>
         <RouterLink class="text-link" to="/mistakes">新增错题</RouterLink>
-      </div>
+      </template>
       <div class="card-list">
         <RouterLink v-for="item in relatedMistakes" :key="item.id" class="list-card" :to="`/mistakes/${item.id}`">
           <strong>{{ item.title }}</strong>
@@ -201,6 +230,6 @@ function sourceChanged(source) {
         </RouterLink>
         <p v-if="!relatedMistakes.length" class="empty">这条成绩还没有关联错题。</p>
       </div>
-    </section>
+    </DsSection>
   </div>
 </template>

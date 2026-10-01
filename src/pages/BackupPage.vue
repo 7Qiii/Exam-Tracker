@@ -1,7 +1,10 @@
 <script setup>
 import { computed, ref } from "vue";
-import { Database, Download, ShieldCheck, Trash2, Upload } from "@lucide/vue";
+import { BookOpenCheck, ClipboardList, Database, Download, FolderCog, HardDrive, ShieldCheck, Trash2, Upload } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
+import DsPageHeader from "../components/ds/DsPageHeader.vue";
+import DsSection from "../components/ds/DsSection.vue";
+import DsStatCard from "../components/ds/DsStatCard.vue";
 
 const store = useTrackerStore();
 const importFile = ref(null);
@@ -11,10 +14,10 @@ const message = ref("");
 const error = ref("");
 
 const totals = computed(() => [
-  { label: "科目", value: store.subjects.length },
-  { label: "成绩", value: store.records.length },
-  { label: "错题", value: store.mistakes.length },
-  { label: "图片", value: `${store.imageStorageStats.count} / ${store.imageStorageStats.label}` }
+  { label: "科目", value: store.subjects.length, unit: "个", icon: FolderCog },
+  { label: "成绩", value: store.records.length, unit: "条", icon: ClipboardList },
+  { label: "错题", value: store.mistakes.length, unit: "条", icon: BookOpenCheck },
+  { label: "图片", value: store.imageStorageStats.count, unit: "张", icon: HardDrive }
 ]);
 const hasData = computed(() => Boolean(store.records.length || store.mistakes.length || store.images.length));
 const backupAgeDays = computed(() => {
@@ -79,44 +82,38 @@ async function clearData() {
 
 <template>
   <div class="page-stack">
-    <section class="panel">
-      <div class="section-head">
-        <div>
-          <h2>备份与恢复</h2>
-          <span class="section-meta">{{ backupHint }}</span>
-        </div>
+    <DsPageHeader title="备份与恢复" :description="backupHint">
+      <template #actions>
         <button class="primary-button" type="button" @click="exportData">
           <Download :size="17" />
           导出备份
         </button>
-      </div>
-      <div class="backup-mini-actions">
-        <span v-if="store.lastBackupAt" class="detail-pill">上次备份：{{ new Date(store.lastBackupAt).toLocaleString("zh-CN") }}</span>
-        <span v-else class="detail-pill">尚未导出过备份</span>
-        <span class="detail-pill">{{ hasData ? "可导出当前本地档案" : "当前没有可备份内容" }}</span>
-      </div>
-    </section>
+      </template>
+    </DsPageHeader>
+
+    <div class="backup-mini-actions">
+      <span class="detail-pill">{{ hasData ? "可导出当前本地档案" : "当前没有可备份内容" }}</span>
+      <span class="detail-pill">{{ store.imageStorageStats.count }} 张图片 · {{ store.imageStorageStats.label }}</span>
+    </div>
 
     <div v-if="shouldBackup" class="inline-alert">
       数据越多越值得定期备份。建议每周导出一份 JSON，尤其是错题图片较多时。
     </div>
 
-    <section class="summary-grid">
-      <article v-for="item in totals" :key="item.label" class="metric-card">
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-        <small>当前本地档案</small>
-      </article>
+    <section class="ds-stats">
+      <DsStatCard
+        v-for="item in totals"
+        :key="item.label"
+        :label="item.label"
+        :value="item.value"
+        :unit="item.unit"
+        :icon="item.icon"
+        hint="当前本地档案"
+      />
     </section>
 
     <section class="content-grid">
-      <div class="panel">
-        <div class="section-head">
-          <div>
-            <h2>导入恢复</h2>
-            <span class="section-meta">支持合并或覆盖恢复</span>
-          </div>
-        </div>
+      <DsSection title="导入恢复" description="支持合并或覆盖恢复">
         <div class="action-stack">
           <button class="secondary-button" type="button" @click="chooseImport('merge')">
             <Upload :size="17" />
@@ -132,15 +129,9 @@ async function clearData() {
             合并导入会保留现有数据；覆盖恢复会替换当前成绩、错题、图片和科目配置。
           </p>
         </div>
-      </div>
+      </DsSection>
 
-      <div class="panel">
-        <div class="section-head">
-          <div>
-            <h2>危险操作</h2>
-            <span class="section-meta">清空时会保留科目配置</span>
-          </div>
-        </div>
+      <DsSection title="危险操作" description="清空时会保留科目配置">
         <div class="form-grid">
           <label>
             输入“清空”确认
@@ -151,7 +142,7 @@ async function clearData() {
             清空成绩、错题和图片
           </button>
         </div>
-      </div>
+      </DsSection>
     </section>
 
     <div v-if="message || error" class="inline-alert" :class="{ danger: error }">

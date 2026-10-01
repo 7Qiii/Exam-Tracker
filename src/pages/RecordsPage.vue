@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import {
   AlertTriangle,
@@ -27,6 +27,9 @@ import {
   X
 } from "@lucide/vue";
 import RecordForm from "../components/RecordForm.vue";
+import DsLoadingState from "../components/ds/DsLoadingState.vue";
+import DsPageHeader from "../components/ds/DsPageHeader.vue";
+import DsStatCard from "../components/ds/DsStatCard.vue";
 import {
   buildExportMatrix,
   defaultMatrixFields,
@@ -36,10 +39,12 @@ import {
   exportRecordsToExcel,
   exportThemeOptions
 } from "../services/excelExport";
+import { useConfirm } from "../composables/useConfirm";
 import { useTrackerStore } from "../stores/tracker";
 
 const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
 const store = useTrackerStore();
+const { confirm } = useConfirm();
 const router = useRouter();
 const page = ref(1);
 const pageSize = 8;
@@ -305,14 +310,6 @@ const dashboardStats = computed(() => {
     latestDate
   };
 });
-const topSubject = computed(() => {
-  const counts = new Map();
-  filteredRecords.value.forEach((record) => {
-    counts.set(record.subjectId, (counts.get(record.subjectId) || 0) + 1);
-  });
-  const winner = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-  return winner ? { name: store.subjectName(winner[0]), count: winner[1] } : { name: "暂无", count: 0 };
-});
 const selectionProgress = computed(() => {
   const total = selectedRecords.value.length;
   return total >= 2 ? Math.min(100, Math.round((total / 4) * 100)) : total ? 25 : 0;
@@ -366,14 +363,38 @@ watch(exportAvailableSubjects, () => {
   }
 });
 
-function applyFilters() {
+function syncFiltersFromDraft() {
   filters.keyword = draftFilters.keyword;
   filters.subjectId = draftFilters.subjectId;
   filters.paperVariant = draftFilters.subjectId === "math1" ? draftFilters.paperVariant : "all";
   page.value = 1;
+}
+
+function applyFilters() {
+  syncFiltersFromDraft();
   showForm.value = false;
   editingRecordId.value = "";
 }
+
+// 筛选即时生效：下拉一改就应用；关键词输入做 260ms 防抖，避免每敲一个字都重算整张表。
+// 这里只同步筛选条件，不顺手收起录入面板 —— 否则正在填的表单会被打断。
+let filterTimer = null;
+watch(
+  () => ({ ...draftFilters }),
+  (value) => {
+    if (filterTimer) window.clearTimeout(filterTimer);
+    if (value.keyword === filters.keyword) {
+      syncFiltersFromDraft();
+      return;
+    }
+    filterTimer = window.setTimeout(syncFiltersFromDraft, 260);
+  },
+  { deep: true }
+);
+
+onBeforeUnmount(() => {
+  if (filterTimer) window.clearTimeout(filterTimer);
+});
 
 function clearFilters() {
   draftFilters.keyword = "";
@@ -557,7 +578,11 @@ async function revealRecordForm() {
 
 async function deleteRecord(record) {
   if (!record?.id) return;
-  const ok = typeof window === "undefined" || window.confirm(`确定删除「${recordTitle(record)}」吗？24 小时内可以从最近删除恢复。`);
+  const ok = await confirm({
+    title: "删除这条成绩？",
+    message: `「${recordTitle(record)}」会移入最近删除，24 小时内可以恢复。`,
+    confirmText: "删除"
+  });
   if (!ok) return;
   await withRecordAction(record, "delete", async () => {
     await store.removeRecord(record.id);
@@ -692,7 +717,12 @@ async function batchMoveSelectedRecords() {
 async function batchDeleteSelectedRecords() {
   if (!selectedRecords.value.length) return;
   const count = selectedRecords.value.length;
-  if (typeof window !== "undefined" && !window.confirm(`确定删除选中的 ${count} 条成绩吗？24 小时内可以从最近删除恢复。`)) return;
+  const ok = await confirm({
+    title: `删除选中的 ${count} 条成绩？`,
+    message: "这些成绩会移入最近删除，24 小时内可以逐条恢复。",
+    confirmText: `删除 ${count} 条`
+  });
+  if (!ok) return;
   isBatchWorking.value = true;
   try {
     const ids = selectedRecords.value.map((record) => record.id);
@@ -1049,76 +1079,65 @@ function buildExportAverageRow(records) {
 
 <template>
   <div class="page-stack">
-    <section class="panel records-hero">
-      <div class="records-hero-grid">
-        <div class="records-hero-copy">
-          <p class="eyebrow">成绩</p>
-          <h2>成绩工作台</h2>
-          <p class="records-hero-desc">记录、计时、合成和同步放在同一处，保留关键操作，减少界面干扰。</p>
-          <div class="records-hero-tags">
-            <span>{{ hasActiveFilters ? "当前视图已筛选" : "当前视图为全量" }}</span>
-            <span>{{ selectedRecords.length ? `已选 ${selectedRecords.length} 条` : "勾选成绩可实时算均分" }}</span>
-            <span>{{ topSubject.name }} · {{ topSubject.count }} 条</span>
-          </div>
-          <div class="records-hero-actions">
-            <button class="secondary-button" type="button" @click="openExportDialog">
-              <FileSpreadsheet :size="16" />
-              导出 Excel
-            </button>
-            <button class="primary-button" type="button" @click="startCreate">
-              <Plus :size="17" />
-              新增成绩
-            </button>
-            <button class="secondary-button" type="button" @click="clearFilters">
-              <Search :size="16" />
-              重置筛选
-            </button>
-          </div>
-        </div>
-        <div class="records-hero-stats">
-          <article class="records-metric">
-            <div class="metric-head">
-              <Target :size="16" />
-              <span>得分率</span>
-            </div>
-            <strong>{{ dashboardStats.scoreRate }}%</strong>
-            <div class="records-progress"><i :style="{ width: `${dashboardStats.scoreRate}%` }"></i></div>
-            <small>{{ dashboardStats.totalScore }} / {{ dashboardStats.totalFullScore }}</small>
-          </article>
-          <article class="records-metric accent">
-            <div class="metric-head">
-              <Clock3 :size="16" />
-              <span>用时记录</span>
-            </div>
-            <strong>{{ dashboardStats.timedCount }}</strong>
-            <small>{{ dashboardStats.avgDuration ? `${formatDuration(dashboardStats.avgDuration)} 平均` : "暂无计时" }}</small>
-          </article>
-          <article class="records-metric">
-            <div class="metric-head">
-              <BarChart3 :size="16" />
-              <span>当前结果</span>
-            </div>
-            <strong>{{ dashboardStats.totalRecords }}</strong>
-            <small>{{ dashboardStats.latestDate }} · {{ dashboardStats.syncedCount }} 条已同步</small>
-          </article>
-          <article class="records-metric">
-            <div class="metric-head">
-              <TrendingUp :size="16" />
-              <span>选择分析</span>
-            </div>
-            <strong>{{ selectedRecords.length }}</strong>
-            <small>{{ selectedAverageStats.isReady ? `${selectedAverageStats.subjectName} 均分 ${formatScoreValue(selectedAverageStats.avgScore)}` : `${selectionProgress}% 进入合成准备` }}</small>
-            <div class="records-progress subtle"><i :style="{ width: `${selectionProgress}%` }"></i></div>
-          </article>
-        </div>
-      </div>
+    <DsPageHeader title="成绩工作台" description="记录、计时、合成和同步放在同一处，保留关键操作，减少界面干扰。">
+      <template #actions>
+        <button class="secondary-button" type="button" @click="openExportDialog">
+          <FileSpreadsheet :size="16" />
+          导出 Excel
+        </button>
+        <button class="primary-button" type="button" @click="startCreate">
+          <Plus :size="17" />
+          新增成绩
+        </button>
+        <button v-if="hasActiveFilters" class="secondary-button" type="button" @click="clearFilters">
+          <Search :size="16" />
+          重置筛选
+        </button>
+      </template>
+    </DsPageHeader>
+
+    <section class="ds-stats">
+      <DsStatCard
+        label="得分率"
+        :value="dashboardStats.scoreRate"
+        unit="%"
+        :hint="`${dashboardStats.totalScore} / ${dashboardStats.totalFullScore} 分`"
+        :icon="Target"
+      />
+      <DsStatCard
+        label="用时记录"
+        :value="dashboardStats.timedCount"
+        unit="条"
+        :hint="dashboardStats.avgDuration ? `${formatDuration(dashboardStats.avgDuration)} 平均` : '暂无计时'"
+        :icon="Clock3"
+      />
+      <DsStatCard
+        label="当前结果"
+        :value="dashboardStats.totalRecords"
+        unit="条"
+        :hint="`${dashboardStats.latestDate} · ${dashboardStats.syncedCount} 条已同步`"
+        :icon="BarChart3"
+      />
+      <DsStatCard
+        label="选择分析"
+        :value="selectedRecords.length"
+        unit="条"
+        :hint="
+          selectedAverageStats.isReady
+            ? `${selectedAverageStats.subjectName} 均分 ${formatScoreValue(selectedAverageStats.avgScore)}`
+            : `${selectionProgress}% 进入合成准备`
+        "
+        :icon="TrendingUp"
+      />
     </section>
 
     <section class="panel">
       <div class="section-head">
-        <h2>成绩筛选</h2>
+        <div>
+          <h2>成绩筛选</h2>
+          <span class="section-meta">改完立即生效 · 当前 {{ filteredRecords.length }} 条结果</span>
+        </div>
         <div class="topbar-tools">
-          <span class="section-meta">{{ filteredRecords.length }} 条结果</span>
           <button class="secondary-button compact" type="button" :disabled="!selectableFilteredRecords.length" @click="selectAllFilteredRecords">
             {{ allFilteredRecordsSelected ? "取消全选" : `全选结果 ${selectableFilteredRecords.length}` }}
           </button>
@@ -1128,9 +1147,9 @@ function buildExportAverageRow(records) {
           </button>
         </div>
       </div>
-      <form class="filter-bar with-actions" @submit.prevent="applyFilters">
-        <input v-model="draftFilters.keyword" />
-        <select v-model="draftFilters.subjectId">
+      <form class="filter-bar with-actions" @submit.prevent="syncFiltersFromDraft">
+        <input v-model="draftFilters.keyword" type="search" placeholder="搜索试卷名称、备注或科目" aria-label="搜索成绩" />
+        <select v-model="draftFilters.subjectId" aria-label="选择科目">
           <option value="">全部科目</option>
           <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
@@ -1145,13 +1164,9 @@ function buildExportAverageRow(records) {
             {{ option.label }}
           </button>
         </div>
-        <button class="primary-button" type="submit">
-          <Search :size="16" />
-          搜索
-        </button>
-        <button class="secondary-button" type="button" @click="clearFilters">
+        <button v-if="filters.keyword || filters.subjectId || filters.paperVariant !== 'all'" class="secondary-button" type="button" @click="clearFilters">
           <X :size="16" />
-          清空
+          清空筛选
         </button>
       </form>
       <div class="records-query-status">
@@ -1887,8 +1902,21 @@ function buildExportAverageRow(records) {
                   </button>
                 </td>
               </tr>
-              <tr v-if="!pagedRecords.length">
-                <td colspan="9" class="empty-cell">没有找到匹配的成绩。</td>
+              <!-- 首次读取本地库时先占位，避免表格先空一帧再填内容 -->
+              <tr v-if="!store.isReady">
+                <td colspan="9" class="empty-cell">
+                  <DsLoadingState :rows="3" label="正在读取成绩记录…" />
+                </td>
+              </tr>
+              <tr v-else-if="!pagedRecords.length">
+                <td colspan="9" class="empty-cell">
+                  <template v-if="filters.keyword || filters.subjectId || filters.paperVariant !== 'all'">
+                    没有符合当前筛选的成绩。
+                    <button class="text-link" type="button" @click="clearFilters">清空筛选</button>
+                    可以看全部记录。
+                  </template>
+                  <template v-else>还没有成绩记录，点上方「新增成绩」开始第一条。</template>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1947,9 +1975,16 @@ function buildExportAverageRow(records) {
               </button>
             </div>
           </article>
-          <div v-if="!pagedRecords.length" class="mobile-empty-state">没有找到匹配的成绩。</div>
+          <DsLoadingState v-if="!store.isReady" variant="cards" :rows="3" label="正在读取成绩记录…" />
+          <div v-else-if="!pagedRecords.length" class="mobile-empty-state">
+            <template v-if="filters.keyword || filters.subjectId || filters.paperVariant !== 'all'">
+              没有符合当前筛选的成绩。
+              <button class="text-link" type="button" @click="clearFilters">清空筛选</button>
+            </template>
+            <template v-else>还没有成绩记录，点上方「新增成绩」开始第一条。</template>
+          </div>
         </div>
-        <div class="pager">
+        <div v-if="store.isReady" class="pager">
           <button type="button" :disabled="page === 1" @click="page -= 1"><ChevronLeft :size="16" />上一页</button>
           <span>{{ page }} / {{ pageCount }}</span>
           <button type="button" :disabled="page === pageCount" @click="page += 1">下一页<ChevronRight :size="16" /></button>
