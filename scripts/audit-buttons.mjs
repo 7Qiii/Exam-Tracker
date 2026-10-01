@@ -72,15 +72,47 @@ const ALL_ROUTES = [
   { label: "/backup", path: "/backup" },
   { label: "/login", path: "/login" },
   { label: "/records/:id", path: "/records", click: "a[href*='#/records/']:visible" },
-  { label: "/mistakes/:id", path: "/mistakes", click: ".review-card-main" }
+  { label: "/mistakes/:id", path: "/mistakes", click: ".review-card-main" },
+  // 导出面板是点开才出现的，只扫页面初始状态会整个漏掉它 ——
+  // 而这里恰恰是全站按钮最密的地方（列布局、字段、每列成绩选择器）。
+  { label: "/records · 导出面板", path: "/records", click: 'button:has-text("导出 Excel")', scope: ".export-dialog" }
 ];
 
 // 顶栏 / 侧栏 / 底部导航在每个路由都出现，只在首页审一次，避免报告里刷屏
 const CHROME_SELECTORS = [".topbar", ".sidebar", ".bottom-nav"];
 
+/**
+ * 每次点击前要清掉的本地偏好。
+ *
+ * 导出面板的「每组字段」和「每列包含哪些成绩」都是持久化的：不清的话，
+ * 上一轮点过的「清空 / 全部去掉」会留到下一轮，后面几次点击就落在
+ * 「成绩全被排除」的状态上，判定失真。只清 UI 偏好，IndexedDB 里的数据不动。
+ */
+const RESET_LOCAL_KEYS = ["exam-tracker-export-matrix-fields", "exam-tracker-export-matrix-excluded"];
+
+// 「按卷子分列」才渲染出每列的成绩选择器，固定成 matrix 让那些按钮可被审到
+const EXPORT_LAYOUT_KEY = "exam-tracker-export-layout";
+const EXPORT_LAYOUT_VALUE = "matrix";
+
+const EXPORT_PREFS_INIT_ARG = {
+  resetKeys: RESET_LOCAL_KEYS,
+  layoutKey: EXPORT_LAYOUT_KEY,
+  layoutValue: EXPORT_LAYOUT_VALUE
+};
+
+function EXPORT_PREFS_INIT({ resetKeys, layoutKey, layoutValue }) {
+  try {
+    resetKeys.forEach((key) => window.localStorage.removeItem(key));
+    window.localStorage.setItem(layoutKey, layoutValue);
+  } catch {
+    /* 无痕模式等场景下 localStorage 不可用，忽略 */
+  }
+}
+
 // 会动数据或退出登录的按钮：只验证确认弹窗能正常弹出，不真的确认。
 // 「最近删除」是回收站面板的开关，不是删除动作，用否定环视排除掉。
-const DANGEROUS = /清空|移除|退出登录|覆盖恢复|(?<!最近)删除/;
+// 「清空」要限定成「清空成绩…」：导出面板里按列清空只是取消勾选，不是危险操作。
+const DANGEROUS = /清空成绩|清空全部|清空所有|移除|退出登录|覆盖恢复|(?<!最近)删除/;
 
 /**
  * 「合并导入 / 恢复备份 / 覆盖恢复」会拉起系统文件选择框，
@@ -174,7 +206,10 @@ const SIGNATURE = `(() => {
     visibleButtons: [...document.querySelectorAll('button, [role="button"]')].filter((b) => b.offsetParent !== null).length,
     // 主题切换只改属性、不改文字，不带上就会把「跟随系统/浅色/深色」误判成无反应
     theme: document.documentElement.dataset.theme || "system",
-    colorScheme: document.documentElement.style.colorScheme || ""
+    colorScheme: document.documentElement.style.colorScheme || "",
+    // 分段控件 / 主题色板这类只挪 .active 高亮、文字一个字都不变，
+    // 不带上就会把「导出主题」这种按钮误判成无反应
+    activeText: [...document.querySelectorAll(".active")].map((el) => (el.innerText || "").replace(/\\s+/g, "")).join("§")
   };
 })()`;
 
@@ -182,7 +217,12 @@ const SIGNATURE = `(() => {
 const MARK_BUTTON = (payload) => `(() => {
   document.querySelectorAll("[data-audit]").forEach((el) => el.removeAttribute("data-audit"));
   const skip = ${JSON.stringify(payload.skip)};
-  const list = [...document.querySelectorAll('button, [role="button"]')].filter((b) => {
+  // scope：弹窗类路由只审弹窗内的按钮。弹窗盖住页面后，页面上的按钮
+  // 依然 offsetParent 非空（看着「可见」），但点不到，会一路超时报错。
+  const scope = ${JSON.stringify(payload.scope || "")};
+  const root = scope ? document.querySelector(scope) : document;
+  if (!root) return null;
+  const list = [...root.querySelectorAll('button, [role="button"]')].filter((b) => {
     if (b.offsetParent === null || b.disabled) return false;
     return !skip.some((sel) => b.closest(sel));
   });
@@ -202,7 +242,9 @@ function classify(before, after, errors) {
   if (after.hash !== before.hash) return "路由跳转";
   if (after.toasts > before.toasts) return "Toast 反馈";
   if (after.theme !== before.theme || after.colorScheme !== before.colorScheme) return "主题切换";
-  if (after.textHash !== before.textHash || after.visibleButtons !== before.visibleButtons) return "界面变化";
+  if (after.textHash !== before.textHash || after.visibleButtons !== before.visibleButtons || after.activeText !== before.activeText) {
+    return "界面变化";
+  }
   return "无可见变化";
 }
 
@@ -224,13 +266,14 @@ async function main() {
 
     // 先探一次，拿到按钮总数
     const probe = await context.newPage();
+    await probe.addInitScript(EXPORT_PREFS_INIT, EXPORT_PREFS_INIT_ARG);
     await probe.goto(`${base}/#${route.path}`, { waitUntil: "load" });
     await probe.waitForTimeout(700);
     if (route.click) {
       await probe.locator(route.click).first().click({ timeout: 3000 }).catch(() => {});
       await probe.waitForTimeout(600);
     }
-    const probeResult = await probe.evaluate(MARK_BUTTON({ index: 0, skip }));
+    const probeResult = await probe.evaluate(MARK_BUTTON({ index: 0, skip, scope: route.scope }));
     const total = probeResult ? probeResult.total : 0;
     await probe.close();
 
@@ -258,6 +301,8 @@ async function main() {
         }
       });
 
+      await page.addInitScript(EXPORT_PREFS_INIT, EXPORT_PREFS_INIT_ARG);
+
       await page.goto(`${base}/#${route.path}`, { waitUntil: "load" });
       await page.waitForTimeout(700);
       if (route.click) {
@@ -265,7 +310,7 @@ async function main() {
         await page.waitForTimeout(600);
       }
 
-      const marked = await page.evaluate(MARK_BUTTON({ index, skip }));
+      const marked = await page.evaluate(MARK_BUTTON({ index, skip, scope: route.scope }));
       if (!marked) {
         await page.close();
         break;

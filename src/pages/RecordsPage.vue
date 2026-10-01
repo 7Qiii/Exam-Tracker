@@ -78,6 +78,7 @@ const isExporting = ref(false);
 const recommendedExportColumns = ["subject", "record", "scoreText", "note"];
 const exportLayoutStorageKey = "exam-tracker-export-layout";
 const exportMatrixFieldsStorageKey = "exam-tracker-export-matrix-fields";
+const exportMatrixExcludedStorageKey = "exam-tracker-export-matrix-excluded";
 const exportLayoutOptions = [
   { value: "rows", label: "明细行", hint: "一行一条成绩，字段做列" },
   { value: "matrix", label: "按卷子分列", hint: "一套卷子占一列，竖着对比" }
@@ -100,11 +101,28 @@ function readExportMatrixFields() {
   }
 }
 
+/**
+ * 「按卷子分列」里被手动排除的成绩 id。
+ *
+ * 存的是「排除项」而不是「选中项」：新记的成绩默认就在导出里，
+ * 不会因为以前挑过一次就被悄悄漏掉。
+ */
+function readExportMatrixExcluded() {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(exportMatrixExcludedStorageKey) || "[]");
+    return Array.isArray(saved) ? saved.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 const exportForm = reactive({
   scope: "filtered",
   sheetMode: "single",
   layout: readExportLayout(),
   matrixFields: readExportMatrixFields(),
+  matrixExcluded: readExportMatrixExcluded(),
   theme: "ocean",
   filename: `成绩导出-${new Date().toISOString().slice(0, 10)}`,
   includeSummary: false,
@@ -205,15 +223,44 @@ const exportPreviewRecords = computed(() => [...exportSourceRecords.value].sort(
 const exportPreviewRows = computed(() => exportPreviewRecords.value.map((record) => buildExportPreviewRow(record)));
 const exportPreviewAverageRow = computed(() => buildExportAverageRow(exportPreviewRecords.value));
 const isMatrixExport = computed(() => exportForm.layout === "matrix");
-const exportMatrix = computed(() =>
+
+/**
+ * 只跟当前记录集求交集，历史遗留的排除 id 自然失效，不用额外清理。
+ */
+const exportMatrixExcludedIds = computed(() => {
+  const known = new Set(exportPreviewRecords.value.map((record) => record.id));
+  return new Set(exportForm.matrixExcluded.filter((id) => known.has(id)));
+});
+
+/** 没被排除的成绩 —— 真正会写进 Excel 的那批 */
+const exportMatrixRecords = computed(() =>
+  exportMatrixExcludedIds.value.size
+    ? exportPreviewRecords.value.filter((record) => !exportMatrixExcludedIds.value.has(record.id))
+    : exportPreviewRecords.value
+);
+
+/**
+ * 选择器用「没排除任何东西」的完整矩阵，预览和导出用过滤后的矩阵。
+ * 必须分成两份：某一列被清空后，如果选择器读的是过滤后的数据，
+ * 那个分组会整个消失，用户就再也点不回来了。
+ */
+const exportMatrixAll = computed(() =>
   buildExportMatrix({
     records: exportPreviewRecords.value,
     subjects: store.subjects,
     fields: exportForm.matrixFields
   })
 );
+const exportMatrix = computed(() =>
+  buildExportMatrix({
+    records: exportMatrixRecords.value,
+    subjects: store.subjects,
+    fields: exportForm.matrixFields
+  })
+);
 const exportMatrixGroupCount = computed(() => exportMatrix.value.groups.length);
 const exportMatrixColumnCount = computed(() => exportMatrixGroupCount.value * exportMatrix.value.fields.length);
+const exportMatrixExcludedCount = computed(() => exportMatrixExcludedIds.value.size);
 // 把「组 × 子字段」摊平成一行表头，顺序与后端写表时完全一致
 const exportMatrixColumns = computed(() =>
   exportMatrix.value.groups.flatMap((group) =>
@@ -226,12 +273,14 @@ const exportPreviewCount = computed(() => {
 });
 const exportReady = computed(() => {
   if (!exportPreviewRecords.value.length) return false;
-  return isMatrixExport.value ? exportForm.matrixFields.length > 0 : exportForm.columns.length > 0;
+  if (isMatrixExport.value) return exportForm.matrixFields.length > 0 && exportMatrixRecords.value.length > 0;
+  return exportForm.columns.length > 0;
 });
 const exportLayoutHint = computed(() => {
   if (!isMatrixExport.value) return "一行一条成绩，字段作为列，适合逐条核对";
   if (!exportMatrixGroupCount.value) return "当前范围内没有可分组的数据";
-  return `${exportMatrixGroupCount.value} 套卷子 · 每套 ${exportMatrix.value.fields.length} 列 · 共 ${exportMatrixColumnCount.value} 列`;
+  const base = `${exportMatrixGroupCount.value} 套卷子 · 每套 ${exportMatrix.value.fields.length} 列 · 共 ${exportMatrixColumnCount.value} 列`;
+  return exportMatrixExcludedCount.value ? `${base} · 已排除 ${exportMatrixExcludedCount.value} 条` : base;
 });
 const currentSortOption = computed(() => sortOptions.find((option) => option.value === sortBy.value) || sortOptions[0]);
 const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
@@ -519,12 +568,64 @@ function resetExportMatrixFields() {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 「每列包含哪些成绩」：按列（卷子组）挑行
+ * ------------------------------------------------------------------ */
+
+function persistMatrixExcluded() {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(exportMatrixExcludedStorageKey, JSON.stringify(exportForm.matrixExcluded));
+}
+
+function isMatrixRecordExcluded(id) {
+  return exportMatrixExcludedIds.value.has(id);
+}
+
+function toggleMatrixRecord(id) {
+  if (!id) return;
+  exportForm.matrixExcluded = exportMatrixExcludedIds.value.has(id)
+    ? exportForm.matrixExcluded.filter((item) => item !== id)
+    : [...exportForm.matrixExcluded, id];
+  persistMatrixExcluded();
+}
+
+function groupSelectedCount(group) {
+  return group.records.filter((record) => !exportMatrixExcludedIds.value.has(record.id)).length;
+}
+
+/** 这一列全部保留 */
+function keepGroupRecords(group) {
+  const ids = new Set(group.records.map((record) => record.id));
+  exportForm.matrixExcluded = exportForm.matrixExcluded.filter((id) => !ids.has(id));
+  persistMatrixExcluded();
+}
+
+/** 这一列全部去掉（分组本身仍留在选择器里，随时能点回来） */
+function dropGroupRecords(group) {
+  const existing = new Set(exportForm.matrixExcluded);
+  const ids = group.records.map((record) => record.id).filter((id) => !existing.has(id));
+  exportForm.matrixExcluded = [...exportForm.matrixExcluded, ...ids];
+  persistMatrixExcluded();
+}
+
+function keepAllMatrixRecords() {
+  exportForm.matrixExcluded = [];
+  persistMatrixExcluded();
+}
+
+function dropAllMatrixRecords() {
+  exportForm.matrixExcluded = exportMatrixAll.value.groups.flatMap((group) => group.records.map((record) => record.id));
+  persistMatrixExcluded();
+}
+
 async function exportExcel() {
   if (isExporting.value || !exportReady.value) return;
   isExporting.value = true;
   try {
+    // 「按卷子分列」走手动挑过的那批；明细行不受每列选择影响
+    const recordsForExport = isMatrixExport.value ? exportMatrixRecords.value : exportPreviewRecords.value;
     await exportRecordsToExcel({
-      records: exportPreviewRecords.value,
+      records: recordsForExport,
       subjects: store.subjects,
       columns: exportForm.columns,
       sheetMode: exportForm.sheetMode,
@@ -536,7 +637,8 @@ async function exportExcel() {
     });
     isExportDialogOpen.value = false;
     const suffix = isMatrixExport.value ? `，按 ${exportMatrixGroupCount.value} 套卷子分列` : "";
-    store.notify(`Excel 已导出，共 ${exportPreviewRecords.value.length} 条成绩${suffix}。`, "success");
+    const excludedSuffix = isMatrixExport.value && exportMatrixExcludedCount.value ? `，已排除 ${exportMatrixExcludedCount.value} 条` : "";
+    store.notify(`Excel 已导出，共 ${recordsForExport.length} 条成绩${suffix}${excludedSuffix}。`, "success");
   } catch (error) {
     store.notify(error.message || "Excel 导出失败，请稍后重试。", "error", 6000);
   } finally {
@@ -1428,6 +1530,49 @@ function buildExportAverageRow(records) {
               </div>
             </div>
 
+            <div v-if="isMatrixExport" class="export-option-section">
+              <div class="export-option-title">
+                <strong>每列包含哪些成绩</strong>
+                <span>点一下把不需要的从这一列去掉 —— 比如阅读只保留 11 年往后的，其它列同理</span>
+              </div>
+              <div class="export-field-actions">
+                <button type="button" @click="keepAllMatrixRecords">全部保留</button>
+                <button type="button" @click="dropAllMatrixRecords">全部去掉</button>
+                <span v-if="exportMatrixExcludedCount" class="export-selection-note">已排除 {{ exportMatrixExcludedCount }} 条</span>
+              </div>
+
+              <div v-if="exportMatrixAll.groups.length" class="matrix-picker">
+                <div v-for="group in exportMatrixAll.groups" :key="group.key" class="matrix-picker-group">
+                  <div class="matrix-picker-head">
+                    <strong :style="{ color: group.subjectColor || undefined }">{{ group.label }}</strong>
+                    <span>{{ group.subjectName }} · 已选 {{ groupSelectedCount(group) }} / {{ group.records.length }}</span>
+                    <div class="matrix-picker-actions">
+                      <button type="button" @click="keepGroupRecords(group)">全选</button>
+                      <button type="button" @click="dropGroupRecords(group)">清空</button>
+                    </div>
+                  </div>
+                  <div class="matrix-picker-chips">
+                    <button
+                      v-for="record in group.records"
+                      :key="record.id"
+                      type="button"
+                      class="matrix-picker-chip"
+                      :class="{ 'is-off': isMatrixRecordExcluded(record.id) }"
+                      :aria-pressed="!isMatrixRecordExcluded(record.id)"
+                      :title="`${recordTitle(record)} · ${record.score} / ${record.fullScore}`"
+                      @click="toggleMatrixRecord(record.id)"
+                    >
+                      <span class="matrix-picker-check">
+                        <Check v-if="!isMatrixRecordExcluded(record.id)" :size="12" />
+                      </span>
+                      {{ recordTitle(record) }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="export-preview-empty">当前范围内还没有可以分组的成绩。</p>
+            </div>
+
             <div class="export-option-section export-preview-section">
               <div class="export-option-title">
                 <strong>在线表格预览</strong>
@@ -1485,7 +1630,10 @@ function buildExportAverageRow(records) {
                     </tr>
                   </tbody>
                 </table>
-                <p v-else class="export-preview-empty">当前范围内没有可以按卷子分组的数据，换成「明细行」试试。</p>
+                <p v-else class="export-preview-empty">
+                  <template v-if="exportMatrixAll.groups.length">所有成绩都被排除了 —— 点上面「全部保留」就能恢复。</template>
+                  <template v-else>当前范围内没有可以按卷子分组的数据，换成「明细行」试试。</template>
+                </p>
               </div>
 
               <div v-else class="export-preview-table-wrap">
