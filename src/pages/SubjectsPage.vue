@@ -4,6 +4,7 @@ import { BookOpenCheck, ClipboardList, Eye, Layers, GripVertical, Palette, Plus,
 import { defaultSubjects, isDefaultSubject } from "../services/storage";
 import { useConfirm } from "../composables/useConfirm";
 import { useTrackerStore } from "../stores/tracker";
+import DsEmptyState from "../components/ds/DsEmptyState.vue";
 import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import DsSection from "../components/ds/DsSection.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
@@ -26,6 +27,56 @@ const rows = computed(() =>
   }))
 );
 const visibleCount = computed(() => rows.value.filter((subject) => !subject.hidden).length);
+
+/* ------------------------------------------------------------------ *
+ * 掌握概览
+ * 原先放在首页，但首页太长、又和「看成绩」的主线抢位置，所以整体搬到这里。
+ * 口径：全部记录（本页没有时间范围筛选），按练习次数排序。
+ * ------------------------------------------------------------------ */
+
+// 错题状态沿用数据里的取值，不重新定义枚举
+const MISTAKE_STATES = [
+  { key: "已掌握", label: "已掌握", color: "var(--state-mastered)" },
+  { key: "已整理", label: "已整理", color: "var(--state-organized)" },
+  { key: "不熟", label: "不熟", color: "var(--state-fuzzy)" },
+  { key: "不会", label: "不会", color: "var(--state-unknown)" },
+  { key: "待复盘", label: "待复盘", color: "var(--state-todo)" }
+];
+
+function countStates(list) {
+  const result = MISTAKE_STATES.map((state) => ({ ...state, count: 0 }));
+  const index = new Map(result.map((state) => [state.key, state]));
+  list.forEach((mistake) => {
+    const key = mistake.status || "待复盘";
+    (index.get(key) || index.get("待复盘")).count += 1;
+  });
+  return result;
+}
+
+const masteryStats = computed(() =>
+  rows.value
+    .map((subject) => {
+      const records = store.records.filter((record) => record.subjectId === subject.id);
+      const mistakes = store.mistakes.filter((mistake) => mistake.subjectId === subject.id);
+      const score = records.reduce((sum, record) => sum + Number(record.score || 0), 0);
+      const fullScore = records.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
+      const latest = [...records].sort(
+        (a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt))
+      )[0];
+      return {
+        ...subject,
+        recordCount: records.length,
+        mistakeCount: mistakes.length,
+        pending: mistakes.filter((mistake) => (mistake.status || "待复盘") !== "已掌握").length,
+        rate: fullScore ? Math.round((score / fullScore) * 100) : 0,
+        average: records.length ? Math.round((score / records.length) * 10) / 10 : 0,
+        latest,
+        states: countStates(mistakes),
+        total: mistakes.length
+      };
+    })
+    .sort((a, b) => b.recordCount - a.recordCount || a.name.localeCompare(b.name, "zh-Hans-CN"))
+);
 
 async function add() {
   error.value = "";
@@ -96,6 +147,74 @@ async function remove(subject) {
 <template>
   <div class="page-stack">
     <DsPageHeader title="科目管理" description="默认科目按备考顺序排列，可拖拽、隐藏和编辑" />
+
+    <!-- 掌握概览：原首页「科目掌握度」整块搬过来 -->
+    <DsSection title="掌握概览" description="全部记录 · 按练习次数排序">
+      <div v-if="masteryStats.length" class="ds-subject-grid">
+        <article
+          v-for="subject in masteryStats"
+          :key="subject.id"
+          class="ds-subject-card"
+          :style="{ '--subject-color': subject.color || 'var(--blue)' }"
+        >
+          <div class="ds-subject-head">
+            <p class="ds-subject-name"><i aria-hidden="true"></i>{{ subject.name }}</p>
+            <span class="ds-subject-count">{{ subject.recordCount }} 次练习</span>
+          </div>
+
+          <div class="ds-meter">
+            <div class="ds-meter-head">
+              <strong>{{ subject.rate }}%</strong>
+              <span>平均得分率</span>
+            </div>
+            <div class="ds-meter-track">
+              <i :style="{ width: `${subject.rate}%`, background: subject.color || 'var(--blue)' }"></i>
+            </div>
+          </div>
+
+          <div class="ds-subject-metrics">
+            <div class="ds-subject-metric">
+              <span>平均分</span>
+              <strong>{{ subject.recordCount ? subject.average : "--" }}</strong>
+            </div>
+            <div class="ds-subject-metric">
+              <span>最近一次</span>
+              <strong>{{ subject.latest ? `${subject.latest.score}/${subject.latest.fullScore}` : "--" }}</strong>
+            </div>
+            <div class="ds-subject-metric">
+              <span>错题</span>
+              <strong>{{ subject.mistakeCount }}</strong>
+            </div>
+            <div class="ds-subject-metric">
+              <span>待复盘</span>
+              <strong>{{ subject.pending }}</strong>
+            </div>
+          </div>
+
+          <div v-if="subject.total" class="ds-state-bar">
+            <i
+              v-for="state in subject.states"
+              :key="state.key"
+              :style="{ width: `${(state.count / subject.total) * 100}%`, background: state.color }"
+              :title="`${state.label} ${state.count}`"
+            ></i>
+          </div>
+          <div v-if="subject.total" class="ds-state-legend">
+            <span v-for="state in subject.states" :key="state.key">
+              <em :style="{ background: state.color }"></em>{{ state.label }} <b>{{ state.count }}</b>
+            </span>
+          </div>
+          <p v-else class="ds-muted">还没有这个科目的错题记录。</p>
+        </article>
+      </div>
+
+      <DsEmptyState
+        v-else
+        :icon="Layers"
+        title="还没有可统计的科目"
+        description="先在下面新增科目，成绩和错题才能归类统计。"
+      />
+    </DsSection>
 
     <section class="ds-stats">
       <DsStatCard label="总科目" :value="rows.length" unit="个" hint="当前全部配置" :icon="Layers" />

@@ -90,7 +90,25 @@ function argValue(name, fallback) {
   return hit ? hit.slice(name.length + 3).split(",") : fallback;
 }
 
-const routes = argValue("routes", ALL_ROUTES);
+// Git Bash 会把 `/` 开头的参数当路径转换（`--routes=/` → `--routes=C:/.../PortableGit/...`），
+// 过滤后一个都不剩就会静默跑完、什么都不验。匹配不到就报错退出，别让人白等。
+// 这里的 ALL_ROUTES 既有字符串也有对象，取标签要兼容两种形态
+const routeLabel = (route) => (typeof route === "string" ? route : route.label || route.path);
+
+function readRoutes() {
+  const raw = argValue("routes", null);
+  if (!raw) return ALL_ROUTES;
+  const matched = ALL_ROUTES.filter((route) => raw.includes(routeLabel(route)));
+  if (!matched.length) {
+    console.error(`--routes=${raw.join(",")} 没有匹配到任何已知路由。`);
+    console.error(`已知路由：${ALL_ROUTES.map(routeLabel).join(", ")}`);
+    console.error("提示：Git Bash 会把 / 开头的参数当路径转换，请加 MSYS_NO_PATHCONV=1 前缀。");
+    process.exit(1);
+  }
+  return matched;
+}
+
+const routes = readRoutes();
 const sizeFilter = argValue("sizes", null);
 const sizes = sizeFilter
   ? ALL_SIZES.filter((size) => sizeFilter.includes(size.label))

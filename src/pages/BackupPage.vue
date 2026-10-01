@@ -2,11 +2,13 @@
 import { computed, ref } from "vue";
 import { BookOpenCheck, ClipboardList, Database, Download, FolderCog, HardDrive, ShieldCheck, Trash2, Upload } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
+import { useConfirm } from "../composables/useConfirm";
 import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import DsSection from "../components/ds/DsSection.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
 
 const store = useTrackerStore();
+const { confirm } = useConfirm();
 const importFile = ref(null);
 const importMode = ref("merge");
 const confirmText = ref("");
@@ -58,6 +60,18 @@ async function onImport(event) {
   error.value = "";
   try {
     const payload = JSON.parse(await file.text());
+
+    // 覆盖恢复会清掉当前全部成绩、错题、图片和科目配置，且不可撤销。
+    // 之前选完文件就直接替换了，选错一个文件等于清档，所以这里必须二次确认。
+    if (importMode.value === "replace") {
+      const ok = await confirm({
+        title: "覆盖恢复？",
+        message: `将用「${file.name}」替换当前全部成绩、错题、图片和科目配置，现有数据会被清掉且无法撤销。`,
+        confirmText: "覆盖恢复"
+      });
+      if (!ok) return;
+    }
+
     await store.importData(payload, importMode.value === "merge");
     message.value = importMode.value === "merge" ? "数据已合并导入。" : "数据已覆盖恢复。";
   } catch (err) {

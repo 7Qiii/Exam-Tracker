@@ -20,9 +20,9 @@ import {
   ClipboardList,
   ClipboardPlus,
   Database,
+  FileSpreadsheet,
   Flame,
   FolderCog,
-  Layers,
   Target,
   Timer,
   Upload
@@ -30,6 +30,7 @@ import {
 import ContributionHeatmap from "../components/ContributionHeatmap.vue";
 import RecordForm from "../components/RecordForm.vue";
 import ScoreCharts from "../components/ScoreCharts.vue";
+import { exportRecordsToExcel } from "../services/excelExport";
 import DsEmptyState from "../components/ds/DsEmptyState.vue";
 import DsRecordCard from "../components/ds/DsRecordCard.vue";
 import DsSection from "../components/ds/DsSection.vue";
@@ -287,6 +288,10 @@ const todayTasks = computed(() => {
   return tasks;
 });
 
+const todayLabel = computed(() =>
+  new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })
+);
+
 const greeting = computed(() => {
   const hour = new Date().getHours();
   if (hour < 6) return "还在熬夜？先把今天最要紧的一件事做掉。";
@@ -302,59 +307,20 @@ const welcomeHint = computed(() => {
   return "错题都清完了，可以多刷几套新卷子扩一下样本。";
 });
 
+const rangeLabel = computed(() => rangeOptions.find((item) => item.value === rangeDays.value)?.label || "全部");
+
 /* ------------------------------------------------------------------ *
- * 科目掌握度
+ * 学习贡献热力图：默认收起
+ * 它屏高很大，又和「看成绩」这条主线关系较弱，所以做成可折叠，
+ * 展开状态记在本地，用户打开过一次之后就保持打开。
  * ------------------------------------------------------------------ */
 
-// 错题状态沿用现有数据里的取值，不重新定义枚举
-const MISTAKE_STATES = [
-  { key: "已掌握", label: "已掌握", color: "var(--state-mastered)" },
-  { key: "已整理", label: "已整理", color: "var(--state-organized)" },
-  { key: "不熟", label: "不熟", color: "var(--state-fuzzy)" },
-  { key: "不会", label: "不会", color: "var(--state-unknown)" },
-  { key: "待复盘", label: "待复盘", color: "var(--state-todo)" }
-];
+const HEATMAP_KEY = "exam-tracker-dashboard-heatmap-open";
+const isHeatmapOpen = ref(localStorage.getItem(HEATMAP_KEY) === "1");
 
-function countStates(list) {
-  const result = MISTAKE_STATES.map((state) => ({ ...state, count: 0 }));
-  const index = new Map(result.map((state) => [state.key, state]));
-  list.forEach((mistake) => {
-    const key = mistake.status || "待复盘";
-    (index.get(key) || index.get("待复盘")).count += 1;
-  });
-  return result;
-}
-
-const subjectStats = computed(() =>
-  store.visibleSubjects
-    .filter((subject) => !selectedSubject.value || subject.id === selectedSubject.value)
-    .map((subject) => {
-      const records = rangedRecords.value.filter((record) => record.subjectId === subject.id);
-      const mistakes = rangedMistakes.value.filter((mistake) => mistake.subjectId === subject.id);
-      const score = records.reduce((sum, record) => sum + Number(record.score || 0), 0);
-      const fullScore = records.reduce((sum, record) => sum + Number(record.fullScore || 0), 0);
-      const rate = fullScore ? Math.round((score / fullScore) * 100) : 0;
-      const average = records.length ? Math.round((score / records.length) * 10) / 10 : 0;
-      const latest = [...records].sort(
-        (a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt))
-      )[0];
-      const states = countStates(mistakes);
-      return {
-        ...subject,
-        recordCount: records.length,
-        mistakeCount: mistakes.length,
-        pending: mistakes.filter((mistake) => (mistake.status || "待复盘") !== "已掌握").length,
-        rate,
-        average,
-        latest,
-        states,
-        total: mistakes.length
-      };
-    })
-    .sort((a, b) => b.recordCount - a.recordCount)
-);
-
-const rangeLabel = computed(() => rangeOptions.find((item) => item.value === rangeDays.value)?.label || "全部");
+watch(isHeatmapOpen, (value) => {
+  localStorage.setItem(HEATMAP_KEY, value ? "1" : "0");
+});
 
 /* ------------------------------------------------------------------ *
  * 提醒与最近记录
@@ -402,10 +368,11 @@ const reminders = computed(() => {
   return list;
 });
 
+// 成绩记录是主要用途，首页给足条数（8 条），不够再去列表页
 const latestRecords = computed(() =>
   [...store.records]
     .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)))
-    .slice(0, 6)
+    .slice(0, 8)
 );
 
 /* ------------------------------------------------------------------ *
@@ -450,6 +417,29 @@ async function exportData() {
   store.markBackupExported();
 }
 
+/**
+ * 导出成绩 Excel。
+ * 和成绩页顶部的「导出 Excel」是同一套逻辑，只是这里不弹配置面板，
+ * 直接用默认列 / 单表导出全部成绩——首页要的是「一步拿到」。
+ * 需要挑字段、按卷子分列时，仍然去成绩页的导出面板。
+ */
+async function exportScoresExcel() {
+  if (!store.records.length) {
+    store.notify("暂无成绩可以导出。", "info");
+    return;
+  }
+  try {
+    await exportRecordsToExcel({
+      records: store.records,
+      subjects: store.subjects,
+      filename: `成绩导出-${new Date().toISOString().slice(0, 10)}`
+    });
+    store.notify(`Excel 已导出，共 ${store.records.length} 条成绩。`, "success");
+  } catch (error) {
+    store.notify(error.message || "Excel 导出失败，请稍后重试。", "error", 6000);
+  }
+}
+
 function chooseImport() {
   importFile.value?.click();
 }
@@ -470,44 +460,46 @@ async function onImport(event) {
 
 <template>
   <div class="page-stack dashboard-page">
-    <!-- 1. 欢迎区 + 今日待办 -->
-    <section class="ds-welcome">
-      <div>
-        <p class="eyebrow">{{ new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" }) }}</p>
-        <h2>{{ greeting }}</h2>
-        <p>{{ welcomeHint }}</p>
-      </div>
-      <div class="ds-welcome-actions">
-        <button class="primary-button" type="button" @click="showRecordForm = !showRecordForm">
-          <ClipboardPlus :size="17" />
-          {{ showRecordForm ? "收起录入" : "记录成绩" }}
-        </button>
-        <RouterLink class="secondary-button" to="/mistakes">
-          <BookOpenCheck :size="17" />
-          复习错题
-        </RouterLink>
-      </div>
-    </section>
-
-    <section class="ds-task-list">
-      <component
-        :is="task.to ? RouterLink : 'div'"
-        v-for="task in todayTasks"
-        :key="task.title"
-        :to="task.to || undefined"
-        class="ds-task"
-        :class="[`tone-${task.tone}`, { 'is-link': Boolean(task.to) }]"
-      >
-        <i aria-hidden="true"></i>
+    <!-- 1. 欢迎区 + 今日待办：合成一块，避免首屏被切成两个独立区域 -->
+    <section class="ds-welcome-block">
+      <div class="ds-welcome">
         <div>
-          <strong>{{ task.title }}</strong>
-          <span>{{ task.detail }}</span>
+          <p class="eyebrow">{{ todayLabel }}</p>
+          <h2>{{ greeting }}</h2>
+          <p>{{ welcomeHint }}</p>
         </div>
-        <span v-if="task.action" class="ds-task-action">{{ task.action }}</span>
-      </component>
+        <div class="ds-welcome-actions">
+          <button class="primary-button" type="button" @click="showRecordForm = !showRecordForm">
+            <ClipboardPlus :size="17" />
+            {{ showRecordForm ? "收起录入" : "记录成绩" }}
+          </button>
+          <RouterLink class="secondary-button" to="/mistakes">
+            <BookOpenCheck :size="17" />
+            复习错题
+          </RouterLink>
+        </div>
+      </div>
+
+      <div class="ds-task-list">
+        <component
+          :is="task.to ? RouterLink : 'div'"
+          v-for="task in todayTasks"
+          :key="task.title"
+          :to="task.to || undefined"
+          class="ds-task"
+          :class="[`tone-${task.tone}`, { 'is-link': Boolean(task.to) }]"
+        >
+          <i aria-hidden="true"></i>
+          <div>
+            <strong>{{ task.title }}</strong>
+            <span>{{ task.detail }}</span>
+          </div>
+          <span v-if="task.action" class="ds-task-action">{{ task.action }}</span>
+        </component>
+      </div>
     </section>
 
-    <!-- 2. 核心指标 + 筛选 -->
+    <!-- 2. 顶部筛选：以下所有模块共享同一个口径 -->
     <section class="dashboard-filter-row">
       <div class="dashboard-filter">
         <label class="ds-field">
@@ -542,139 +534,18 @@ async function onImport(event) {
       />
     </section>
 
-    <!-- 3. 快速录入 -->
+    <!-- 3. 快速录入：点「记录成绩」才展开 -->
     <DsSection
       v-if="showRecordForm"
       title="快速记录成绩"
-      description="保存后会立即更新趋势图和科目掌握度"
+      description="保存后会立即更新趋势与统计"
       closable
       @close="showRecordForm = false"
     >
       <RecordForm @saved="showRecordForm = false" />
     </DsSection>
 
-    <!-- 4. 科目掌握度 -->
-    <DsSection title="科目掌握度" :description="`${rangeLabel} · 按记录条数排序`">
-      <template #actions>
-        <RouterLink class="text-link" to="/subjects">管理科目 <ArrowUpRight :size="15" /></RouterLink>
-      </template>
-
-      <div v-if="subjectStats.length" class="ds-subject-grid">
-        <article
-          v-for="subject in subjectStats"
-          :key="subject.id"
-          class="ds-subject-card"
-          :style="{ '--subject-color': subject.color || 'var(--blue)' }"
-        >
-          <div class="ds-subject-head">
-            <p class="ds-subject-name"><i aria-hidden="true"></i>{{ subject.name }}</p>
-            <span class="ds-subject-count">{{ subject.recordCount }} 次练习</span>
-          </div>
-
-          <div class="ds-meter">
-            <div class="ds-meter-head">
-              <strong>{{ subject.rate }}%</strong>
-              <span>平均得分率</span>
-            </div>
-            <div class="ds-meter-track">
-              <i :style="{ width: `${subject.rate}%`, background: subject.color || 'var(--blue)' }"></i>
-            </div>
-          </div>
-
-          <div class="ds-subject-metrics">
-            <div class="ds-subject-metric">
-              <span>平均分</span>
-              <strong>{{ subject.recordCount ? subject.average : "--" }}</strong>
-            </div>
-            <div class="ds-subject-metric">
-              <span>最近一次</span>
-              <strong>{{ subject.latest ? `${subject.latest.score}/${subject.latest.fullScore}` : "--" }}</strong>
-            </div>
-            <div class="ds-subject-metric">
-              <span>错题</span>
-              <strong>{{ subject.mistakeCount }}</strong>
-            </div>
-            <div class="ds-subject-metric">
-              <span>待复盘</span>
-              <strong>{{ subject.pending }}</strong>
-            </div>
-          </div>
-
-          <div v-if="subject.total" class="ds-state-bar">
-            <i
-              v-for="state in subject.states"
-              :key="state.key"
-              :style="{ width: `${(state.count / subject.total) * 100}%`, background: state.color }"
-              :title="`${state.label} ${state.count}`"
-            ></i>
-          </div>
-          <div v-if="subject.total" class="ds-state-legend">
-            <span v-for="state in subject.states" :key="state.key">
-              <em :style="{ background: state.color }"></em>{{ state.label }} <b>{{ state.count }}</b>
-            </span>
-          </div>
-          <p v-else class="ds-muted">还没有这个科目的错题记录。</p>
-        </article>
-      </div>
-
-      <DsEmptyState
-        v-else
-        :icon="Layers"
-        title="还没有可统计的科目"
-        description="先在科目管理里配置考试科目，或者调整上面的筛选条件。"
-      >
-        <template #action>
-          <RouterLink class="secondary-button" to="/subjects">去配置科目</RouterLink>
-        </template>
-      </DsEmptyState>
-    </DsSection>
-
-    <!-- 5. 学习贡献 + 提醒 / 快捷入口 -->
-    <section class="dashboard-grid dashboard-primary-grid">
-      <div class="dashboard-main-column">
-        <ContributionHeatmap :records="store.records" :mistakes="store.mistakes" :days="rangeDays || 365" />
-      </div>
-
-      <aside class="dashboard-side-column">
-        <DsSection title="提醒" description="来自同步状态和本地数据">
-          <div v-if="reminders.length" class="ds-task-list">
-            <component
-              :is="item.to ? RouterLink : 'div'"
-              v-for="item in reminders"
-              :key="item.title"
-              :to="item.to || undefined"
-              class="ds-task"
-              :class="[`tone-${item.tone}`, { 'is-link': Boolean(item.to) }]"
-            >
-              <i aria-hidden="true"></i>
-              <div>
-                <strong>{{ item.title }}</strong>
-                <span>{{ item.detail }}</span>
-              </div>
-              <span v-if="item.action" class="ds-task-action">{{ item.action }}</span>
-            </component>
-          </div>
-          <p v-else class="ds-muted">暂时没有需要处理的事项。</p>
-        </DsSection>
-
-        <DsSection title="快捷入口">
-          <div class="ds-quick-grid">
-            <RouterLink class="ds-quick-item" to="/records"><ClipboardList :size="17" />成绩记录</RouterLink>
-            <RouterLink class="ds-quick-item" to="/mistakes"><BookOpenCheck :size="17" />错题库</RouterLink>
-            <RouterLink class="ds-quick-item" to="/subjects"><FolderCog :size="17" />科目管理</RouterLink>
-            <RouterLink class="ds-quick-item" to="/backup"><Database :size="17" />数据备份</RouterLink>
-            <button class="ds-quick-item" type="button" @click="exportData"><Upload :size="17" />导出 JSON</button>
-            <button class="ds-quick-item" type="button" @click="chooseImport"><Database :size="17" />合并导入</button>
-          </div>
-          <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" @change="onImport" />
-        </DsSection>
-      </aside>
-    </section>
-
-    <!-- 6. 分数趋势 -->
-    <ScoreCharts :subject-id="selectedSubject" :range-days="rangeDays" />
-
-    <!-- 7. 最近成绩 -->
+    <!-- 4. 最近成绩：成绩记录是主线，放在趋势图前面 -->
     <DsSection title="最近成绩" :description="`共 ${store.records.length} 条记录 · 点击进入详情`" flush>
       <template #actions>
         <RouterLink class="text-link" to="/records">查看全部 <ArrowUpRight :size="15" /></RouterLink>
@@ -697,7 +568,7 @@ async function onImport(event) {
         v-else
         :icon="ChartLine"
         title="还没有成绩记录"
-        description="记录第一场练习之后，趋势和掌握度都会出现在这里。"
+        description="记录第一场练习之后，趋势和统计都会出现在这里。"
       >
         <template #action>
           <button class="primary-button" type="button" @click="showRecordForm = true">
@@ -705,6 +576,60 @@ async function onImport(event) {
           </button>
         </template>
       </DsEmptyState>
+    </DsSection>
+
+    <!-- 5. 分数趋势 -->
+    <ScoreCharts :subject-id="selectedSubject" :range-days="rangeDays" />
+
+    <!-- 6. 提醒 + 快捷入口 -->
+    <section class="dashboard-secondary-grid">
+      <DsSection title="提醒" description="来自同步状态和本地数据">
+        <div v-if="reminders.length" class="ds-task-list">
+          <component
+            :is="item.to ? RouterLink : 'div'"
+            v-for="item in reminders"
+            :key="item.title"
+            :to="item.to || undefined"
+            class="ds-task"
+            :class="[`tone-${item.tone}`, { 'is-link': Boolean(item.to) }]"
+          >
+            <i aria-hidden="true"></i>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.detail }}</span>
+            </div>
+            <span v-if="item.action" class="ds-task-action">{{ item.action }}</span>
+          </component>
+        </div>
+        <p v-else class="ds-muted">暂时没有需要处理的事项。</p>
+      </DsSection>
+
+      <DsSection title="快捷入口">
+        <div class="ds-quick-grid">
+          <button class="ds-quick-item" type="button" @click="exportScoresExcel">
+            <FileSpreadsheet :size="17" />导出成绩 Excel
+          </button>
+          <RouterLink class="ds-quick-item" to="/records"><ClipboardList :size="17" />成绩记录</RouterLink>
+          <RouterLink class="ds-quick-item" to="/mistakes"><BookOpenCheck :size="17" />错题库</RouterLink>
+          <RouterLink class="ds-quick-item" to="/subjects"><FolderCog :size="17" />科目管理</RouterLink>
+          <RouterLink class="ds-quick-item" to="/backup"><Database :size="17" />数据备份</RouterLink>
+          <button class="ds-quick-item" type="button" @click="exportData"><Upload :size="17" />备份全部数据</button>
+          <button class="ds-quick-item" type="button" @click="chooseImport"><Database :size="17" />恢复备份</button>
+        </div>
+        <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" @change="onImport" />
+      </DsSection>
+    </section>
+
+    <!-- 7. 学习贡献：默认收起。屏高很大，又和「看成绩」这条主线关系较弱，
+         需要看节奏时点标题展开，展开状态记在本地。 -->
+    <DsSection
+      title="学习贡献"
+      :description="isHeatmapOpen ? `最近 ${rangeDays || 365} 天 · 成绩与错题都计入` : '点标题展开，看最近的学习节奏'"
+      collapsible
+      :collapsed="!isHeatmapOpen"
+      @update:collapsed="isHeatmapOpen = !$event"
+    >
+      <ContributionHeatmap :records="store.records" :mistakes="store.mistakes" :days="rangeDays || 365" />
     </DsSection>
 
     <p class="dashboard-footnote">

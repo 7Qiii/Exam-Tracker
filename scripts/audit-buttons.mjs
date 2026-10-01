@@ -1,0 +1,347 @@
+#!/usr/bin/env node
+/**
+ * 逐页点击审计：把每个可见、未禁用的按钮都点一遍，看它到底有没有用。
+ *
+ * 为什么不是「找没绑事件的按钮」：
+ * 静态扫过一遍，全站 138 个 <button> 都绑了 @click，没有空壳。
+ * 真正会出问题的是「点了没反应 / 点了报错 / 点了把界面搞坏」，所以只能真点。
+ *
+ * 每个按钮点之前都重新加载页面：
+ * - 状态天然干净，不用写一堆「关弹窗、清输入、回路由」的复原逻辑；
+ * - 危险操作（删除 / 清空）即使弹出了确认框，重新加载也会丢弃，不会真的删数据。
+ *
+ * 用法：
+ *   node scripts/audit-buttons.mjs                  # 全部路由
+ *   node scripts/audit-buttons.mjs --routes=/,/records
+ *   node scripts/audit-buttons.mjs --max=20         # 每条路由最多点 20 个，先试水
+ */
+import { createServer } from "node:http";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { extname, join, normalize } from "node:path";
+import { createRequire } from "node:module";
+
+const WORKSPACE = "C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace";
+
+function loadChromium() {
+  const candidates = [
+    () => createRequire(`${WORKSPACE}/package.json`)("playwright-core"),
+    () => createRequire(import.meta.url)("playwright-core")
+  ];
+  for (const load of candidates) {
+    try {
+      return load().chromium;
+    } catch {
+      /* 试下一个 */
+    }
+  }
+  throw new Error(`没有找到 playwright-core，请先在 ${WORKSPACE} 里执行 npm install playwright-core`);
+}
+
+const chromium = loadChromium();
+
+const ROOT = process.cwd();
+const DIST = join(ROOT, "dist");
+const OUT = join(ROOT, ".verify");
+
+const BROWSER_CANDIDATES = [
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "C:/Program Files/Microsoft/Edge/Application/msedge.exe"
+];
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2",
+  ".webmanifest": "application/manifest+json"
+};
+
+const ALL_ROUTES = [
+  { label: "/", path: "/" },
+  { label: "/records", path: "/records" },
+  { label: "/mistakes", path: "/mistakes" },
+  { label: "/subjects", path: "/subjects" },
+  { label: "/backup", path: "/backup" },
+  { label: "/login", path: "/login" },
+  { label: "/records/:id", path: "/records", click: "a[href*='#/records/']:visible" },
+  { label: "/mistakes/:id", path: "/mistakes", click: ".review-card-main" }
+];
+
+// 顶栏 / 侧栏 / 底部导航在每个路由都出现，只在首页审一次，避免报告里刷屏
+const CHROME_SELECTORS = [".topbar", ".sidebar", ".bottom-nav"];
+
+// 会动数据或退出登录的按钮：只验证确认弹窗能正常弹出，不真的确认。
+// 「最近删除」是回收站面板的开关，不是删除动作，用否定环视排除掉。
+const DANGEROUS = /清空|移除|退出登录|覆盖恢复|(?<!最近)删除/;
+
+/**
+ * 「合并导入 / 恢复备份 / 覆盖恢复」会拉起系统文件选择框，
+ * DOM 上看不到任何变化，光靠点击没法判断按钮到底有没有用。
+ * 这里用 Playwright 的 filechooser 事件喂一个结构合法但内容为空的备份：
+ * - JSON.parse 能过，后面的确认框会正常弹出，这条路径就被真正走到了；
+ * - 内容为空 + 脚本永远不点「确认」，所以不会真的改到测试数据。
+ */
+const SYNTHETIC_BACKUP = JSON.stringify({
+  version: 3,
+  exportedAt: new Date().toISOString(),
+  subjects: [],
+  records: [],
+  mistakes: [],
+  images: []
+});
+
+function argValue(name, fallback) {
+  const hit = process.argv.find((item) => item.startsWith(`--${name}=`));
+  return hit ? hit.slice(name.length + 3).split(",") : fallback;
+}
+
+/**
+ * 解析 --routes。
+ *
+ * 注意 Git Bash 会把 `/` 开头的参数当路径自动转换：`--routes=/` 会变成
+ * `--routes=C:/.../PortableGit/versions/1.2.0/`，过滤后一个都不剩，
+ * 脚本就会静默地什么都不做——排查起来很费时间。所以这里匹配不到就直接报错退出，
+ * 并提示加 MSYS_NO_PATHCONV=1。
+ */
+function readRoutes() {
+  const raw = argValue("routes", null);
+  if (!raw) return ALL_ROUTES;
+  const matched = ALL_ROUTES.filter((route) => raw.includes(route.label));
+  if (!matched.length) {
+    console.error(`--routes=${raw.join(",")} 没有匹配到任何已知路由。`);
+    console.error(`已知路由：${ALL_ROUTES.map((route) => route.label).join(", ")}`);
+    console.error("提示：Git Bash 会把 / 开头的参数当路径转换。请改用：");
+    console.error(`  MSYS_NO_PATHCONV=1 node scripts/audit-buttons.mjs --routes=${ALL_ROUTES[0].label}`);
+    process.exit(1);
+  }
+  return matched;
+}
+
+const routes = readRoutes();
+const maxPerRoute = Number(argValue("max", ["0"])[0]) || Infinity;
+
+function startServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, "http://localhost");
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/") pathname = "/index.html";
+
+    let filePath = join(DIST, normalize(pathname).replace(/^(\.\.[/\\])+/, ""));
+    if (!existsSync(filePath)) filePath = join(DIST, "index.html");
+
+    try {
+      const body = await readFile(filePath);
+      res.writeHead(200, { "Content-Type": MIME[extname(filePath)] || "application/octet-stream" });
+      res.end(body);
+    } catch (error) {
+      res.writeHead(404).end(String(error.message));
+    }
+  });
+
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port }));
+  });
+}
+
+function findBrowser() {
+  const found = BROWSER_CANDIDATES.find((item) => existsSync(item));
+  if (!found) throw new Error("没有找到本机 Chrome / Edge，无法运行按钮审计。");
+  return found;
+}
+
+/** 点击前后各取一次，用来判断「到底有没有发生什么」 */
+const SIGNATURE = `(() => {
+  const text = (document.body.innerText || "").replace(/\\s+/g, "");
+  let h = 0;
+  for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) | 0;
+  const overlays = document.querySelectorAll(
+    '.ds-modal-backdrop, [role="dialog"], [aria-modal="true"], [class*="backdrop"]'
+  ).length;
+  return {
+    hash: location.hash,
+    textLen: text.length,
+    textHash: h,
+    overlays,
+    toasts: document.querySelectorAll(".toast").length,
+    visibleButtons: [...document.querySelectorAll('button, [role="button"]')].filter((b) => b.offsetParent !== null).length,
+    // 主题切换只改属性、不改文字，不带上就会把「跟随系统/浅色/深色」误判成无反应
+    theme: document.documentElement.dataset.theme || "system",
+    colorScheme: document.documentElement.style.colorScheme || ""
+  };
+})()`;
+
+/** 给第 index 个「可见且未禁用」的按钮打标记，返回它的文案 */
+const MARK_BUTTON = (payload) => `(() => {
+  document.querySelectorAll("[data-audit]").forEach((el) => el.removeAttribute("data-audit"));
+  const skip = ${JSON.stringify(payload.skip)};
+  const list = [...document.querySelectorAll('button, [role="button"]')].filter((b) => {
+    if (b.offsetParent === null || b.disabled) return false;
+    return !skip.some((sel) => b.closest(sel));
+  });
+  const target = list[${payload.index}];
+  if (!target) return null;
+  target.setAttribute("data-audit", "1");
+  const text = (target.innerText || "").replace(/\\s+/g, " ").trim();
+  return {
+    label: text || target.getAttribute("aria-label") || target.getAttribute("title") || "(无文案)",
+    total: list.length
+  };
+})()`;
+
+function classify(before, after, errors) {
+  if (errors.length) return "报错";
+  if (after.overlays > before.overlays) return "打开弹窗";
+  if (after.hash !== before.hash) return "路由跳转";
+  if (after.toasts > before.toasts) return "Toast 反馈";
+  if (after.theme !== before.theme || after.colorScheme !== before.colorScheme) return "主题切换";
+  if (after.textHash !== before.textHash || after.visibleButtons !== before.visibleButtons) return "界面变化";
+  return "无可见变化";
+}
+
+async function main() {
+  if (!existsSync(DIST)) throw new Error("dist/ 不存在，先跑一次 npm run build。");
+  await mkdir(OUT, { recursive: true });
+
+  const { server, port } = await startServer();
+  const base = `http://127.0.0.1:${port}`;
+  const browser = await chromium.launch({ executablePath: findBrowser(), headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+
+  const records = [];
+  const totals = { 正常: 0, 报错: 0, 无可见变化: 0, 危险操作已拦截: 0 };
+
+  for (const route of routes) {
+    // 非首页跳过顶栏/侧栏/底部导航，避免同一批按钮重复出现
+    const skip = route.path === "/" ? [] : CHROME_SELECTORS;
+
+    // 先探一次，拿到按钮总数
+    const probe = await context.newPage();
+    await probe.goto(`${base}/#${route.path}`, { waitUntil: "load" });
+    await probe.waitForTimeout(700);
+    if (route.click) {
+      await probe.locator(route.click).first().click({ timeout: 3000 }).catch(() => {});
+      await probe.waitForTimeout(600);
+    }
+    const probeResult = await probe.evaluate(MARK_BUTTON({ index: 0, skip }));
+    const total = probeResult ? probeResult.total : 0;
+    await probe.close();
+
+    const limit = Math.min(total, maxPerRoute);
+    console.log(`\n── ${route.label} ── 可见按钮 ${total} 个${limit < total ? `（本次只点前 ${limit} 个）` : ""}`);
+
+    for (let index = 0; index < limit; index += 1) {
+      const page = await context.newPage();
+      const errors = [];
+      let fileChooserFired = false;
+      page.on("console", (message) => {
+        if (message.type() === "error") errors.push(message.text().slice(0, 200));
+      });
+      page.on("pageerror", (error) => errors.push(String(error.message || error).slice(0, 200)));
+      page.on("filechooser", async (chooser) => {
+        fileChooserFired = true;
+        try {
+          await chooser.setFiles({
+            name: "audit-synthetic-backup.json",
+            mimeType: "application/json",
+            buffer: Buffer.from(SYNTHETIC_BACKUP)
+          });
+        } catch {
+          /* 选择框被取消不影响后续判定 */
+        }
+      });
+
+      await page.goto(`${base}/#${route.path}`, { waitUntil: "load" });
+      await page.waitForTimeout(700);
+      if (route.click) {
+        await page.locator(route.click).first().click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(600);
+      }
+
+      const marked = await page.evaluate(MARK_BUTTON({ index, skip }));
+      if (!marked) {
+        await page.close();
+        break;
+      }
+
+      const before = await page.evaluate(SIGNATURE);
+      const isDangerous = DANGEROUS.test(marked.label);
+
+      await page.locator("[data-audit='1']").click({ timeout: 3000 }).catch((error) => {
+        errors.push(`点击失败：${String(error.message).split("\n")[0]}`);
+      });
+      await page.waitForTimeout(600);
+      const after = await page.evaluate(SIGNATURE);
+
+      let verdict;
+      if (isDangerous) {
+        // 危险操作：只确认确认弹窗能正常弹出，不点「确认」
+        if (after.overlays > before.overlays) verdict = "危险操作已拦截";
+        else if (fileChooserFired) verdict = "选了文件但没确认弹窗";
+        // 像备份页的「清空」要先输入「清空」二字，空着点会被前置校验挡下并显示错误提示。
+        // 界面有变化就说明按钮不是哑的，属于合理拦截。
+        else if (after.textHash !== before.textHash) verdict = "危险操作被前置校验挡住";
+        else verdict = "危险操作未弹出确认";
+      } else if (fileChooserFired) {
+        // 拉起文件选择框本身就是「有反应」，再看后续有没有变化
+        verdict = after.overlays > before.overlays || after.toasts > before.toasts ? "文件选择框 + 后续反馈" : "文件选择框";
+      } else {
+        verdict = classify(before, after, errors);
+      }
+
+      totals[verdict] = (totals[verdict] || 0) + 1;
+      records.push({
+        route: route.label,
+        label: marked.label,
+        verdict,
+        errors,
+        fileChooserFired,
+        before,
+        after
+      });
+
+      const mark = verdict === "报错" ? "✗" : verdict === "无可见变化" ? "?" : "✓";
+      console.log(`  ${mark} [${verdict}] ${marked.label}${errors.length ? `  ← ${errors[0]}` : ""}`);
+
+      await page.close();
+    }
+  }
+
+  await browser.close();
+  server.close();
+
+  await writeFile(join(OUT, "buttons-report.json"), JSON.stringify(records, null, 2), "utf8");
+
+  const problems = records.filter((item) => item.verdict === "报错" || item.verdict.startsWith("危险操作未"));
+  const silent = records.filter((item) => item.verdict === "无可见变化");
+
+  console.log("\n════════ 汇总 ════════");
+  console.log(`共点击 ${records.length} 个按钮`);
+  for (const [key, value] of Object.entries(totals)) console.log(`  ${key}: ${value}`);
+
+  if (problems.length) {
+    console.log(`\n需要修的问题（${problems.length}）：`);
+    for (const item of problems) console.log(`  ${item.route} · ${item.label} → ${item.verdict}\n      ${item.errors[0] || ""}`);
+  } else {
+    console.log("\n没有报错，也没有危险操作漏掉确认。");
+  }
+
+  if (silent.length) {
+    console.log(`\n点了没有任何可见变化的（${silent.length}）——需要人工判断是不是合理的无反馈：`);
+    for (const item of silent) console.log(`  ${item.route} · ${item.label}`);
+  }
+
+  console.log(`\n明细已写入 ${join(OUT, "buttons-report.json")}`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

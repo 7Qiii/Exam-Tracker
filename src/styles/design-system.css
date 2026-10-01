@@ -1290,6 +1290,33 @@ tbody tr.is-selected {
   font-weight: 500;
 }
 
+/* 可折叠区块：标题区整块可点，箭头随状态转 90° */
+.ds-section-toggle {
+  cursor: pointer;
+  min-width: 0;
+}
+
+.ds-section-toggle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
+}
+
+.ds-section-chevron {
+  vertical-align: -2px;
+  margin-right: 5px;
+  color: var(--muted);
+  transition: transform var(--dur) var(--ease);
+}
+
+.ds-section.is-collapsed .ds-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.ds-section.is-collapsed > .ds-section-head {
+  margin-bottom: 0;
+}
+
 /* 列表行：最近成绩 / 最近错题 */
 .ds-rows {
   display: grid;
@@ -1445,6 +1472,20 @@ tbody tr.is-selected {
 }
 
 /* 欢迎区：左侧问候，右侧主操作 */
+/* 欢迎区 + 今日待办：合成一个语义块，间距沿用页面栅格，视觉上仍是连贯的一屏顶部 */
+.ds-welcome-block {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+/* 首页下半部分的「提醒 + 快捷入口」并排 */
+.dashboard-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+
 .ds-welcome {
   display: flex;
   align-items: flex-end;

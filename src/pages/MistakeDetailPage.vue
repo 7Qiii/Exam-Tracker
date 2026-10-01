@@ -140,10 +140,25 @@ async function setStatus(status) {
   }
 }
 
-/** 完成本次复习：记为一次复习并默认标为已掌握 */
+/**
+ * 完成本次复习：记为一次复习，并默认标为已掌握。
+ *
+ * 这里不能直接复用 setStatus("已掌握")：setStatus 遇到「状态没变化」会直接 return，
+ * 于是「已经掌握的题再复习一遍」——间隔重复里最常见的场景——点按钮毫无反馈，
+ * 不计复习次数、不更新复习时间、连 toast 都没有。
+ * 所以无论状态变不变，都记一次复习。
+ */
 async function markReviewed() {
   if (!mistake.value || savingStatus.value) return;
-  await setStatus("已掌握");
+  const wasMastered = (mistake.value.status || "待复盘") === "已掌握";
+  savingStatus.value = "review";
+  try {
+    await store.updateMistake(mistake.value.id, { status: "已掌握", reviewedAt: new Date().toISOString() });
+    appendReviewLog("已掌握");
+    store.notify(wasMastered ? "已记录本次复习" : "已标记为「已掌握」", "success");
+  } finally {
+    savingStatus.value = "";
+  }
 }
 
 function goTo(target) {
