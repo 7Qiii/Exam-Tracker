@@ -1431,7 +1431,7 @@ function buildExportAverageRow(records) {
             <div class="export-option-section export-preview-section">
               <div class="export-option-title">
                 <strong>在线表格预览</strong>
-                <span v-if="isMatrixExport">每一套卷子占一列，同一套卷子的多份成绩竖着排，最后一行是平均分</span>
+                <span v-if="isMatrixExport">每一套卷子占一列，同一套卷子的多份成绩竖着排，最后一行是平均分。分组按卷子名自动推导 —— 「第1套 / 第2套」「(1) / (2)」「一 / 二」「01 / 02」会并成同一列，年份不会误并。</span>
                 <span v-else>字体已加粗，科目和分数会更清楚，最后一行是平均分</span>
               </div>
 

@@ -61,20 +61,64 @@ export const exportMatrixFieldOptions = [
 
 export const defaultMatrixFields = ["record", "scoreText"];
 
+/** 汉字数字，一到九十九够用 */
+const CN_NUMERAL = "[一二三四五六七八九十百零〇两]+";
+
+/** 「第N__」里的单位字：只有跟在序号后面、且位于名字末尾，才算序号 */
+const SEQUENCE_UNIT = "套讲份次轮章册辑回";
+
 /**
- * 从卷子名里推出「同一套卷子」的分组名。
- * 26张八1 / 26张八2 / 26张八10 -> 26张八
- * 只把 1–2 位尾号当序号；4 位年份（如 英语一2010）不拆，避免把年份误并。
+ * 尾部序号的几种写法，从上往下依次尝试，命中即用第 1 个捕获组做分组名。
+ *
+ * 1) 第N 形式：「张宇八套卷 第1套」「2026年真题第二套」「真题 第 12 讲」
+ * 2) 分隔符/括号 + 汉字数字：「模拟卷（一）」「模拟卷-三」「模拟卷_四」
+ * 3) 1–2 位数字：「26张八1」「模拟卷(2)」「模拟卷-12」
+ */
+const SEQUENCE_RULES = [
+  {
+    pattern: new RegExp(`^(.*?)[\\s\\-_·#（(]*第\\s*([0-9]+|${CN_NUMERAL})\\s*[${SEQUENCE_UNIT}]?\\s*[)）]?\\s*$`),
+    shortDigitsOnly: true
+  },
+  {
+    pattern: new RegExp(`^(.*?)[\\s\\-_·#（(]+(${CN_NUMERAL})\\s*[)）]?\\s*$`),
+    shortDigitsOnly: false
+  },
+  {
+    pattern: /^(.*?)[\s\-_·#（(]*(\d+)[)）]?\s*$/,
+    shortDigitsOnly: true
+  }
+];
+
+/**
+ * 从卷子名里推出「同一套卷子」的分组名 —— 分组完全由名字自动推导，
+ * 用户不需要额外填字段，只要名字里带得上序号就能并到一起。
+ *
+ * 会并到一起的写法：
+ *   26张八1 / 26张八2 / 26张八10        -> 26张八
+ *   张宇八套卷 第1套 / 第2套            -> 张宇八套卷
+ *   2026年真题第一套 / 第二套            -> 2026年真题
+ *   模拟卷(1) / 模拟卷（二） / 模拟卷-3  -> 模拟卷
+ *
+ * 故意不动的写法：
+ *   英语一2010 / 英语一2011             -> 4 位年份不拆，不同年份是不同卷子
+ *   英语一 / 数学一 / 数一               -> 汉字数字是名字本身的一部分，不是序号
+ *   第一套真题                           -> 序号不在末尾
+ *   07年真题 / 08年真题                  -> 末尾不是序号，各占一列
  */
 export function paperGroupName(value) {
   const text = String(value ?? "").trim();
   if (!text) return "未命名";
-  const match = text.match(/^(.*?)[\s\-_·#（(]*(\d+)[)）]?\s*$/);
-  if (match) {
-    const digits = match[2];
+
+  for (const rule of SEQUENCE_RULES) {
+    const match = text.match(rule.pattern);
+    if (!match) continue;
+    const marker = match[2];
+    // 4 位年份（2010）不能被当成序号，否则英语一2010/2011 会被误并
+    if (rule.shortDigitsOnly && /^\d+$/.test(marker) && marker.length > 2) continue;
     const base = match[1].replace(/[\s\-_·#（(]+$/, "").trim();
-    if (base && digits.length <= 2) return base;
+    if (base) return base;
   }
+
   return text;
 }
 

@@ -2,13 +2,17 @@
 /**
  * 首页 / 数据面板。
  *
- * 结构：欢迎区（含今日待办）→ 核心指标 → 快速录入 → 科目掌握度
- *      → 学习贡献 + 提醒/快捷入口 → 分数趋势 → 最近成绩
+ * 结构：欢迎区（问候语 + 记录成绩/复习错题）→ 顶部筛选 → 核心指标
+ *      → 快速录入（点按钮才展开）→ 最近成绩 → 分数趋势
+ *      → 提醒 + 快捷入口 → 学习贡献（默认收起）→ 脚注
  *
  * 两条自我约束：
  * 1. 不编数据。所有数字都来自 store 里真实的成绩 / 错题 / 备份时间，
  *    推导不出来就不显示，不用假占位撑版面。
  * 2. 顶部筛选（科目 + 时间范围）作用于整页，下面的模块共享同一个口径。
+ *
+ * 首页只承担两件事：看清最近成绩、拿到常用入口。其余内容能收就收、
+ * 能挪就挪（科目掌握度在 /subjects，完整列表在 /records）。
  */
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
@@ -199,93 +203,17 @@ const metrics = computed(() => [
 ]);
 
 /* ------------------------------------------------------------------ *
- * 今日待办：全部由真实数据推导
+ * 今日数据：只用于底部脚注的「今天已学习」
  * ------------------------------------------------------------------ */
 
 const todayRecords = computed(() => store.records.filter((record) => record.date === todayKey));
 const todayMinutes = computed(() => todayRecords.value.reduce((sum, record) => sum + (Number(record.durationMinutes) || 0), 0));
-
-/** 到复习时间、或者躺了 3 天以上的错题 */
-const dueMistakes = computed(() => {
-  const staleBefore = new Date();
-  staleBefore.setDate(staleBefore.getDate() - 3);
-  return store.mistakes.filter((mistake) => {
-    if ((mistake.status || "待复盘") === "已掌握") return false;
-    if (mistake.nextReviewAt && String(mistake.nextReviewAt).slice(0, 10) <= todayKey) return true;
-    const updated = new Date(mistake.updatedAt || mistake.createdAt || 0);
-    return !Number.isNaN(updated.getTime()) && updated < staleBefore;
-  });
-});
 
 const backupAgeDays = computed(() => {
   if (!store.lastBackupAt) return null;
   const value = new Date(store.lastBackupAt);
   if (Number.isNaN(value.getTime())) return null;
   return Math.floor((Date.now() - value.getTime()) / 86400000);
-});
-
-const todayTasks = computed(() => {
-  const tasks = [];
-
-  // 注意区分「到期该复习」和「还没复盘」：前者是提醒，后者是进度，
-  // 混在一起会出现「2 道待复盘」和「没有积压」同时出现的矛盾。
-  const due = dueMistakes.value.length;
-  const pending = pendingMistakes.value.length;
-  if (due) {
-    tasks.push({
-      tone: "warning",
-      title: `${due} 道错题到复习时间了`,
-      detail: "按科目进连续复习，一题一题过",
-      to: "/mistakes",
-      action: "去复习"
-    });
-  } else if (pending) {
-    tasks.push({
-      tone: "info",
-      title: `还有 ${pending} 道错题没复盘`,
-      detail: "没有到期提醒，但早点过一遍更稳",
-      to: "/mistakes",
-      action: "去复习"
-    });
-  } else {
-    tasks.push({
-      tone: "success",
-      title: "错题复习没有积压",
-      detail: "错题库里的题都已经标记为已掌握",
-      to: "/mistakes",
-      action: "看错题库"
-    });
-  }
-
-  if (todayRecords.value.length) {
-    tasks.push({
-      tone: "success",
-      title: `今天已记录 ${todayRecords.value.length} 条成绩`,
-      detail: todayMinutes.value ? `累计用时 ${formatDuration(todayMinutes.value)}` : "这次没有填用时",
-      to: "/records",
-      action: "查看记录"
-    });
-  } else {
-    tasks.push({
-      tone: "info",
-      title: "今天还没有记录成绩",
-      detail: "做完一套卷子顺手记一下，趋势图才不会断档",
-      to: "/records",
-      action: "去记录"
-    });
-  }
-
-  if (backupAgeDays.value === null || backupAgeDays.value >= 14) {
-    tasks.push({
-      tone: "info",
-      title: backupAgeDays.value === null ? "还没有备份过数据" : `已经 ${backupAgeDays.value} 天没有备份`,
-      detail: "导出一份 JSON，换设备或清缓存都不怕",
-      to: "/backup",
-      action: "去备份"
-    });
-  }
-
-  return tasks;
 });
 
 const todayLabel = computed(() =>
@@ -363,6 +291,18 @@ const reminders = computed(() => {
 
   if (!store.visibleSubjects.length) {
     list.push({ tone: "warning", title: "还没有配置科目", detail: "先建好科目，记录时才能归类", to: "/subjects", action: "去配置" });
+  }
+
+  // 「该备份了」原本挂在首屏的今日待办里，待办区去掉后挪到这里，
+  // 免得唯一的备份提醒被一起删掉——清缓存会丢全部本地数据。
+  if (backupAgeDays.value === null || backupAgeDays.value >= 14) {
+    list.push({
+      tone: "info",
+      title: backupAgeDays.value === null ? "还没有备份过数据" : `已经 ${backupAgeDays.value} 天没有备份`,
+      detail: "导出一份 JSON，换设备或清缓存都不怕",
+      to: "/backup",
+      action: "去备份"
+    });
   }
 
   return list;
@@ -460,7 +400,10 @@ async function onImport(event) {
 
 <template>
   <div class="page-stack dashboard-page">
-    <!-- 1. 欢迎区 + 今日待办：合成一块，避免首屏被切成两个独立区域 -->
+    <!-- 1. 欢迎区：只留问候语 + 两个动作。
+         原来这里还挂着一份「今日待办」列表（错题到期 / 今天记了几条），
+         但它和下面的核心指标、错题库入口说的是同一件事，属于重复播报，
+         已经去掉；「该备份了」这条提醒挪到下面的「提醒」模块继续保留。 -->
     <section class="ds-welcome-block">
       <div class="ds-welcome">
         <div>
@@ -478,24 +421,6 @@ async function onImport(event) {
             复习错题
           </RouterLink>
         </div>
-      </div>
-
-      <div class="ds-task-list">
-        <component
-          :is="task.to ? RouterLink : 'div'"
-          v-for="task in todayTasks"
-          :key="task.title"
-          :to="task.to || undefined"
-          class="ds-task"
-          :class="[`tone-${task.tone}`, { 'is-link': Boolean(task.to) }]"
-        >
-          <i aria-hidden="true"></i>
-          <div>
-            <strong>{{ task.title }}</strong>
-            <span>{{ task.detail }}</span>
-          </div>
-          <span v-if="task.action" class="ds-task-action">{{ task.action }}</span>
-        </component>
       </div>
     </section>
 
