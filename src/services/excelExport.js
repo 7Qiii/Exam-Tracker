@@ -90,30 +90,76 @@ const SEQUENCE_RULES = [
 ];
 
 /**
+ * 去掉开头的年份。
+ *
+ *   09真题      -> 真题
+ *   07年真题    -> 真题
+ *   26张八      -> 张八
+ *   2015 合成成绩 -> 合成成绩
+ *
+ * 年份不参与分组：用户要的是「不同年份的真题并成一列、年份当行」，
+ * 所以这里不做年份保护，反而要把年份剥掉。
+ *
+ * 两个防误伤的护栏（都是真会踩到的）：
+ * - 4 位年份要求开头是 19xx / 20xx，否则「1800题」「1000题」这类习题册名会被啃掉。
+ * - 剥完剩下不足 2 个字就放弃，否则「2000题」「50题」会只剩一个「题」。
+ */
+function stripLeadingYear(text) {
+  const four = text.match(/^((?:19|20)\d{2})\s*年?\s*[-_·]?\s*/);
+  if (four) {
+    const rest = text.slice(four[0].length).trim();
+    if (rest.length >= 2) return rest;
+  }
+  const two = text.match(/^(\d{2})(?!\d)\s*年?\s*/);
+  if (two) {
+    const rest = text.slice(two[0].length).replace(/^[\s\-_·]+/, "").trim();
+    if (rest.length >= 2) return rest;
+  }
+  return text;
+}
+
+/**
+ * 去掉结尾的 4 位年份：「英语一2010」->「英语一」，「真题2015年」->「真题」。
+ * 和开头年份同理，年份只影响行的顺序，不该把同一套卷子拆成两列。
+ */
+function stripTrailingYear(text) {
+  const match = text.match(/[\s\-_·]*((?:19|20)\d{2})\s*年?\s*$/);
+  if (!match) return text;
+  const base = text.slice(0, match.index).replace(/[\s\-_·]+$/, "").trim();
+  return base.length >= 2 ? base : text;
+}
+
+/**
  * 从卷子名里推出「同一套卷子」的分组名 —— 分组完全由名字自动推导，
- * 用户不需要额外填字段，只要名字里带得上序号就能并到一起。
+ * 用户不需要额外填字段，只要名字里带得上年份或序号就能并到一起。
+ *
+ * 处理顺序：剥开头年份 → 剥结尾年份 → 剥结尾序号。
  *
  * 会并到一起的写法：
- *   26张八1 / 26张八2 / 26张八10        -> 26张八
+ *   09真题 / 11真题 / 12真题            -> 真题
+ *   07年真题 / 08年真题 / 09年真题       -> 真题
+ *   2015 合成成绩 / 2016 合成成绩        -> 合成成绩
+ *   英语一2010 / 英语一2011             -> 英语一
+ *   26张八1 / 26张八2 / 26张八10        -> 张八
  *   张宇八套卷 第1套 / 第2套            -> 张宇八套卷
- *   2026年真题第一套 / 第二套            -> 2026年真题
  *   模拟卷(1) / 模拟卷（二） / 模拟卷-3  -> 模拟卷
  *
  * 故意不动的写法：
- *   英语一2010 / 英语一2011             -> 4 位年份不拆，不同年份是不同卷子
  *   英语一 / 数学一 / 数一               -> 汉字数字是名字本身的一部分，不是序号
  *   第一套真题                           -> 序号不在末尾
- *   07年真题 / 08年真题                  -> 末尾不是序号，各占一列
+ *   1800题 / 1000题 / 660题              -> 习题册名，数字不能被当年份啃掉
  */
 export function paperGroupName(value) {
-  const text = String(value ?? "").trim();
+  let text = String(value ?? "").trim();
   if (!text) return "未命名";
+
+  text = stripTrailingYear(stripLeadingYear(text));
 
   for (const rule of SEQUENCE_RULES) {
     const match = text.match(rule.pattern);
     if (!match) continue;
     const marker = match[2];
-    // 4 位年份（2010）不能被当成序号，否则英语一2010/2011 会被误并
+    // 4 位数字（年份）不能在这里被当序号，交给上面的年份规则处理
     if (rule.shortDigitsOnly && /^\d+$/.test(marker) && marker.length > 2) continue;
     const base = match[1].replace(/[\s\-_·#（(]+$/, "").trim();
     if (base) return base;
