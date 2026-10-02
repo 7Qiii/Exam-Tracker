@@ -1079,3 +1079,48 @@ apple-touch-icon 存在且不是 SVG、SW 真的激活、快捷方式与路由�
 「对照组」是同一个道理。
 
 `check:pwa` 已并入 `npm run check`。
+
+### 4. 全屏运行的顶部安全区
+
+用户确认走 PWA（鸿蒙手机 + iPad，只要装到桌面），并问「做成 app 还要打开网页吗」——
+不是。装到桌面后点图标是**全屏**打开的，没有地址栏、没有浏览器界面，
+「打开网页」只是安装那一次的动作。
+
+但全屏运行暴露了一个之前没人注意到的问题：
+**`env(safe-area-inset-*)` 只处理了底边和左右，漏了 top。**
+配合 `viewport-fit=cover`，iPad 全屏打开时侧栏的品牌标识和顶栏会被状态栏（时钟/电量）压住。
+
+修的时候踩到一个层叠的坑：`.workspace` 的 padding 在 `main.css` 里有**十几处**
+互相覆盖（不同断点各写一份），直接改基础规则会被后面的规则盖掉。
+所以改加在 `body` 上 —— 一处生效、不跟任何断点打架。
+侧栏是 `position: fixed`（不跟着 body 走），单独在它自己身上补。
+吸顶的 `.topbar` 则把 `top` 从 `0` 改成 `env(safe-area-inset-top)`。
+
+`env()` 在普通浏览器里取 0，所以桌面端完全没变化。用探针确认过改动后的计算值：
+`body padding-top = 0px`、`topbar top = 0px`、`sidebar padding-top = 14px` —— 全是改动前的原值。
+
+至于「真机上到底管不管用」，没法验，就**模拟**：
+把打包后的 CSS 里 `env(safe-area-inset-top,0px)` 临时换成 `24px`（iPad 状态栏高度），
+重新截图 —— 品牌标识和顶栏确实都落到 24px 以下，而侧栏的深色背景依然铺到顶端
+（沉浸感没丢）。验证完再还原。
+
+### 5. 顺带修掉一个既有的断点冲突
+
+- `main.css` 的 `@media (max-width: 820px)` 把 `.topbar` 设成 `flex-direction: column`（手机版式）
+- `tablet.css` 的 `@media (min-width: 768px) and (max-width: 1023px)` 给 `.topbar-title`
+  设了 `flex: 1 1 240px`（按 row 写的）
+
+**768–820px 这一段两个媒体查询同时命中**，于是那个 `240px` 从「宽度」变成了「高度」，
+顶栏被撑到 **313px** —— 差不多占掉三分之一屏。而 768×1024 / 810×1080
+正是常见的 iPad 竖屏尺寸，用户一装就会看到。
+
+在平板规则里显式写回 `flex-direction: row`，顶栏 **313 → 122px**。
+手机端（390×844）实测与改动前逐像素一致，确认没被牵连 ——
+平板那条规则要求 `min-height: 600px`，横过来的手机（高 390）本来就不命中。
+
+### 验证
+
+```bash
+npm run check          # 44 + 15 + 72 断言、5/5 弹窗、导出、PWA、无障碍 0 问题
+node scripts/verify-ui.mjs --sizes=768x1024,390x844   # 0 个问题
+```

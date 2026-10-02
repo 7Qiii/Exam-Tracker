@@ -174,8 +174,16 @@
   /* 顶栏：吸顶 + 工具区换行，搜索保留 */
   .topbar {
     position: sticky;
-    top: 0;
+    /* 吸顶时要停在状态栏下方，否则滚起来会被 iPad 的时钟压住。
+       0..safe-area-inset-top 那一条露出的是页面底色，看起来就是干净的留白。 */
+    top: env(safe-area-inset-top, 0px);
     z-index: 15;
+    /* 必须显式写回 row。main.css 的 @media (max-width: 820px) 把 .topbar 改成了
+       column，而平板竖屏的区间是 768–1023px —— 768–820px 这一段两个媒体查询同时命中，
+       column 就漏了进来。后果是下面 .topbar-title 的 flex-basis 240px 从「宽度」
+       变成了「高度」，顶栏被撑到 313px 高（差不多占掉三分之一屏）。
+       这里显式声明 row，等于把被覆盖掉的意图写回来。 */
+    flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
     min-height: 60px;
@@ -352,7 +360,7 @@
   .sidebar {
     width: 92px !important;
     max-width: 92px !important;
-    padding: 14px 8px !important;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 8px 14px !important;
     gap: 10px;
     transform: none !important;
     visibility: visible !important;

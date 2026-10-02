@@ -84,7 +84,8 @@ p {
     linear-gradient(180deg, rgba(17, 24, 39, 0.96) 0%, rgba(26, 34, 52, 0.96) 54%, rgba(13, 20, 33, 0.98) 100%),
     linear-gradient(135deg, rgba(36, 120, 232, 0.24), rgba(20, 184, 166, 0.1));
   color: #ffffff;
-  padding: 16px;
+  /* 侧栏是 fixed;top:0 且 100dvh，不加顶部安全区的话品牌标识会被状态栏盖住 */
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;

@@ -6,7 +6,13 @@
     <meta name="theme-color" content="#101828" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- 用 default 而不是 black-translucent。
+         black-translucent 会让状态栏文字变白并浮在内容之上，而这个应用顶部是
+         浅色（#f6f8fb）的，白字在上面基本看不见；default 给不透明状态栏 + 深色
+         文字，任何主题下都读得清。
+         配合下面的 viewport-fit=cover，还要靠 CSS 里的 safe-area-inset-top
+         把内容顶下来，否则内容仍然会钻到状态栏底下。 -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="format-detection" content="telephone=no" />
     <meta name="apple-mobile-web-app-title" content="错题本" />
     <title>Exam Tracker</title>
