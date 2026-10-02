@@ -10,6 +10,7 @@ import {
   replaceAllData
 } from "../services/storage";
 import { compressImage } from "../services/imageTools";
+import { compareByTimeThenId } from "../utils/sorting";
 import { uploadMistakeImage } from "../services/r2";
 import {
   deleteMistakeCloud,
@@ -1167,7 +1168,12 @@ export const useTrackerStore = defineStore("tracker", () => {
     return [...entries].sort((a, b) => {
       const dateDiff = new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
       if (dateDiff) return dateDiff;
-      return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+      return compareByTimeThenId(
+        new Date(a.updatedAt || a.createdAt || 0).getTime(),
+        new Date(b.updatedAt || b.createdAt || 0).getTime(),
+        a,
+        b
+      );
     });
   }
 
@@ -1223,11 +1229,20 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function sortMistakes(entries) {
-    return [...entries].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+    return [...entries].sort((a, b) =>
+      compareByTimeThenId(
+        new Date(a.updatedAt || a.createdAt || 0).getTime(),
+        new Date(b.updatedAt || b.createdAt || 0).getTime(),
+        a,
+        b
+      )
+    );
   }
 
   function sortImages(entries) {
-    return [...entries].sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    return [...entries].sort((a, b) =>
+      compareByTimeThenId(new Date(b.createdAt || 0).getTime(), new Date(a.createdAt || 0).getTime(), a, b)
+    );
   }
 
   function isSameRecord(a, b) {

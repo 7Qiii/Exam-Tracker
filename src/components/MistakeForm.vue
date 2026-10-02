@@ -5,6 +5,7 @@ import { BookOpenCheck, Save, Sparkles, Trash2, X } from "@lucide/vue";
 import ImageUploader from "./ImageUploader.vue";
 import { useTrackerStore } from "../stores/tracker";
 import { analyzeMistakeImage, analyzeMistakeImageUrl } from "../services/aiReview";
+import { MISTAKE_DIFFICULTY_OPTIONS } from "../utils/mistakeQueue";
 
 const props = defineProps({
   mistake: { type: Object, default: null }
@@ -251,10 +252,10 @@ async function submit() {
       </label>
       <label>
         难度
+        <!-- 取值来自 utils/mistakeQueue.js 的常量：筛选下拉用的是同一份，
+             手写一份的话改了这边忘了那边，筛选就会选不出东西。 -->
         <select v-model="form.difficulty">
-          <option value="简单">简单</option>
-          <option value="中等">中等</option>
-          <option value="困难">困难</option>
+          <option v-for="level in MISTAKE_DIFFICULTY_OPTIONS" :key="level" :value="level">{{ level }}</option>
         </select>
       </label>
     </div>

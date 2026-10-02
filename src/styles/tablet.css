@@ -49,9 +49,7 @@
 /* 触摸设备上 hover 会「粘住」，去掉位移和浮起，保留点击态 */
 @media (hover: none) {
   .nav-item:hover,
-  .subject-card:hover,
   .list-card:hover,
-  .mistake-card:hover,
   .subject-editor:hover,
   .record-card:hover,
   .primary-button:hover,
@@ -70,9 +68,8 @@
     background: transparent;
   }
 
-  .subject-card:active,
+  
   .list-card:active,
-  .mistake-card:active,
   .record-card:active {
     transform: scale(0.995);
   }
@@ -221,11 +218,7 @@
   }
 
   /* 双列内容，避免手机上那种「一条到底」的窄条 */
-  .summary-grid,
-  .dashboard-summary-grid,
-  .records-hero-stats,
-  .detail-metrics,
-  .composite-summary,
+  
   .composite-total-bar,
   .sync-stats,
   .form-row,
@@ -233,45 +226,29 @@
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .form-row.three,
+  
   .composite-source-fields {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 
   .content-grid,
   .chart-grid,
-  .records-hero-grid,
-  .dashboard-grid,
   .composite-source-editor,
   .subject-editor {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  .dashboard-side-column {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
+  
 
-  .dashboard-welcome {
-    align-items: flex-start !important;
-    flex-direction: column;
-    gap: 16px;
-  }
+  
 
-  .dashboard-welcome-actions,
-  .hero-actions,
-  .records-hero-actions,
-  .detail-actions,
+  
   .composite-selection-actions,
   .subject-editor-actions {
     justify-content: flex-start;
   }
 
-  .detail-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
-  }
+  
 
   .section-head {
     flex-wrap: wrap;
@@ -301,19 +278,9 @@
     padding: 20px;
   }
 
-  .hero-panel,
-  .records-hero {
-    min-height: auto;
-    padding: 22px 22px 20px;
-  }
+  
 
-  .hero-panel h2,
-  .records-hero h2,
-  .detail-copy h2,
-  .auth-hero h2 {
-    font-size: 30px;
-    line-height: 1.12;
-  }
+  
 
   .filter-bar {
     grid-template-columns: minmax(0, 1fr) 160px;
@@ -505,23 +472,14 @@
     width: min(260px, 34vw) !important;
   }
 
-  .summary-grid,
-  .dashboard-summary-grid,
-  .records-hero-stats,
-  .detail-metrics {
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
-  }
+  
 
   .content-grid,
-  .chart-grid,
-  .records-hero-grid,
-  .dashboard-grid {
+  .chart-grid{
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  .dashboard-side-column {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
+  
 
   .chart-box {
     height: 320px;
@@ -538,7 +496,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .form-row.three,
+  
   .composite-source-fields {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
@@ -573,7 +531,7 @@
     justify-content: flex-start;
   }
 
-  .records-sort-control,
+  
   .records-sort-menu,
   .records-sort-trigger {
     min-width: 0;

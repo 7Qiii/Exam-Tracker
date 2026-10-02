@@ -7,12 +7,16 @@
     "start": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "check": "node scripts/check-bindings.mjs && node scripts/test-paper-group.mjs && node scripts/test-duration.mjs && node scripts/test-store.mjs && node scripts/check-dialogs.mjs && node scripts/check-export.mjs && node scripts/audit-a11y.mjs",
+    "check": "node scripts/check-bindings.mjs && node scripts/test-paper-group.mjs && node scripts/test-duration.mjs && node scripts/test-sorting.mjs && node scripts/test-store.mjs && node scripts/check-dialogs.mjs && node scripts/check-export.mjs && node scripts/audit-a11y.mjs",
     "check:ui": "node scripts/verify-ui.mjs",
     "check:buttons": "node scripts/audit-buttons.mjs",
     "check:a11y": "node scripts/audit-a11y.mjs",
     "check:store": "node scripts/test-store.mjs",
-    "check:duration": "node scripts/test-duration.mjs"
+    "check:duration": "node scripts/test-duration.mjs",
+    "check:sorting": "node scripts/test-sorting.mjs",
+    "find:dead-css": "node scripts/find-dead-css.mjs",
+    "diff:shots": "node scripts/diff-shots.mjs",
+    "crop:diff": "node scripts/crop-diff.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

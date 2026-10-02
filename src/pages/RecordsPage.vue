@@ -35,6 +35,7 @@ import { useConfirm } from "../composables/useConfirm";
 import { useDialogA11y } from "../composables/useDialogA11y";
 import { useDismissable } from "../composables/useDismissable";
 import { useTrackerStore } from "../stores/tracker";
+import { byId } from "../utils/sorting";
 import {
   formatDuration,
   formatScoreValue,
@@ -286,23 +287,32 @@ function clearFilters() {
   applyFilters();
 }
 
+/**
+ * 排序比较函数。
+ *
+ * 每一支的最后都必须落到 byId() 上。原因：比较函数返回 0 时 Array.sort 保持
+ * **输入顺序**，而输入顺序来自 IndexedDB 的读取顺序，那个顺序在不同次打开之间
+ * 并不稳定。同一天考的两套卷子、同一天录入的多条成绩都会撞上这一点 ——
+ * 表现是「刷新一下顺序就换了」，而且不会报错。
+ * 详见 utils/sorting.js。
+ */
 function compareRecords(a, b) {
   if (sortBy.value === "year-desc" || sortBy.value === "year-asc") {
     const yearDiff = recordYear(a) - recordYear(b);
-    return (sortBy.value === "year-desc" ? -yearDiff : yearDiff) || String(b.date || "").localeCompare(String(a.date || ""));
+    return (sortBy.value === "year-desc" ? -yearDiff : yearDiff) || String(b.date || "").localeCompare(String(a.date || "")) || byId(a, b);
   }
   if (sortBy.value === "date-asc") {
-    return String(a.date || "").localeCompare(String(b.date || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+    return String(a.date || "").localeCompare(String(b.date || "")) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || byId(a, b);
   }
   if (sortBy.value === "rate-desc" || sortBy.value === "rate-asc") {
     const rateDiff = scorePercent(a) - scorePercent(b);
-    return (sortBy.value === "rate-desc" ? -rateDiff : rateDiff) || String(b.date || "").localeCompare(String(a.date || ""));
+    return (sortBy.value === "rate-desc" ? -rateDiff : rateDiff) || String(b.date || "").localeCompare(String(a.date || "")) || byId(a, b);
   }
   if (sortBy.value === "score-desc") {
     const scoreDiff = normalizeScoreValue(a.score) - normalizeScoreValue(b.score);
-    return -scoreDiff || String(b.date || "").localeCompare(String(a.date || ""));
+    return -scoreDiff || String(b.date || "").localeCompare(String(a.date || "")) || byId(a, b);
   }
-  return String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  return String(b.date || "").localeCompare(String(a.date || "")) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || byId(a, b);
 }
 
 function chooseSort(value) {

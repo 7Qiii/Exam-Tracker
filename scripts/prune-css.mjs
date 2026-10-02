@@ -149,7 +149,13 @@ function processCss(src, stats) {
     }
 
     const prelude = src.slice(i, braceIdx);
-    const trimmed = prelude.trim();
+    // 先剥掉前导注释再判断是不是 @ 规则。
+    // 这里踩过一个坑：原来直接对 prelude.trim() 判断 startsWith("@")，
+    // 而本项目几乎每个 @media 上方都有一行说明注释，于是 trimmed 以 "/*" 开头，
+    // 判断失败 → 整个 @media 块被当成普通规则原样拷贝，**再也没有递归进去**。
+    // 后果是媒体查询里的死规则一条都删不掉（tablet.css 整份都是 @media，全被跳过）。
+    const { trivia, rest } = splitTrivia(prelude);
+    const trimmed = rest.trim();
 
     // 找配对的花括号
     let depth = 1;
@@ -185,7 +191,6 @@ function processCss(src, stats) {
         out += `${prelude}{${body}}`;
       }
     } else {
-      const { trivia, rest } = splitTrivia(prelude);
       const selectors = splitTopLevel(rest, ",");
       const kept = selectors.filter((selector) => !referencesDead(selector));
       stats.removedSelectors += selectors.length - kept.length;

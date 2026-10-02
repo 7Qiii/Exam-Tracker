@@ -1,3 +1,5 @@
+import { byId } from "./sorting";
+
 /**
  * 错题复习队列：筛选 + 排序的唯一实现。
  *
@@ -82,7 +84,7 @@ export function filterAndSortMistakes(mistakes, filters, subjectName = () => "")
 
   // 每个比较函数都以 id 兜底：createdAt / updatedAt 相同时（批量导入、同一天连续录入）
   // 顺序会退化成 store 里数组的原始顺序，列表和「上一题 / 下一题」就会飘。
-  const byId = (a, b) => String(a.id || "").localeCompare(String(b.id || ""));
+  // byId 的定义和原因见 utils/sorting.js。
   const byCreatedAsc = (a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || byId(a, b);
   const byCreatedDesc = (a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || byId(a, b);
   const byUpdatedDesc = (a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) || byId(a, b);

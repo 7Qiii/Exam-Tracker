@@ -48,9 +48,14 @@ export function createDemoRecords() {
 }
 
 export function createDemoMistakes() {
+  // 难度和创建时间都要给全。之前这两条种子错题既没有 difficulty，
+  // createdAt 又都是「当前毫秒」（两条完全相同），结果是：
+  //   - 列表里两条都显示「难度未填」，像是应用有数据质量问题；
+  //   - 时间戳一样，排序分不出先后，列表顺序每次刷新都可能变。
+  // 演示数据应该是「正常用起来的样子」，不是边界情况的样本。
   return [
-    sampleMistake("cs408", "进程调度周转时间计算", "操作系统", "concept", "待复盘"),
-    sampleMistake("math1", "二重积分换元边界", "高等数学", "method", "已整理")
+    sampleMistake("cs408", "进程调度周转时间计算", "操作系统", "concept", "待复盘", -1, "中等"),
+    sampleMistake("math1", "二重积分换元边界", "高等数学", "method", "已整理", -3, "困难")
   ];
 }
 
@@ -178,14 +183,19 @@ function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, durationM
   };
 }
 
-function sampleMistake(subjectId, title, knowledgePoint, reason, status) {
-  const now = new Date().toISOString();
+function sampleMistake(subjectId, title, knowledgePoint, reason, status, daysAgo, difficulty) {
+  // 创建时间用「几天前」，和 sampleRecord 一样 —— 真实数据本来就有先后，
+  // 两条种子错题都取当前毫秒的话时间戳会完全相同，排序只能靠 id 兜底。
+  const created = new Date();
+  created.setDate(created.getDate() + daysAgo);
+  const now = created.toISOString();
   return {
     id: crypto.randomUUID(),
     subjectId,
     title,
     knowledgePoint,
     reason,
+    difficulty,
     status,
     sourceRecordId: "",
     questionText: "",
