@@ -6,7 +6,10 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "start": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "check": "node scripts/check-bindings.mjs && node scripts/test-paper-group.mjs && node scripts/check-dialogs.mjs && node scripts/check-export.mjs",
+    "check:ui": "node scripts/verify-ui.mjs",
+    "check:buttons": "node scripts/audit-buttons.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",
