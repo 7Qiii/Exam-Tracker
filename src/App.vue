@@ -23,6 +23,7 @@ import {
 import AnnouncementCenter from "./components/AnnouncementCenter.vue";
 import DsConfirmHost from "./components/ds/DsConfirmHost.vue";
 import { useDialogA11y } from "./composables/useDialogA11y";
+import { useDismissable } from "./composables/useDismissable";
 import { useTrackerStore } from "./stores/tracker";
 
 const store = useTrackerStore();
@@ -32,6 +33,7 @@ const isSidebarOpen = ref(false);
 const isOnline = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const globalSearch = ref("");
 const isGlobalSearchOpen = ref(false);
+const searchBoxRef = ref(null);
 const themeMode = ref("light");
 const themeStorageKey = "exam-tracker-theme-mode";
 const signatureStorageKey = "exam-tracker-signature";
@@ -164,6 +166,21 @@ function openGlobalResult(item = globalSearchResults.value[0]) {
   globalSearch.value = "";
   isGlobalSearchOpen.value = false;
 }
+
+/**
+ * 收起搜索建议。
+ *
+ * 之前只有「选中一条结果」和「路由变化」会收起它 —— 输入几个字之后
+ * 点页面别处，那个浮层会一直挂在那儿挡住下面的内容。
+ *
+ * 这里可以放心用 blur：结果项用的是 @mousedown.prevent，点它们不会让
+ * 输入框失焦，所以不会出现「刚点下去结果就被关掉」。
+ */
+function closeGlobalSearch() {
+  isGlobalSearchOpen.value = false;
+}
+
+useDismissable(isGlobalSearchOpen, searchBoxRef, { onClose: closeGlobalSearch });
 
 function normalizeThemeMode(value) {
   return ["system", "light", "dark"].includes(value) ? value : "system";
@@ -329,17 +346,22 @@ onBeforeUnmount(() => {
           </button>
           <div>
             <p class="eyebrow">学习档案</p>
-            <h1>{{ pageTitle }}</h1>
+            <!-- 这一行只是「你现在在哪儿」的位置提示，真正的页面标题由各页的
+                 DsPageHeader 出 h1。两处都用 h1 的话，读屏用户每进一个页面
+                 都会先听到两遍标题。 -->
+            <p class="topbar-heading">{{ pageTitle }}</p>
           </div>
         </div>
         <div class="topbar-tools">
-          <form class="search-box global-search" @submit.prevent="openGlobalResult()">
+          <form ref="searchBoxRef" class="search-box global-search" @submit.prevent="openGlobalResult()">
             <Search :size="17" />
             <input
               v-model="globalSearch"
               type="search"
+              aria-label="搜索成绩和错题"
               @focus="isGlobalSearchOpen = true"
               @input="isGlobalSearchOpen = true"
+              @blur="closeGlobalSearch"
             />
             <div v-if="isGlobalSearchOpen && globalSearch" class="global-search-popover">
               <button

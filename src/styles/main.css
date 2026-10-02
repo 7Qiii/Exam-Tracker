@@ -322,7 +322,7 @@ p {
   margin-bottom: 4px;
 }
 
-.topbar h1 {
+p.topbar-heading {
   font-size: 25px;
   line-height: 1.15;
 }
@@ -890,7 +890,7 @@ body {
   padding: 0;
 }
 
-.topbar h1 {
+p.topbar-heading {
   font-size: 30px;
   letter-spacing: 0;
 }
@@ -1872,6 +1872,17 @@ td a,
   text-align: center;
 }
 
+/* 复选框本身只有 16px，达不到 WCAG 2.2 要求的 24px 最小点击目标。
+   用 label 撑到 24px 并让整格可点 —— 行高由标题那列决定，这里不会撑高表格。 */
+.select-column-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  cursor: pointer;
+}
+
 .select-column input {
   width: 16px;
   min-height: 16px;
@@ -1937,6 +1948,9 @@ td a,
 
 .record-card-check {
   min-height: 24px;
+  /* 不写 min-width 的话这里是 23px：复选框自带 margin 3px 3px 3px 4px，
+     16 + 4 + 3 = 23，正好差 1px 够不到 24px 的最小点击目标。 */
+  min-width: 24px;
   display: inline-flex;
   align-items: center;
   padding-top: 2px;
@@ -2966,7 +2980,7 @@ textarea,
     width: 100%;
   }
 
-  .topbar h1 {
+  p.topbar-heading {
     font-size: 22px;
   }
 
@@ -3213,7 +3227,7 @@ body {
   text-transform: none;
 }
 
-.topbar h1 {
+p.topbar-heading {
   color: var(--ink);
   font-size: clamp(31px, 3vw, 44px);
   font-weight: 800;
@@ -3602,7 +3616,7 @@ tbody tr:hover {
     display: flex;
   }
 
-  .topbar h1 {
+  p.topbar-heading {
     font-size: 28px;
   }
 
@@ -3637,7 +3651,7 @@ tbody tr:hover {
     gap: 24px;
   }
 
-  .topbar h1 {
+  p.topbar-heading {
     font-size: 26px;
   }
 
@@ -3937,7 +3951,7 @@ body {
     var(--bg);
 }
 
-.topbar h1 {
+p.topbar-heading {
   font-size: clamp(28px, 2.1vw, 36px);
 }
 
@@ -4141,7 +4155,7 @@ th {
 
   .brand strong,
   .sidebar-card strong,
-  .topbar h1,
+  p.topbar-heading,
   .hero-panel h2,
   .auth-hero h2,
   .section-head h2,
@@ -4411,7 +4425,7 @@ body {
   background: transparent;
 }
 
-.topbar h1 {
+p.topbar-heading {
   font-size: 24px;
   font-weight: 800;
 }
@@ -5064,7 +5078,7 @@ textarea:focus {
     padding: 12px 12px 84px;
   }
 
-  .topbar h1 {
+  p.topbar-heading {
     font-size: 21px;
   }
 
@@ -5248,7 +5262,7 @@ textarea:focus {
 
 :root[data-theme="light"] .brand strong,
 :root[data-theme="light"] .sidebar-card strong,
-:root[data-theme="light"] .topbar h1,
+:root[data-theme="light"] p.topbar-heading,
 :root[data-theme="light"] .hero-panel h2,
 :root[data-theme="light"] .auth-hero h2,
 :root[data-theme="light"] .section-head h2,
@@ -5387,7 +5401,7 @@ textarea:focus {
 
 :root[data-theme="dark"] .brand strong,
 :root[data-theme="dark"] .sidebar-card strong,
-:root[data-theme="dark"] .topbar h1,
+:root[data-theme="dark"] p.topbar-heading,
 :root[data-theme="dark"] .hero-panel h2,
 :root[data-theme="dark"] .auth-hero h2,
 :root[data-theme="dark"] .section-head h2,

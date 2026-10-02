@@ -33,6 +33,7 @@ import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
 import { useConfirm } from "../composables/useConfirm";
 import { useDialogA11y } from "../composables/useDialogA11y";
+import { useDismissable } from "../composables/useDismissable";
 import { useTrackerStore } from "../stores/tracker";
 import {
   formatDuration,
@@ -396,6 +397,18 @@ function isSelected(id) {
   return selectedRecordIds.value.includes(id);
 }
 
+/**
+ * 行选择框的可访问名称。
+ *
+ * 原来只有一个 title「选择为合成来源」，每一行念出来一模一样 ——
+ * 读屏用户根本不知道勾的是哪条成绩。title 也不是可靠的可访问名称来源。
+ */
+function selectLabel(record) {
+  const title = recordTitle(record);
+  if (record.recordType === "composite") return `${title} 是合成成绩，不能再次作为来源`;
+  return `选择 ${title} 作为合成来源`;
+}
+
 function clearSelection() {
   selectedRecordIds.value = [];
   Object.keys(compositeRows).forEach((id) => delete compositeRows[id]);
@@ -424,6 +437,18 @@ function closeCompositeDialog() {
 const compositeDialogRef = ref(null);
 
 useDialogA11y(isCompositeDialogOpen, compositeDialogRef, { onClose: closeCompositeDialog });
+
+/* ------------------------------------------------------------------ *
+ * 两个浮层：排序菜单、「已忽略」面板
+ * 之前只能靠再点一次触发按钮来关，点别处会一直挂在那儿挡住列表。
+ * ref 包住的是「触发按钮 + 浮层」整体，不能只包浮层（见 useDismissable 注释）。
+ * ------------------------------------------------------------------ */
+
+const sortMenuRef = ref(null);
+const healthPanelRef = ref(null);
+
+useDismissable(isSortMenuOpen, sortMenuRef, { onClose: () => (isSortMenuOpen.value = false) });
+useDismissable(isIgnoredHealthOpen, healthPanelRef, { onClose: () => (isIgnoredHealthOpen.value = false) });
 
 function openCompositeDialog() {
   if (selectedRecords.value.length) {
@@ -832,7 +857,7 @@ function scoreBarStyle(record) {
           <strong>{{ filteredRecords.length }}</strong>
           <span>条成绩匹配当前查询</span>
         </div>
-        <div class="records-sort-menu">
+        <div ref="sortMenuRef" class="records-sort-menu">
           <button class="records-sort-trigger" type="button" :aria-expanded="isSortMenuOpen" aria-haspopup="menu" @click="isSortMenuOpen = !isSortMenuOpen">
             <ArrowDownUp :size="14" />
             <span>{{ currentSortOption.shortLabel }}</span>
@@ -1014,7 +1039,7 @@ function scoreBarStyle(record) {
             暂无可恢复成绩。删除成绩后，这里会保留 24 小时。
           </div>
         </div>
-        <div class="health-check-panel">
+        <div ref="healthPanelRef" class="health-check-panel">
           <div class="health-check-head">
             <div>
               <strong><ShieldCheck :size="16" />数据健康检查</strong>
@@ -1159,13 +1184,18 @@ function scoreBarStyle(record) {
                 :style="subjectAccentStyle(record)"
               >
                 <td class="select-column">
-                  <input
-                    type="checkbox"
-                    :checked="isSelected(record.id)"
-                    :disabled="record.recordType === 'composite'"
-                    :title="record.recordType === 'composite' ? '合成成绩不能再次作为来源' : '选择为合成来源'"
-                    @change="toggleSelect(record)"
-                  />
+                  <!-- 用 label 包起来：一来点单元格空白也能勾上，二来 16px 的
+                       复选框本身达不到 24px 的最小点击目标。 -->
+                  <label class="select-column-check">
+                    <input
+                      type="checkbox"
+                      :checked="isSelected(record.id)"
+                      :disabled="record.recordType === 'composite'"
+                      :aria-label="selectLabel(record)"
+                      :title="record.recordType === 'composite' ? '合成成绩不能再次作为来源' : '选择为合成来源'"
+                      @change="toggleSelect(record)"
+                    />
+                  </label>
                 </td>
                 <td>
                   <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
@@ -1233,6 +1263,7 @@ function scoreBarStyle(record) {
                   type="checkbox"
                   :checked="isSelected(record.id)"
                   :disabled="record.recordType === 'composite'"
+                  :aria-label="selectLabel(record)"
                   :title="record.recordType === 'composite' ? '合成成绩不能再次作为来源' : '选择为合成来源'"
                   @change="toggleSelect(record)"
                 />

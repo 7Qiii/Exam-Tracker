@@ -137,7 +137,8 @@ async function clearData() {
             <Database :size="17" />
             覆盖恢复
           </button>
-          <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" @change="onImport" />
+          <!-- 同上：真正的控件是「合并导入 / 覆盖恢复」两个按钮 -->
+          <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" aria-hidden="true" tabindex="-1" @change="onImport" />
           <p class="form-tip">
             <ShieldCheck :size="16" />
             合并导入会保留现有数据；覆盖恢复会替换当前成绩、错题、图片和科目配置。

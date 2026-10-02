@@ -194,7 +194,7 @@
     width: auto;
   }
 
-  .topbar h1 {
+  p.topbar-heading {
     font-size: 28px;
     line-height: 1.15;
   }
@@ -489,7 +489,7 @@
     width: auto !important;
   }
 
-  .topbar h1 {
+  p.topbar-heading {
     font-size: 28px !important;
     line-height: 1.15 !important;
   }

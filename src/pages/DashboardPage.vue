@@ -408,7 +408,7 @@ async function onImport(event) {
       <div class="ds-welcome">
         <div>
           <p class="eyebrow">{{ todayLabel }}</p>
-          <h2>{{ greeting }}</h2>
+          <h1>{{ greeting }}</h1>
           <p>{{ welcomeHint }}</p>
         </div>
         <div class="ds-welcome-actions">
@@ -541,7 +541,9 @@ async function onImport(event) {
           <button class="ds-quick-item" type="button" @click="exportData"><Upload :size="17" />备份全部数据</button>
           <button class="ds-quick-item" type="button" @click="chooseImport"><Database :size="17" />恢复备份</button>
         </div>
-        <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" @change="onImport" />
+        <!-- 隐藏的文件框只是「恢复备份」按钮的实现细节，真正的控件是那个按钮。
+             从可访问性树里摘掉，免得读屏用户多停一个说不清用途的输入框。 -->
+        <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" aria-hidden="true" tabindex="-1" @change="onImport" />
       </DsSection>
     </section>
 
