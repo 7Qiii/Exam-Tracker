@@ -69,7 +69,33 @@ async function startServer() {
   return { server, port: server.address().port };
 }
 
-const ROUTES = ["/", "/records", "/mistakes", "/subjects", "/backup", "/login"];
+/**
+ * 要审的路由。
+ *
+ * 大多数是一条路径字符串。但有些界面默认是收起的 —— 首页的录入表单要先点
+ * 「记录成绩」才展开 —— 只审初始状态等于没审到它，而录入表单恰恰是
+ * 整个应用最主要的数据入口。这类写成对象，用 prepare() 先展开再查。
+ */
+const ROUTES = [
+  "/",
+  "/records",
+  "/mistakes",
+  "/subjects",
+  "/backup",
+  "/login",
+  {
+    label: "/ 录入表单（展开后）",
+    path: "/",
+    async prepare(page) {
+      await page.click('button:has-text("记录成绩")');
+      await page.waitForSelector(".record-form", { timeout: 8000 });
+      await page.waitForTimeout(400);
+    }
+  }
+];
+
+const routePath = (route) => (typeof route === "string" ? route : route.path);
+const routeLabel = (route) => (typeof route === "string" ? route : route.label || route.path);
 
 /** 一次性把该查的东西都在页面里算完，避免来回 evaluate */
 const PROBE = `(() => {
@@ -190,15 +216,17 @@ async function auditRoute(browser, base, route, viewport, label) {
 
   let result = null;
   try {
-    await page.goto(`${base}/#${route}`, { waitUntil: "load" });
+    await page.goto(`${base}/#${routePath(route)}`, { waitUntil: "load" });
     await page.waitForTimeout(1800);
+    // 收起状态的界面要先展开到要审的样子，再跑探针
+    if (typeof route === "object" && route.prepare) await route.prepare(page);
     result = await page.evaluate(PROBE);
   } catch (error) {
     consoleErrors.push(`探针执行失败：${String(error.message).split("\n")[0]}`);
   } finally {
     await page.close();
   }
-  return { route, label, consoleErrors, ...(result || {}) };
+  return { route: routeLabel(route), label, consoleErrors, ...(result || {}) };
 }
 
 /**
@@ -238,13 +266,13 @@ async function checkReducedMotion(browser, base, routes) {
   for (const route of routes) {
     // 先看看不限制的时候确实有动画，否则「测出来是 0」说明不了任何问题
     const normal = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await normal.goto(`${base}/#${route}`, { waitUntil: "load" });
+    await normal.goto(`${base}/#${routePath(route)}`, { waitUntil: "load" });
     await normal.waitForTimeout(1500);
     const baseline = await normal.evaluate(MOTION_PROBE);
     await normal.close();
 
     const reduced = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
-    await reduced.goto(`${base}/#${route}`, { waitUntil: "load" });
+    await reduced.goto(`${base}/#${routePath(route)}`, { waitUntil: "load" });
     await reduced.waitForTimeout(1500);
     const actual = await reduced.evaluate(MOTION_PROBE);
     await reduced.close();
@@ -383,7 +411,17 @@ async function main() {
   if (!existsSync(DIST)) throw new Error("dist/ 不存在，先跑一次 npm run build。");
 
   const only = (process.argv.find((arg) => arg.startsWith("--only=")) || "").split("=")[1];
-  const routes = only ? ROUTES.filter((route) => route === only) : ROUTES;
+  const routes = only ? ROUTES.filter((route) => routeLabel(route) === only || routePath(route) === only) : ROUTES;
+
+  // 一个都没匹配上就直接报错退出。否则会「跑完、什么都没查、还报全部通过」——
+  // Git Bash 会把 / 开头的参数当路径转换（`--only=/` → `--only=C:/.../Git/`），
+  // 于是 --only 静默失效，看起来像验过了，其实一条路由都没进。
+  if (!routes.length) {
+    console.error(`--only=${only} 没有匹配到任何路由。`);
+    console.error(`已知路由：${ROUTES.map(routeLabel).join(" / ")}`);
+    console.error("提示：Git Bash 会把 / 开头的参数当路径转换，请加 MSYS_NO_PATHCONV=1 前缀。");
+    process.exit(1);
+  }
 
   const { server, port } = await startServer();
   const base = `http://127.0.0.1:${port}`;
@@ -409,10 +447,10 @@ async function main() {
     if (r.dupIds?.length) problems.push(`重复 id：${r.dupIds.slice(0, 4).join(" / ")}`);
     issues += problems.length;
     if (problems.length) {
-      console.log(`  ✗ ${route}`);
+      console.log(`  ✗ ${routeLabel(route)}`);
       problems.forEach((p) => console.log(`      · ${p}`));
     } else {
-      console.log(`  ✓ ${route}`);
+      console.log(`  ✓ ${routeLabel(route)}`);
     }
   }
 
@@ -422,11 +460,11 @@ async function main() {
     report.push(r);
     if (r.small?.length) {
       issues += 1;
-      console.log(`  ✗ ${route} —— ${r.small.length} 个点击目标小于 24px（WCAG 2.2 AA 下限）`);
+      console.log(`  ✗ ${routeLabel(route)} —— ${r.small.length} 个点击目标小于 24px（WCAG 2.2 AA 下限）`);
       r.small.slice(0, 6).forEach((s) => console.log(`      · ${s.desc} ${s.w}×${s.h}`));
     } else {
       const cramped = r.cramped?.length || 0;
-      console.log(`  ✓ ${route}${cramped ? ` —— 全部达到 24px；另有 ${cramped} 个在 24–44px 之间（不违规，仅供参考）` : ""}`);
+      console.log(`  ✓ ${routeLabel(route)}${cramped ? ` —— 全部达到 24px；另有 ${cramped} 个在 24–44px 之间（不违规，仅供参考）` : ""}`);
     }
   }
 

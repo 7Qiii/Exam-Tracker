@@ -75,7 +75,10 @@ const ALL_ROUTES = [
   { label: "/mistakes/:id", path: "/mistakes", click: ".review-card-main" },
   // 导出面板是点开才出现的，只扫页面初始状态会整个漏掉它 ——
   // 而这里恰恰是全站按钮最密的地方（列布局、字段、每列成绩选择器）。
-  { label: "/records · 导出面板", path: "/records", click: 'button:has-text("导出 Excel")', scope: ".export-dialog" }
+  { label: "/records · 导出面板", path: "/records", click: 'button:has-text("导出 Excel")', scope: ".export-dialog" },
+  // 录入表单同样是点开才出现的，只扫初始状态会整个漏掉它 ——
+  // 而这是全站最主要的数据入口，「用时」那组快捷按钮也在里面。
+  { label: "/ · 录入表单", path: "/", click: 'button:has-text("记录成绩")', scope: ".record-form" }
 ];
 
 // 顶栏 / 侧栏 / 底部导航在每个路由都出现，只在首页审一次，避免报告里刷屏

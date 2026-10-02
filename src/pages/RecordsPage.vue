@@ -38,6 +38,7 @@ import { useTrackerStore } from "../stores/tracker";
 import {
   formatDuration,
   formatScoreValue,
+  normalizeDurationMinutes,
   normalizePaperVariant,
   normalizeScoreValue,
   normalizeSearch,
@@ -146,7 +147,7 @@ const selectedAverageStats = computed(() => {
   const totalScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.score), 0);
   const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
   const durations = records
-    .map((record) => normalizeDuration(record.durationMinutes))
+    .map((record) => normalizeDurationMinutes(record.durationMinutes))
     .filter((value) => value !== "");
   const avgScore = scoredRecords.length ? totalScore / scoredRecords.length : 0;
   const avgFullScore = scoredRecords.length ? totalFullScore / scoredRecords.length : 0;
@@ -167,7 +168,7 @@ const selectedAverageStats = computed(() => {
 const compositeSummary = computed(() => {
   const score = selectedCompositeRows.value.reduce((sum, item) => sum + normalizeScoreValue(item.draft.score), 0);
   const fullScore = selectedCompositeRows.value.reduce((sum, item) => sum + normalizeScoreValue(item.draft.fullScore), 0);
-  const durations = selectedCompositeRows.value.map((item) => normalizeDuration(item.draft.durationMinutes));
+  const durations = selectedCompositeRows.value.map((item) => normalizeDurationMinutes(item.draft.durationMinutes));
   const durationMinutes = durations.every((value) => value !== "") ? durations.reduce((sum, value) => sum + Number(value), 0) : "";
   const latestDate = selectedRecords.value.map((record) => record.date).filter(Boolean).sort().at(-1) || new Date().toISOString().slice(0, 10);
   return { score, fullScore, durationMinutes, latestDate };
@@ -183,7 +184,7 @@ const dashboardStats = computed(() => {
   const totalFullScore = scoredRecords.reduce((sum, record) => sum + normalizeScoreValue(record.fullScore), 0);
   const scoreRate = totalFullScore > 0 ? Math.round((totalScore / totalFullScore) * 100) : 0;
   const timedDurations = records
-    .map((record) => normalizeDuration(record.durationMinutes))
+    .map((record) => normalizeDurationMinutes(record.durationMinutes))
     .filter((value) => value !== "");
   const timedCount = timedDurations.length;
   const avgDuration = timedCount ? Math.round(timedDurations.reduce((sum, value) => sum + Number(value), 0) / timedCount) : "";
@@ -476,7 +477,7 @@ function syncCompositeRows(force = false) {
       compositeRows[record.id] = {
         score: String(record.score ?? ""),
         fullScore: String(record.fullScore ?? ""),
-        durationMinutes: normalizeDuration(record.durationMinutes) === "" ? "" : String(normalizeDuration(record.durationMinutes))
+        durationMinutes: normalizeDurationMinutes(record.durationMinutes) === "" ? "" : String(normalizeDurationMinutes(record.durationMinutes))
       };
     }
   });
@@ -644,7 +645,7 @@ function buildRecordUpdatePayload(record, overrides = {}) {
 function buildHealthIssues() {
   const records = store.records.filter((record) => record.recordType !== "composite");
   const issues = [];
-  const untimed = records.filter((record) => normalizeDuration(record.durationMinutes) === "");
+  const untimed = records.filter((record) => normalizeDurationMinutes(record.durationMinutes) === "");
   const invalidScore = records.filter((record) => {
     const score = Number(record.score);
     const fullScore = Number(record.fullScore);
@@ -657,10 +658,13 @@ function buildHealthIssues() {
     .flatMap((group) => group);
 
   if (untimed.length) {
+    // 把占比写出来：「有几条没记用时」是个数字，但「占了多少」才是能判断
+    // 要不要管的依据。少了这一句，用户没法区分「偶有遗漏」和「一半都没记」。
+    const untimedRate = records.length ? Math.round((untimed.length / records.length) * 100) : 0;
     issues.push({
       id: "untimed",
       title: "未记录用时",
-      description: "这些成绩没有计时，会影响平均用时和节奏复盘。",
+      description: `这些成绩没有计时，会影响平均用时和节奏复盘（占全部成绩的 ${untimedRate}%）。`,
       count: untimed.length,
       tone: "blue",
       records: untimed
@@ -731,12 +735,6 @@ function commonYearLabel(records) {
   const years = [...new Set(records.map((record) => String(record.paperName || "").match(/\d{2,4}/)?.[0]).filter(Boolean))];
   if (years.length !== 1) return "";
   return years[0].length === 2 ? `20${years[0]}` : years[0];
-}
-
-function normalizeDuration(value) {
-  if (value === "" || value === null || value === undefined) return "";
-  const minutes = Number(value);
-  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
 }
 
 function subjectAccentStyle(record) {

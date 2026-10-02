@@ -9,6 +9,7 @@
  * - 移动端横向滚动，并在挂载后自动滚到最右侧（最近的日子），不用用户自己拖。
  */
 import { computed, onMounted, ref } from "vue";
+import { formatDuration } from "../utils/recordDisplay";
 
 const props = defineProps({
   records: { type: Array, default: () => [] },
@@ -147,12 +148,9 @@ function formatDate(date) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+/** 热力图里的空态文案是「未记录用时」，和仪表盘保持一致。 */
 function formatMinutes(minutes) {
-  if (!minutes) return "未记录用时";
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (!hours) return `${rest} 分钟`;
-  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
+  return formatDuration(minutes, { emptyLabel: "未记录用时" });
 }
 
 function cellLabel(cell) {

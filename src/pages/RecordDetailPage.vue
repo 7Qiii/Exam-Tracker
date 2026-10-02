@@ -8,6 +8,7 @@ import DsSection from "../components/ds/DsSection.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
 import { useConfirm } from "../composables/useConfirm";
 import { useTrackerStore } from "../stores/tracker";
+import { formatDuration, normalizeDurationMinutes } from "../utils/recordDisplay";
 
 const route = useRoute();
 const router = useRouter();
@@ -64,9 +65,9 @@ const compositeSourceTotal = computed(() =>
       score: total.score + normalizeScoreValue(item.score),
       fullScore: total.fullScore + normalizeScoreValue(item.fullScore),
       durationMinutes:
-        total.durationMinutes === "" || normalizeDuration(item.durationMinutes) === ""
+        total.durationMinutes === "" || normalizeDurationMinutes(item.durationMinutes) === ""
           ? ""
-          : Number(total.durationMinutes) + Number(normalizeDuration(item.durationMinutes))
+          : Number(total.durationMinutes) + Number(normalizeDurationMinutes(item.durationMinutes))
     }),
     { score: 0, fullScore: 0, durationMinutes: 0 }
   )
@@ -98,21 +99,6 @@ function closeEdit() {
 
 function onSaved() {
   closeEdit();
-}
-
-function formatDuration(minutes) {
-  const value = Number(minutes);
-  if (!Number.isFinite(value) || value <= 0) return "未记录";
-  const hours = Math.floor(value / 60);
-  const rest = value % 60;
-  if (!hours) return `${value} 分钟`;
-  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
-}
-
-function normalizeDuration(value) {
-  if (value === "" || value === null || value === undefined) return "";
-  const minutes = Number(value);
-  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
 }
 
 function normalizeScoreValue(value) {
@@ -148,7 +134,7 @@ function sourceChanged(source) {
   return (
     Number(source.score) !== Number(source.originalScore) ||
     Number(source.fullScore) !== Number(source.originalFullScore) ||
-    String(normalizeDuration(source.durationMinutes)) !== String(normalizeDuration(source.originalDurationMinutes))
+    String(normalizeDurationMinutes(source.durationMinutes)) !== String(normalizeDurationMinutes(source.originalDurationMinutes))
   );
 }
 </script>

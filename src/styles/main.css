@@ -1097,6 +1097,81 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* ------------------------------------------------------------------ *
+ * 用时：小时 + 分钟两个输入框，配一排常用时长快捷按钮。
+ *
+ * 这一块刻意不用 <label> 包起来：label 只能关联一个控件，而这里是
+ * 「两个输入框 + 一组按钮」。所以用 .ds-field + role="group" +
+ * aria-labelledby，每个输入框各自带 aria-label。
+ * ------------------------------------------------------------------ */
+.duration-field {
+  min-width: 0;
+}
+
+/* 同一个 .form-row 里，旁边「日期」用的是 label（#344054 / 13px / 800），
+   而 .ds-field-label 默认是更淡更小的（--muted / 12px / 500）。
+   两种风格并排会显得「用时」这一格是次要信息，所以这里对齐成 label 的样式。
+   多写一层 .form-row 是为了把特异度提到 (0,3,0)：design-system.css 最后加载，
+   .ds-field > .ds-field-label 是 (0,2,0)，只写 .duration-field > .ds-field-label
+   的话特异度相同、会被它按加载顺序压回去。 */
+.form-row .duration-field > .ds-field-label {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.duration-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.duration-part {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.duration-part input {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.duration-unit {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* .segmented 默认排 2 列，这里要放 6 个预设，单独覆盖一下。
+   窄屏放不下就折行 —— 硬挤成一行会把每个按钮压到点不准。 */
+.segmented.duration-presets {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  min-height: 32px;
+}
+
+.segmented.duration-presets button {
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  /* 窄屏下这一组会折成两行，只靠容器的 min-height 摊到每一行就不够 24px 了
+     （实测每行约 19.6px）。WCAG 2.2 的 2.5.8 要求点击目标至少 24×24，
+     而分段控件里按钮是紧挨着的，拿不到「间距豁免」，所以必须逐个撑够。 */
+  min-height: 26px;
+}
+
+@media (max-width: 520px) {
+  .segmented.duration-presets {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 label {
   display: grid;
   gap: 6px;

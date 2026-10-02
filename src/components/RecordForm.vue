@@ -1,6 +1,7 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, useId, watch } from "vue";
 import { Save } from "@lucide/vue";
+import { composeDuration, normalizeDurationMinutes, splitDurationMinutes } from "../utils/recordDisplay";
 import { useTrackerStore } from "../stores/tracker";
 
 const props = defineProps({
@@ -30,6 +31,58 @@ const form = reactive({
   date: new Date().toISOString().slice(0, 10),
   note: ""
 });
+
+/* ------------------------------------------------------------------ *
+ * 用时：拆成「小时 + 分钟」
+ *
+ * 原来是一个「用时（分钟）」的数字框，但全站都把这个值显示成
+ * 「1 小时 30 分钟」（仪表盘、记录详情、导出、热力图都是）。
+ * 也就是同一件事在界面上有两套单位：看到的是小时，要填的是分钟。
+ * 用户每录一条都得在脑子里换算一次；这个字段又是选填的，
+ * 换算的麻烦就直接变成了「算了不填」。
+ *
+ * 拆成两个框之后不用换算了，而且进位是自动的：分钟填 90 会折成 1 小时 30 分。
+ *
+ * 存储格式没有变 —— 仍然是 form.durationMinutes 的整数分钟。
+ * 所以 store、导出、统计口径、以及别处读这个字段的地方全都不用动。
+ * 拆分/合成的规则放在 utils/recordDisplay.js，和显示用的 formatDuration 同一处，
+ * 免得「输入怎么理解」和「显示怎么理解」哪天走岔。
+ * ------------------------------------------------------------------ */
+
+const durationPresets = [
+  { minutes: 45, label: "45 分" },
+  { minutes: 60, label: "1 时" },
+  { minutes: 90, label: "1.5 时" },
+  { minutes: 120, label: "2 时" },
+  { minutes: 150, label: "2.5 时" },
+  { minutes: 180, label: "3 时" }
+];
+
+const durationHours = computed({
+  get: () => splitDurationMinutes(form.durationMinutes).hours,
+  set: (value) => {
+    form.durationMinutes = composeDuration(value, durationMinutesPart.value);
+  }
+});
+
+const durationMinutesPart = computed({
+  get: () => splitDurationMinutes(form.durationMinutes).minutes,
+  set: (value) => {
+    form.durationMinutes = composeDuration(durationHours.value, value);
+  }
+});
+
+function isDurationPresetActive(minutes) {
+  return normalizeDurationMinutes(form.durationMinutes) === minutes;
+}
+
+/** 再点一次已选中的预设就取消，避免选错了还得手动清空两个框。 */
+function applyDurationPreset(minutes) {
+  form.durationMinutes = isDurationPresetActive(minutes) ? "" : minutes;
+}
+
+/** 给「用时」这一组控件的标题用，避免同一页出现重复 id。 */
+const durationLabelId = useId();
 
 const selectedSubject = computed(() => store.visibleSubjects.find((subject) => subject.id === form.subjectId));
 const isEditing = computed(() => Boolean(props.record));
@@ -228,10 +281,31 @@ function normalizePaperVariant(value, paperName = "") {
       </label>
     </div>
     <div class="form-row two">
-      <label>
-        用时（分钟）
-        <input v-model="form.durationMinutes" type="number" min="0" step="1" />
-      </label>
+      <div class="ds-field duration-field">
+        <span :id="durationLabelId" class="ds-field-label">用时</span>
+        <div class="duration-inputs" role="group" :aria-labelledby="durationLabelId">
+          <span class="duration-part">
+            <input v-model="durationHours" type="number" min="0" max="23" step="1" inputmode="numeric" placeholder="0" aria-label="用时（小时）" />
+            <span class="duration-unit">小时</span>
+          </span>
+          <span class="duration-part">
+            <input v-model="durationMinutesPart" type="number" min="0" max="59" step="5" inputmode="numeric" placeholder="0" aria-label="用时（分钟）" />
+            <span class="duration-unit">分钟</span>
+          </span>
+        </div>
+        <div class="segmented duration-presets" role="group" :aria-labelledby="durationLabelId">
+          <button
+            v-for="preset in durationPresets"
+            :key="preset.minutes"
+            type="button"
+            :class="{ active: isDurationPresetActive(preset.minutes) }"
+            :aria-pressed="isDurationPresetActive(preset.minutes)"
+            @click="applyDurationPreset(preset.minutes)"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+      </div>
       <label>
         日期
         <input v-model="form.date" type="date" required />

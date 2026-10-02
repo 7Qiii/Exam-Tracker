@@ -40,8 +40,14 @@ import DsRecordCard from "../components/ds/DsRecordCard.vue";
 import DsSection from "../components/ds/DsSection.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
 import { useTrackerStore } from "../stores/tracker";
+import { formatDuration } from "../utils/recordDisplay";
 
 const store = useTrackerStore();
+
+/** 首页的空态文案是「未记录用时」，比列表里的「未记录」更完整，这里统一指定。 */
+function formatStudyDuration(minutes) {
+  return formatDuration(minutes, { emptyLabel: "未记录用时" });
+}
 
 const FILTER_KEY = "exam-tracker-dashboard-filter";
 const rangeOptions = [
@@ -319,15 +325,6 @@ const latestRecords = computed(() =>
  * 展示辅助
  * ------------------------------------------------------------------ */
 
-function formatDuration(minutes) {
-  const value = Number(minutes);
-  if (!Number.isFinite(value) || value <= 0) return "未记录用时";
-  const hours = Math.floor(value / 60);
-  const rest = value % 60;
-  if (!hours) return `${rest} 分钟`;
-  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
-}
-
 function recordTitle(record) {
   if (record.recordType !== "exercise") return record.paperName;
   return [
@@ -341,7 +338,7 @@ function recordTitle(record) {
 
 function recordMeta(record) {
   const parts = [store.subjectName(record.subjectId), record.date];
-  if (record.durationMinutes) parts.push(formatDuration(record.durationMinutes));
+  if (record.durationMinutes) parts.push(formatStudyDuration(record.durationMinutes));
   return parts;
 }
 
@@ -564,7 +561,7 @@ async function onImport(event) {
       数据保存在本机浏览器；<RouterLink to="/backup">定期导出备份</RouterLink>可以避免清缓存后丢失。
       <template v-if="todayRecords.length">
         <Timer :size="14" />
-        今天已学习 {{ formatDuration(todayMinutes) }}。
+        今天已学习 {{ formatStudyDuration(todayMinutes) }}。
       </template>
     </p>
   </div>

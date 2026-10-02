@@ -58,9 +58,65 @@ export function normalizeSearch(value) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
-export function formatDuration(minutes) {
+/**
+ * 用时（整数分钟）的归一。
+ *
+ * 空、null、undefined、非数字、负数一律返回 ""，而不是 0 ——
+ * 「没记录用时」和「用时为 0」是两回事，store 里的 hasDuration() 也是按
+ * `!== ""` 判定的。把空值落成 0 会让「未记录用时」的健康检查漏报。
+ * 小数四舍五入：界面上不显示秒，89.6 分钟就是 90 分钟。
+ */
+export function normalizeDurationMinutes(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const minutes = Number(value);
+  return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : "";
+}
+
+/**
+ * 整数分钟 → 两个输入框的值。
+ *
+ * 「用时」在录入端是「小时 + 分钟」两个框，在存储和展示端是一个整数分钟。
+ * 这里负责前者到后者的拆解，composeDuration 负责合回去，两者必须成对使用：
+ * 拆了再合必须还原成同一个数，否则用户一打开编辑框、什么都没改就保存，
+ * 数据就悄悄变了。
+ */
+export function splitDurationMinutes(value) {
+  const total = normalizeDurationMinutes(value);
+  if (total === "") return { hours: "", minutes: "" };
+  return { hours: String(Math.floor(total / 60)), minutes: String(total % 60) };
+}
+
+/**
+ * 「小时 + 分钟」两个输入框的值 → 整数分钟。
+ *
+ * 两个框都空返回 ""（未记录），只要填了一个就按 0 补齐另一个。
+ * 分钟填超过 59 会自动进位（填 90 → 1 小时 30 分），
+ * 这样用户在分钟框里写 90 也能得到对的结果，而不是被截成 30。
+ */
+export function composeDuration(hoursValue, minutesValue) {
+  const hasHours = hoursValue !== "" && hoursValue !== null && hoursValue !== undefined;
+  const hasMinutes = minutesValue !== "" && minutesValue !== null && minutesValue !== undefined;
+  if (!hasHours && !hasMinutes) return "";
+  // 小时向下取整：小时框里出现 1.5 时按 1 小时算，用户会立刻看到输入框跳回 1，
+  // 比悄悄按 90 分钟算更好解释（分钟框才是表达零头的地方）。
+  const hours = hasHours ? Math.floor(Number(hoursValue)) : 0;
+  const minutes = hasMinutes ? Math.round(Number(minutesValue)) : 0;
+  const safeHours = Number.isFinite(hours) ? Math.max(0, hours) : 0;
+  const safeMinutes = Number.isFinite(minutes) ? Math.max(0, minutes) : 0;
+  return safeHours * 60 + safeMinutes;
+}
+
+/**
+ * 整数分钟 → 人话。
+ *
+ * emptyLabel 可配是因为各处的空态文案不一样：列表和导出里写「未记录」，
+ * 仪表盘和热力图里写「未记录用时」。除了这一句，其它分支完全一致 ——
+ * 之前有三个文件各写了一份这个函数，改动任何一处都会让同一份数据
+ * 在不同页面上显示成不同的样子。
+ */
+export function formatDuration(minutes, { emptyLabel = "未记录" } = {}) {
   const value = Number(minutes);
-  if (!Number.isFinite(value) || value <= 0) return "未记录";
+  if (!Number.isFinite(value) || value <= 0) return emptyLabel;
   const hours = Math.floor(value / 60);
   const rest = value % 60;
   if (!hours) return `${value} 分钟`;
