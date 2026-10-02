@@ -40,6 +40,7 @@ import {
   exportThemeOptions
 } from "../services/excelExport";
 import { useConfirm } from "../composables/useConfirm";
+import { useDialogA11y } from "../composables/useDialogA11y";
 import { useTrackerStore } from "../stores/tracker";
 
 const HEALTH_IGNORE_KEY = "exam-tracker-ignored-health-issues";
@@ -745,6 +746,18 @@ function closeCompositeDialog() {
   isCompositeDialogOpen.value = false;
 }
 
+/* ------------------------------------------------------------------ *
+ * 弹窗键盘可达性
+ * 两个弹窗都是手写的，只挂 role="dialog" 并不会真的限制焦点 ——
+ * Escape 关不掉、Tab 能跳到被遮住的页面按钮上，统一交给 useDialogA11y。
+ * ------------------------------------------------------------------ */
+
+const exportDialogRef = ref(null);
+const compositeDialogRef = ref(null);
+
+useDialogA11y(isExportDialogOpen, exportDialogRef, { onClose: closeExportDialog });
+useDialogA11y(isCompositeDialogOpen, compositeDialogRef, { onClose: closeCompositeDialog });
+
 function openCompositeDialog() {
   if (selectedRecords.value.length) {
     syncCompositeRows();
@@ -1320,7 +1333,7 @@ function buildExportAverageRow(records) {
     </section>
 
     <div v-if="isExportDialogOpen" class="export-dialog-backdrop" @mousedown.self="closeExportDialog">
-      <section class="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+      <section ref="exportDialogRef" class="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
         <div class="export-dialog-head">
           <div>
             <p class="eyebrow">在线预览</p>
@@ -1733,7 +1746,7 @@ function buildExportAverageRow(records) {
     </div>
 
     <div v-if="isCompositeDialogOpen && selectedRecords.length" class="composite-dialog-backdrop" @mousedown.self="closeCompositeDialog">
-      <section class="composite-dialog" role="dialog" aria-modal="true" aria-labelledby="composite-dialog-title">
+      <section ref="compositeDialogRef" class="composite-dialog" role="dialog" aria-modal="true" aria-labelledby="composite-dialog-title">
         <div class="composite-dialog-head">
           <div>
             <p class="eyebrow">合成工具</p>

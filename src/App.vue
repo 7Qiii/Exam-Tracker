@@ -22,6 +22,7 @@ import {
 } from "@lucide/vue";
 import AnnouncementCenter from "./components/AnnouncementCenter.vue";
 import DsConfirmHost from "./components/ds/DsConfirmHost.vue";
+import { useDialogA11y } from "./composables/useDialogA11y";
 import { useTrackerStore } from "./stores/tracker";
 
 const store = useTrackerStore();
@@ -207,6 +208,10 @@ function openSignatureDialog() {
 function closeSignatureDialog() {
   isSignatureDialogOpen.value = false;
 }
+
+// 手写弹窗只挂 role="dialog" 并不会限制焦点，键盘行为统一走这个 composable
+const signatureDialogRef = ref(null);
+useDialogA11y(isSignatureDialogOpen, signatureDialogRef, { onClose: closeSignatureDialog });
 
 function saveSignature() {
   const next = signatureDraft.value.trim() || "稳住节奏，今天继续推进";
@@ -437,7 +442,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="isSignatureDialogOpen" class="signature-dialog-backdrop" @mousedown.self="closeSignatureDialog">
-      <section class="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="signature-title">
+      <section ref="signatureDialogRef" class="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="signature-title">
         <div class="section-head">
           <h2 id="signature-title">设置签名</h2>
           <button class="icon-button" type="button" aria-label="关闭" @click="closeSignatureDialog">

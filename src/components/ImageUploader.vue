@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import { ChevronLeft, ChevronRight, ImagePlus, Maximize2, Trash2, X } from "@lucide/vue";
+import { useDialogA11y } from "../composables/useDialogA11y";
 
 const props = defineProps({
   images: { type: Array, default: () => [] },
@@ -96,6 +97,18 @@ function closePreview() {
   activeIndex.value = -1;
 }
 
+/**
+ * 灯箱也是个弹窗，Escape 得能关、Tab 不能跑到背后的页面上。
+ * 这里必须传「布尔」而不是 activeImage 本身：翻页时 activeImage 会换成另一个
+ * 对象，直接传会让 watcher 以为重新打开了，焦点被反复抢回第一张。
+ */
+const lightboxRef = ref(null);
+useDialogA11y(
+  computed(() => Boolean(activeImage.value)),
+  lightboxRef,
+  { onClose: closePreview }
+);
+
 function stepPreview(offset) {
   if (!previews.value.length) return;
   activeIndex.value = (activeIndex.value + offset + previews.value.length) % previews.value.length;
@@ -153,7 +166,7 @@ function imageStatus(image) {
       </figure>
     </div>
 
-    <div v-if="activeImage" class="lightbox" role="dialog" aria-modal="true" @click.self="closePreview">
+    <div v-if="activeImage" ref="lightboxRef" class="lightbox" role="dialog" aria-modal="true" @click.self="closePreview">
       <div class="lightbox-card">
         <div class="lightbox-head">
           <strong>{{ activeImage.name }}</strong>

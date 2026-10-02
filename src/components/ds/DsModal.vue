@@ -1,10 +1,13 @@
 <script setup>
 /**
- * 通用弹窗：遮罩 + Esc 关闭 + 打开时锁滚动。
- * 关闭动画交给外层控制（本组件在关闭时直接卸载），避免残留节点挡住点击。
+ * 通用弹窗：遮罩 + Escape 关闭 + 焦点圈 + 打开时锁滚动。
+ *
+ * 键盘行为统一交给 useDialogA11y。以前这里自己写了一份 Escape 监听，
+ * 但没做焦点圈 —— 而焦点圈恰恰是手写弹窗最容易漏、又最容易被忽略的一项。
  */
-import { onBeforeUnmount, watch } from "vue";
+import { ref, toRef } from "vue";
 import { X } from "@lucide/vue";
+import { useDialogA11y } from "../../composables/useDialogA11y";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -16,42 +19,27 @@ const props = defineProps({
 
 const emit = defineEmits(["update:modelValue", "close"]);
 
+const dialogRef = ref(null);
+
 function close() {
   emit("update:modelValue", false);
   emit("close");
 }
 
-function onKeydown(event) {
-  if (event.key === "Escape") close();
-}
-
-let previousOverflow = "";
-
-watch(
-  () => props.modelValue,
-  (open) => {
-    if (typeof document === "undefined") return;
-    if (open) {
-      previousOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      window.addEventListener("keydown", onKeydown);
-    } else {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeydown);
-    }
-  }
-);
-
-onBeforeUnmount(() => {
-  if (typeof document !== "undefined") document.body.style.overflow = previousOverflow;
-  window.removeEventListener("keydown", onKeydown);
-});
+useDialogA11y(toRef(props, "modelValue"), dialogRef, { onClose: close });
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="modelValue" class="ds-modal-backdrop" @mousedown.self="closeOnBackdrop && close()">
-      <section class="ds-modal" :class="{ 'is-wide': wide }" role="dialog" aria-modal="true">
+      <section
+        ref="dialogRef"
+        class="ds-modal"
+        :class="{ 'is-wide': wide }"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="title || undefined"
+      >
         <div class="ds-modal-head">
           <div>
             <h2>{{ title }}</h2>
