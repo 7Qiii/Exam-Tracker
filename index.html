@@ -8,7 +8,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="format-detection" content="telephone=no" />
+    <meta name="apple-mobile-web-app-title" content="错题本" />
     <title>Exam Tracker</title>
+    <!-- 这一组 link 是「装到桌面」能生效的前提。
+         之前 public/manifest.webmanifest 和 sw.js 都写好了，却没有在页面里
+         引用 manifest —— 浏览器根本不知道它的存在，于是 display:standalone、
+         快捷方式、图标全部失效，手机上点开就是带地址栏的网页。
+         所以先前的 PWA 只算「文件齐了」，实际是死的。 -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <!-- iOS 不认 SVG 主屏幕图标，必须给 PNG，否则装到桌面是个空白方块 -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body>
     <div id="app"></div>

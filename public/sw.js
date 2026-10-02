@@ -1,5 +1,14 @@
-const CACHE_NAME = "exam-tracker-vue-cache-v2";
-const ASSETS = ["/", "/manifest.webmanifest", "/icon.svg"];
+const CACHE_NAME = "exam-tracker-vue-cache-v3";
+// 图标一并预缓存：装到桌面后即使离线，主屏幕图标也要能正常显示
+const ASSETS = [
+  "/",
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-maskable-512.png"
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));

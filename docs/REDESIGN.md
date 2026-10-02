@@ -1034,3 +1034,48 @@ npm run check:buttons  # 131 个按钮，0 报错，0 危险操作漏确认
 最终：CSS 类名 **519 → 411**，死类 **107 → 0**；
 CSS 行数 **11,574 → 10,383**；
 打包 CSS **160.66 → 136.72 kB**，gzip **27.65 → 23.77 kB（−14.0%）**。
+
+---
+
+## 第十轮：让它真的能装到手机桌面（PWA 接线）
+
+起因是用户问「想做成手机 App，手机上不用网页，应该怎么办」。
+设备是**鸿蒙手机 + iPad**，目标是「先能装到桌面就行」。
+
+结论：**不需要打包原生 App，PWA 就够了** —— 但在这之前它其实是坏的。
+
+### 1. 症状与真因：manifest 从来没被引用
+
+`public/manifest.webmanifest` 和 `public/sw.js` 都写好了，看起来「PWA 已经做了」。
+但 `index.html` 里**一个 `<link>` 标签都没有** —— 没有引用 manifest。
+
+浏览器不知道 manifest 存在，于是 `display: standalone` 不生效、快捷方式不生效、
+图标不生效、也不会有安装提示。手机上打开就是**带地址栏的普通网页**。
+
+这正好解释了用户的感受。**「文件在不在」和「浏览器有没有看见」是两回事**：
+`ls public/` 会告诉你「manifest 有了」，从而得出「PWA 做好了」的错误结论。
+
+### 2. 另外两个会直接打脸的问题
+
+- **iOS 不认 SVG 主屏幕图标**。原来只有 `icon.svg`，iPad 上
+  「添加到主屏幕」会得到一个空白方块（退化成网页截图）。
+  本机没有 sharp / PIL，所以用浏览器 canvas 光栅化
+  （`scripts/gen-icons.mjs`，用 Blob URL 避免画布污染），
+  产出 180 / 192 / 512 / 512-maskable 四个 PNG。
+  其中 iOS 那张必须**全出血**（圆角改成直角）—— 透明圆角会被 iOS 填成黑色。
+- **快捷方式 URL 与路由模式不匹配**。manifest 里写的是 `/mistakes`，
+  而路由用的是 `createWebHashHistory`，正确地址是 `/#/mistakes`。
+  不改的话，长按图标弹出的「新增错题」会落到首页。
+
+### 3. 新增 `scripts/check-pwa.mjs`
+
+按 Chrome 的「可安装」判定条件逐条验：引用 manifest、manifest 合法、
+name / start_url / display、192 与 512 图标、**图标实际像素尺寸与声明一致**、
+apple-touch-icon 存在且不是 SVG、SW 真的激活、快捷方式与路由模式匹配。
+
+并做了**反向验证**：临时从 `dist/index.html` 里删掉 manifest 那一行，
+脚本立刻报「引用了 manifest —— PWA 不会生效」；恢复后全绿。
+没有反向验证的检查，无法证明它真的会失败 —— 这条和第九轮的
+「对照组」是同一个道理。
+
+`check:pwa` 已并入 `npm run check`。
