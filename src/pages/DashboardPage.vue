@@ -39,6 +39,7 @@ import DsEmptyState from "../components/ds/DsEmptyState.vue";
 import DsRecordCard from "../components/ds/DsRecordCard.vue";
 import DsSection from "../components/ds/DsSection.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
+import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 import { formatDuration } from "../utils/recordDisplay";
 
@@ -74,6 +75,23 @@ const selectedSubject = ref(initialFilter.subjectId);
 const rangeDays = ref(initialFilter.rangeDays);
 const showRecordForm = ref(false);
 const importFile = ref(null);
+
+/**
+ * 收起 / 关闭录入表单前先问一句。
+ *
+ * 这个表单是可折叠的（`v-if`），收起来组件就被销毁，填过的内容一起没。
+ * 实测过：填到一半点「收起录入」、点 section 的关闭按钮，两条路径以前都是
+ * **静默丢弃**，连个提示都没有。只有「正在关」的时候才拦，打开不用问。
+ */
+async function toggleRecordForm() {
+  if (showRecordForm.value && !(await confirmDiscardChanges())) return;
+  showRecordForm.value = !showRecordForm.value;
+}
+
+async function closeRecordForm() {
+  if (!(await confirmDiscardChanges())) return;
+  showRecordForm.value = false;
+}
 
 watch([selectedSubject, rangeDays], () => {
   localStorage.setItem(FILTER_KEY, JSON.stringify({ subjectId: selectedSubject.value, rangeDays: rangeDays.value }));
@@ -409,7 +427,7 @@ async function onImport(event) {
           <p>{{ welcomeHint }}</p>
         </div>
         <div class="ds-welcome-actions">
-          <button class="primary-button" type="button" @click="showRecordForm = !showRecordForm">
+          <button class="primary-button" type="button" @click="toggleRecordForm">
             <ClipboardPlus :size="17" />
             {{ showRecordForm ? "收起录入" : "记录成绩" }}
           </button>
@@ -462,7 +480,7 @@ async function onImport(event) {
       title="快速记录成绩"
       description="保存后会立即更新趋势与统计"
       closable
-      @close="showRecordForm = false"
+      @close="closeRecordForm"
     >
       <RecordForm @saved="showRecordForm = false" />
     </DsSection>

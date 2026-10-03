@@ -14,7 +14,14 @@ const props = defineProps({
   title: { type: String, default: "" },
   description: { type: String, default: "" },
   wide: { type: Boolean, default: false },
-  closeOnBackdrop: { type: Boolean, default: true }
+  closeOnBackdrop: { type: Boolean, default: true },
+  /**
+   * 是否往历史里压一条「同地址」记录，好让返回手势/系统返回键变成「关弹窗」。
+   * 默认开。**路由守卫里弹出的确认框要传 false** —— 守卫正卡在一次导航中间，
+   * 这时动历史栈会把 vue-router「导航失败退回原地址」的那次 go(-1) 搅乱。
+   * 详见 composables/useDialogA11y.js。
+   */
+  historyEntry: { type: Boolean, default: true }
 });
 
 const emit = defineEmits(["update:modelValue", "close"]);
@@ -26,7 +33,11 @@ function close() {
   emit("close");
 }
 
-useDialogA11y(toRef(props, "modelValue"), dialogRef, { onClose: close });
+useDialogA11y(toRef(props, "modelValue"), dialogRef, {
+  onClose: close,
+  // 传函数：按「打开的那一刻」读 prop，而不是按组件初始化那一刻
+  historyEntry: () => props.historyEntry
+});
 </script>
 
 <template>

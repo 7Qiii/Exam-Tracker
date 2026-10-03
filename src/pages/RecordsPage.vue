@@ -34,6 +34,7 @@ import DsStatCard from "../components/ds/DsStatCard.vue";
 import { useConfirm } from "../composables/useConfirm";
 import { useDialogA11y } from "../composables/useDialogA11y";
 import { useDismissable } from "../composables/useDismissable";
+import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 import { byId } from "../utils/sorting";
 import {
@@ -254,6 +255,10 @@ function syncFiltersFromDraft() {
   page.value = 1;
 }
 
+/**
+ * 应用筛选。注意它顺带会**收起录入面板**（表单被 v-if 销毁，内容一起没），
+ * 所以调用方要先确认过 —— 见 clearFilters / selectHealthIssue。
+ */
 function applyFilters() {
   syncFiltersFromDraft();
   showForm.value = false;
@@ -280,7 +285,9 @@ onBeforeUnmount(() => {
   if (filterTimer) window.clearTimeout(filterTimer);
 });
 
-function clearFilters() {
+async function clearFilters() {
+  // 先问再动 draftFilters：取消的话要「什么都没发生」，而不是筛选清了、表单还开着。
+  if (showForm.value && !(await confirmDiscardChanges())) return;
   draftFilters.keyword = "";
   draftFilters.subjectId = "";
   draftFilters.paperVariant = "all";
@@ -341,7 +348,14 @@ function startEdit(record) {
   revealRecordForm();
 }
 
-function closeForm() {
+/**
+ * 关闭录入面板。以前直接关，填过的内容静默丢弃。
+ *
+ * 保存成功时 onFormSaved 也会走到这里 —— 那时表单已经 resetDirty() 过了，
+ * confirmDiscardChanges() 会立刻放行，不会「刚存完反而问一句」。
+ */
+async function closeForm() {
+  if (!(await confirmDiscardChanges())) return;
   showForm.value = false;
   editingRecordId.value = "";
 }
@@ -557,7 +571,9 @@ async function batchDeleteSelectedRecords() {
   }
 }
 
-function selectHealthIssue(issue) {
+async function selectHealthIssue(issue) {
+  // 「选中处理」也会收起录入面板 —— 正在填的表单要拦一下。
+  if (showForm.value && !(await confirmDiscardChanges())) return;
   draftFilters.keyword = "";
   draftFilters.subjectId = "";
   draftFilters.paperVariant = "all";

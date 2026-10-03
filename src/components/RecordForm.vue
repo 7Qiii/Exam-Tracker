@@ -2,6 +2,7 @@
 import { computed, reactive, ref, useId, watch } from "vue";
 import { Save } from "@lucide/vue";
 import { composeDuration, normalizeDurationMinutes, splitDurationMinutes } from "../utils/recordDisplay";
+import { useUnsavedFields } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 
 const props = defineProps({
@@ -31,6 +32,27 @@ const form = reactive({
   date: new Date().toISOString().slice(0, 10),
   note: ""
 });
+
+/* ------------------------------------------------------------------ *
+ * 「填了一半」保护
+ *
+ * 这个表单出现在三个地方（首页内联、成绩列表内联面板、成绩详情编辑），
+ * 每一处都能在没保存的情况下被关掉 —— 点「收起录入」、点面板的关闭按钮、
+ * 点「科目」换页。实测过三条路径都是**静默丢弃**，填过的内容一声不响就没了。
+ *
+ * 只列用户真正会输入的字段。科目、满分、卷型、日期都是自动填的
+ * （科目取第一个可见科目、满分跟着科目、日期默认今天），算进去的话
+ * 表单一打开就是「脏」的 —— 见 composables/useUnsavedChanges.js 里的说明。
+ * ------------------------------------------------------------------ */
+const { markPrefill, resetDirty } = useUnsavedFields(form, [
+  "paperName",
+  "exerciseBookName",
+  "exercisePage",
+  "exerciseQuestion",
+  "score",
+  "durationMinutes",
+  "note"
+]);
 
 /* ------------------------------------------------------------------ *
  * 用时：拆成「小时 + 分钟」
@@ -114,12 +136,16 @@ watch(
       form.date = props.record.date || new Date().toISOString().slice(0, 10);
       form.note = store.displayRecordNote(props.record) || "";
       ensurePaperVariant();
-      return;
+    } else {
+      if ((!form.subjectId || !selectedSubject.value) && store.visibleSubjects.length) {
+        form.subjectId = store.visibleSubjects[0].id;
+      }
+      ensurePaperVariant();
     }
-    if ((!form.subjectId || !selectedSubject.value) && store.visibleSubjects.length) {
-      form.subjectId = store.visibleSubjects[0].id;
-    }
-    ensurePaperVariant();
+    // 自动填充结束 —— 此刻的样子就是「用户还没动过」的基线。
+    // 科目表是异步来的，这个 watcher 之后还会再跑一次；markPrefill 内部
+    // 只在表单还没脏的时候才挪基线，所以不会盖掉用户已经输入的内容。
+    markPrefill();
   },
   { immediate: true }
 );
@@ -189,6 +215,10 @@ async function submit() {
       form.fullScore = selectedSubject.value?.fullScore || "";
       ensurePaperVariant();
     }
+    // 存完了就不算「未保存」了。父组件接下来会同步地把表单关掉并问一句
+    // confirmDiscardChanges()，所以必须在 emit 之前重置（见 useUnsavedForm 里
+    // flush: "sync" 那段说明）。
+    resetDirty();
     emit("saved");
   } catch (error) {
     store.notify(error.message || "成绩保存失败。", "error", 6000);

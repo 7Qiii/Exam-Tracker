@@ -1,19 +1,27 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
 import { BookOpenCheck, Save, Sparkles, Trash2, X } from "@lucide/vue";
 import ImageUploader from "./ImageUploader.vue";
+import { useUnsavedFields } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 import { analyzeMistakeImage, analyzeMistakeImageUrl } from "../services/aiReview";
 import { MISTAKE_DIFFICULTY_OPTIONS } from "../utils/mistakeQueue";
 
 const props = defineProps({
-  mistake: { type: Object, default: null }
+  mistake: { type: Object, default: null },
+  /**
+   * 「基于某条成绩新增错题」时传进来的成绩 id，用来预填标题和科目。
+   *
+   * 做成 prop 而不是自己去读 route.query：地址栏里的 query 随时会被别的东西
+   * 冲掉（这个页面一改筛选就会 replace 掉整个 query），而它一变下面那个
+   * 填充 watcher 就会重跑一遍，把已经填好的内容清空。让页面「读到就摘掉」
+   * 反而更稳 —— 见 MistakesPage。
+   */
+  sourceRecordId: { type: String, default: "" }
 });
 
 const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
-const route = useRoute();
 const files = ref([]);
 const uploaderResetKey = ref(0);
 const isSaving = ref(false);
@@ -36,10 +44,28 @@ const form = reactive({
   nextReviewAt: ""
 });
 
+/* ------------------------------------------------------------------ *
+ * 「填了一半」保护
+ *
+ * 错题表单比成绩表单更容易被误关，因为它的成本更高：要传图、要跑一次
+ * AI 解析。而 AI 解析是**代码写进去的**（analyzeWithAi 直接改
+ * form.title / questionText / analysis），一个 input 事件都没有 ——
+ * 所以判脏只能比字段值，不能看事件。
+ *
+ * 只列用户真正会输入 / 会由 AI 填进来的字段。科目、理由、状态、难度、
+ * 关联成绩都是自动填的（见下面那个 watcher），算进去会让表单一打开就是脏的。
+ * 图片单独算一路：它是「已选但未保存」的文件，不在 form 里。
+ * ------------------------------------------------------------------ */
+const { markPrefill, resetDirty } = useUnsavedFields(
+  form,
+  ["title", "knowledgePoint", "questionText", "analysis", "nextReviewAt"],
+  { extraDirty: () => files.value.length > 0 }
+);
+
 const relatedImages = computed(() => (props.mistake ? store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === props.mistake.id) : []));
 const aiAvailable = computed(() => Boolean(files.value.length || relatedImages.value.some((image) => image.url || image.blob)));
 const sourceRecord = computed(() => {
-  const id = props.mistake?.sourceRecordId || route.query.recordId || form.sourceRecordId;
+  const id = props.mistake?.sourceRecordId || props.sourceRecordId || form.sourceRecordId;
   return store.records.find((record) => record.id === id) || null;
 });
 const titleHistory = computed(() => visibleHistory("title", store.mistakes.map((mistake) => mistake.title)));
@@ -170,10 +196,10 @@ function parseErrorMessage(message) {
 }
 
 watch(
-  () => [store.visibleSubjects, props.mistake, route.query.recordId, store.records.length],
+  () => [store.visibleSubjects, props.mistake, props.sourceRecordId, store.records.length],
   () => {
     const source = props.mistake || {};
-    const queryRecord = !props.mistake && route.query.recordId ? store.records.find((record) => record.id === route.query.recordId) : null;
+    const queryRecord = !props.mistake && props.sourceRecordId ? store.records.find((record) => record.id === props.sourceRecordId) : null;
     form.subjectId = source.subjectId || store.visibleSubjects[0]?.id || "";
     form.title = source.title || "";
     form.knowledgePoint = source.knowledgePoint || "";
@@ -188,6 +214,10 @@ watch(
       form.subjectId = queryRecord.subjectId;
       form.title = queryRecord.paperName ? `${queryRecord.paperName} 错题` : form.title;
     }
+    // 自动填充结束 —— 此刻的样子就是「用户还没动过」的基线。
+    // 从成绩页点「基于本成绩新增错题」过来时标题是自动填的（`xxx 错题`），
+    // 记成基线才不会一进来就被当成「有未保存内容」。
+    markPrefill();
   },
   { immediate: true, deep: true }
 );
@@ -212,6 +242,10 @@ async function submit() {
     }
     files.value = [];
     uploaderResetKey.value += 1;
+    // 存完了就不算「未保存」了。父组件接下来会同步地关掉表单并问一句
+    // confirmDiscardChanges()，所以必须在 emit 之前重置（见 useUnsavedForm 里
+    // flush: "sync" 那段说明）。
+    resetDirty();
     emit("saved");
   } catch (error) {
     store.notify(error.message || "错题保存失败。", "error", 6000);

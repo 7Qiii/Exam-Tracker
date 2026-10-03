@@ -13,6 +13,10 @@
  *   4. 弹窗开着时按返回，应该只关弹窗、不换页，且不能把页面滚回顶部
  *   5. 弹窗开开关关之后历史记录要回到原样，不能留下「按返回没反应」的幽灵记录
  *   6. 搜索浮层要能用键盘走到（Tab / ↑↓ / Enter / Escape），不能只有鼠标能点
+ *   7. 填了一半的表单被收起 / 关闭 / 取消编辑时要拦一下，且没填内容时不能误报
+ *   8. 填了一半时点侧栏换页要拦一下（取消要留在原页、放弃要真的换页）；
+ *      按返回放行，但地址栏和画面必须一致
+ *   9. 「基于本成绩新增错题」要真的把表单打开（以前只是带着 query 落到列表上）
  *
  * 用法：node scripts/audit-interaction.mjs
  */
@@ -261,6 +265,165 @@ if (!resultCount) {
   check(!popoverAfterEscape, "Escape 能收起搜索浮层", "Escape 收不起搜索浮层");
 }
 await searchPage.close();
+
+/* ------------------------------------------------------------------ *
+ * 场景 7~9：录入表单的「填了一半」保护
+ *
+ * 单独开一个宽屏页面：侧栏在 ≤1023px 会收成抽屉，要点到导航链接必须用宽屏；
+ * 另外这几个场景要反复开关表单，和前面共用页面会互相串状态。
+ * ------------------------------------------------------------------ */
+const formPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+
+/**
+ * 每个场景都从「真刷新」开始。
+ * 必须 reload：goto 到只有 hash 不同的地址时浏览器可能只做同文档导航，
+ * 上一个场景留下的组件状态会串进来（一开始就是这么误报了一条）。
+ */
+const fresh = async (hash) => {
+  await formPage.goto(`${base}/${hash}`, { waitUntil: "networkidle" });
+  await formPage.reload({ waitUntil: "networkidle" });
+  await formPage.waitForTimeout(1000);
+};
+
+const formState = () =>
+  formPage.evaluate(() => {
+    const label = [...document.querySelectorAll(".record-form label")].find((el) => el.textContent.includes("试卷名称"));
+    return {
+      hash: location.hash,
+      recordForm: !!document.querySelector(".record-form"),
+      mistakeForm: !!document.querySelector("form.form-grid:not(.record-form)"),
+      confirm: !!document.querySelector('[role="dialog"]'),
+      paperName: label?.querySelector("input")?.value ?? null
+    };
+  });
+
+/** 点确认框里的按钮（「继续编辑」= 取消，「放弃」= 确认） */
+const settle = async (label) => {
+  await formPage.locator(`[role="dialog"] button:has-text("${label}")`).first().click();
+  await formPage.waitForTimeout(500);
+};
+
+const openDashForm = async (name) => {
+  await formPage.locator('button:has-text("记录成绩")').first().click();
+  await formPage.waitForTimeout(400);
+  if (name) {
+    await formPage.locator(".record-form label:has-text('试卷名称') input").fill(name);
+    await formPage.waitForTimeout(200);
+  }
+};
+
+console.log("\n场景 7：填了一半的表单不能被静默关掉");
+await fresh("#/");
+await openDashForm("审计卷 01");
+await formPage.locator('button:has-text("收起录入")').first().click();
+await formPage.waitForTimeout(500);
+let fs = await formState();
+check(fs.confirm, "首页「收起录入」会先问一句", "首页「收起录入」直接把表单收了，填过的内容静默丢弃");
+if (fs.confirm) {
+  await settle("继续编辑");
+  fs = await formState();
+  check(fs.recordForm && fs.paperName === "审计卷 01",
+    "选「继续编辑」后表单和内容都还在",
+    `选「继续编辑」后状态不对（表单=${fs.recordForm}，名称=${JSON.stringify(fs.paperName)}）`);
+  await formPage.locator('button:has-text("收起录入")').first().click();
+  await formPage.waitForTimeout(400);
+  await settle("放弃");
+  fs = await formState();
+  check(!fs.recordForm, "选「放弃」后表单关掉", "选「放弃」后表单没关掉");
+}
+
+// 反向验证：什么都没填的时候不能弹确认框。
+// 表单里的科目、满分、卷型、日期都是**自动填**的（科目表还是异步来的），
+// 判脏时不能把这些算成「用户输入」。
+await fresh("#/");
+await openDashForm();
+await formPage.locator('button:has-text("收起录入")').first().click();
+await formPage.waitForTimeout(500);
+fs = await formState();
+check(!fs.confirm && !fs.recordForm,
+  "没填内容时收起不多问",
+  "什么都没填，收起时却弹了「放弃未保存的内容」—— 自动填的科目/满分被当成用户输入了");
+
+await fresh("#/mistakes");
+await formPage.locator('button:has-text("新增错题")').first().click();
+await formPage.waitForTimeout(500);
+await formPage.locator('label:has-text("错题标题") input').first().fill("审计错题");
+await formPage.waitForTimeout(200);
+await formPage.locator('button:has-text("收起表单")').first().click();
+await formPage.waitForTimeout(500);
+fs = await formState();
+check(fs.confirm, "错题页「收起表单」会先问一句", "错题页「收起表单」把填过的标题静默丢弃");
+if (fs.confirm) await settle("放弃");
+
+console.log("\n场景 8：填了一半时点侧栏换页 / 按浏览器返回");
+await fresh("#/");
+await openDashForm("审计卷 02");
+await formPage.locator('a.nav-item[href="#/subjects"]').first().click();
+await formPage.waitForTimeout(600);
+fs = await formState();
+check(fs.confirm && fs.hash === "#/",
+  "点侧栏换页会先问一句，人还停在原页",
+  `点侧栏换页没拦住（hash=${fs.hash}，确认框=${fs.confirm}）—— 填的内容静默丢弃`);
+if (fs.confirm) {
+  await settle("继续编辑");
+  fs = await formState();
+  check(fs.hash === "#/" && fs.recordForm && fs.paperName === "审计卷 02",
+    "选「继续编辑」后留在原页、内容还在",
+    `选「继续编辑」后状态不对（hash=${fs.hash}，表单=${fs.recordForm}，名称=${JSON.stringify(fs.paperName)}）`);
+  await formPage.locator('a.nav-item[href="#/subjects"]').first().click();
+  await formPage.waitForTimeout(500);
+  await settle("放弃");
+  fs = await formState();
+  check(fs.hash === "#/subjects",
+    `选「放弃」后正常换页（→ ${fs.hash}）`,
+    `选「放弃」后没能换页（仍停在 ${fs.hash}）—— 确认框在导航守卫里动过历史栈，把 vue-router「中止就退回原地址」的那次 go(-1) 搅乱了`);
+}
+
+// 按返回：浏览器会**先把地址改掉**再通知我们，所以这种导航故意不拦（见
+// router/index.js 里的说明）—— 拦了得靠 vue-router 自己补一次 history.go() 退回去，
+// 而它算差值用的 history.state.position 是拿 history.length 记的，只增不减，
+// 弹窗压过记录之后就不准了，实测会「退过头」。
+// 这里要守住的不变量是：**地址栏和画面必须一致**（要么整页都走了，要么整页都留着）。
+await fresh("#/records");
+await fresh("#/");
+await openDashForm("审计卷 03");
+await formPage.evaluate(() => history.back());
+await formPage.waitForTimeout(900);
+fs = await formState();
+const leftCleanly = fs.hash === "#/records" && !fs.recordForm;
+const stayedCleanly = fs.hash === "#/" && fs.recordForm;
+check(leftCleanly || stayedCleanly,
+  `按返回后地址和画面一致（hash=${fs.hash}，表单${fs.recordForm ? "还在" : "已收起"}）`,
+  `按返回后地址栏是 ${fs.hash}、表单${fs.recordForm ? "还在" : "已收起"} —— 地址和画面对不上，用户会以为自己在另一个页面`);
+
+console.log("\n场景 9：「基于本成绩新增错题」要真的把表单打开");
+await fresh("#/records");
+const askedMistake = await formPage.evaluate(() => {
+  const button = document.querySelector('button[aria-label="基于本成绩新增错题"]');
+  if (!button) return false;
+  button.click();
+  return true;
+});
+if (!askedMistake) {
+  bad("成绩列表里找不到「基于本成绩新增错题」按钮，跳过该场景");
+} else {
+  await formPage.waitForTimeout(1300);
+  const s9 = await formPage.evaluate(() => {
+    const label = [...document.querySelectorAll("label")].find((el) => el.textContent.includes("错题标题"));
+    return {
+      hash: location.hash,
+      mistakeForm: !!document.querySelector("form.form-grid:not(.record-form)"),
+      title: label?.querySelector("input")?.value ?? ""
+    };
+  });
+  check(s9.mistakeForm,
+    `表单自动打开了，标题已预填（「${s9.title}」）`,
+    `点了「基于本成绩新增错题」却停在列表上、表单没开（hash=${s9.hash}）—— 按钮看起来像没反应`);
+  check(!s9.hash.includes("recordId"),
+    "用完就把 recordId 从地址里摘掉了",
+    `地址里还留着 ${s9.hash} —— 这个页面一改筛选就会 replace 掉整个 query，把预填的标题冲掉`);
+}
+await formPage.close();
 
 console.log(`\n${problems === 0 ? "没有发现问题" : `共 ${problems} 个问题`}`);
 await browser.close();

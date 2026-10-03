@@ -19,6 +19,7 @@ import DsLoadingState from "../components/ds/DsLoadingState.vue";
 import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import DsSection from "../components/ds/DsSection.vue";
 import { useConfirm } from "../composables/useConfirm";
+import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 import {
   MISTAKE_DIFFICULTY_OPTIONS,
@@ -42,6 +43,44 @@ const SORT_OPTIONS = MISTAKE_SORT_OPTIONS;
 const filters = reactive(readMistakeFilters(route.query));
 const showForm = ref(false);
 const savingId = ref("");
+
+/**
+ * 收起 / 展开新增错题表单。收起时表单会被 v-if 拆掉，填过（甚至跑过 AI 解析）
+ * 的内容一起没 —— 以前是静默丢弃。只有正在关的时候才拦。
+ */
+async function toggleForm() {
+  if (showForm.value && !(await confirmDiscardChanges())) return;
+  showForm.value = !showForm.value;
+}
+
+/**
+ * 从成绩页点「基于本成绩新增错题」过来时会带上 ?recordId=xxx。
+ *
+ * 必须**顺手把表单打开** —— 以前只是带着 query 落到列表上，表单不开、筛选也没变，
+ * 看上去就像那个按钮没反应（实测过）。要再点一次「新增错题」才看得到预填的标题。
+ *
+ * 读到之后立刻把它从地址里摘掉：这个页面一改筛选就会 replace 掉整个 query，
+ * 顺手把 recordId 冲走；而 MistakeForm 的填充 watcher 依赖它，一冲就会重灌一遍
+ * 表单，把已经填好的标题清空。摘掉之后改用 prop 传给它，就与地址无关了。
+ */
+const sourceRecordId = ref("");
+watch(
+  () => route.query.recordId,
+  (id) => {
+    if (!id) return;
+    sourceRecordId.value = id;
+    showForm.value = true;
+    const { recordId, ...rest } = route.query;
+    router.replace({ path: "/mistakes", query: rest });
+  },
+  { immediate: true }
+);
+
+function onMistakeSaved() {
+  showForm.value = false;
+  // 用掉就清掉，免得下次点「新增错题」又带出上一条成绩的标题
+  sourceRecordId.value = "";
+}
 
 /** 知识点在现有数据里承担「章节」的角色，直接从已有错题里归纳 */
 const knowledgePoints = computed(() => {
@@ -149,7 +188,7 @@ function formatDate(value) {
   <div class="page-stack">
     <DsPageHeader title="错题库" :description="`共 ${store.mistakes.length} 道 · 点状态直接筛选，点「复习」进入连续复习`">
       <template #actions>
-        <button class="secondary-button" type="button" @click="showForm = !showForm">
+        <button class="secondary-button" type="button" @click="toggleForm">
           <Plus :size="16" />
           {{ showForm ? "收起表单" : "新增错题" }}
         </button>
@@ -222,7 +261,7 @@ function formatDate(value) {
     <ImageSyncQueue />
 
     <DsSection v-if="showForm" title="新增错题" description="支持图片上传与 AI 解析">
-      <MistakeForm @saved="showForm = false" />
+      <MistakeForm :source-record-id="sourceRecordId" @saved="onMistakeSaved" />
     </DsSection>
 
     <!-- 复习列表 -->

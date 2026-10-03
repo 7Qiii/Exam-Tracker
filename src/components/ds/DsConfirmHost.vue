@@ -25,6 +25,7 @@ function accept() {
     :model-value="isOpen"
     :title="pending?.title"
     :description="pending?.message"
+    :history-entry="!pending?.noHistory"
     @update:model-value="cancel"
   >
     <p v-if="pending?.tone === 'danger'" class="ds-confirm-warning">

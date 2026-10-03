@@ -16,6 +16,7 @@ import MistakeForm from "../components/MistakeForm.vue";
 import DsEmptyState from "../components/ds/DsEmptyState.vue";
 import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import { useConfirm } from "../composables/useConfirm";
+import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 import { MISTAKE_STATUS_OPTIONS, filterAndSortMistakes, readMistakeFilters, toMistakeQuery } from "../utils/mistakeQueue";
 
@@ -182,6 +183,15 @@ function onSaved() {
   isEditing.value = false;
 }
 
+/**
+ * 取消编辑。表单是 v-if 的，一取消就被拆掉，改过但没保存的内容一起没
+ * —— 以前是静默丢弃。保存成功走的是 onSaved()，不用问。
+ */
+async function cancelEdit() {
+  if (!(await confirmDiscardChanges())) return;
+  isEditing.value = false;
+}
+
 function onKeydown(event) {
   if (isEditing.value) return;
   const tag = event.target?.tagName;
@@ -261,7 +271,7 @@ function formatDateTime(value) {
         <button v-if="!isEditing" class="secondary-button" type="button" @click="isEditing = true">
           <Edit3 :size="16" />编辑
         </button>
-        <button v-else class="secondary-button" type="button" @click="isEditing = false">取消编辑</button>
+        <button v-else class="secondary-button" type="button" @click="cancelEdit">取消编辑</button>
         <button class="secondary-button danger-text" type="button" @click="remove">
           <Trash2 :size="16" />删除
         </button>

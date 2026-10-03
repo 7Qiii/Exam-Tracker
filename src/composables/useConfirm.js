@@ -16,7 +16,9 @@ const pending = ref(null);
 
 export function useConfirm() {
   /**
-   * @param {string|{title?:string,message?:string,confirmText?:string,cancelText?:string,tone?:'danger'|'primary'}} options
+   * @param {string|{title?:string,message?:string,confirmText?:string,cancelText?:string,tone?:'danger'|'primary',noHistory?:boolean}} options
+   *   noHistory: 不要往历史里压记录（返回手势关不掉这个确认框）。
+   *   只有「路由守卫里弹的确认框」需要 —— 守卫卡在导航中间时不能动历史栈。
    * @returns {Promise<boolean>}
    */
   function confirm(options = {}) {
@@ -30,6 +32,7 @@ export function useConfirm() {
         confirmText: normalized.confirmText || "确认",
         cancelText: normalized.cancelText || "取消",
         tone: normalized.tone || "danger",
+        noHistory: Boolean(normalized.noHistory),
         resolve
       };
     });

@@ -74,7 +74,7 @@ function isVisible(element) {
   return element.getClientRects().length > 0 && window.getComputedStyle(element).visibility !== "hidden";
 }
 
-export function useDialogA11y(isOpen, containerRef, { onClose, lockScroll = true } = {}) {
+export function useDialogA11y(isOpen, containerRef, { onClose, lockScroll = true, historyEntry = true } = {}) {
   // 每个弹窗一个身份对象，用来在 openStack 里认出自己
   const identity = {};
   let previousActive = null;
@@ -177,14 +177,23 @@ export function useDialogA11y(isOpen, containerRef, { onClose, lockScroll = true
         // 压一条「同一个地址」的历史记录，把手机返回手势 / 系统返回键变成「关弹窗」。
         // 必须把 vue-router 的 state 一起带上（...history.state）：它靠 state.position
         // 算前进还是后退，丢掉的话它会把这次返回当成「换了页」。
-        entryId = `dlg-${++dialogSeq}`;
+        //
+        // historyEntry 可以是布尔或函数。用函数是为了让调用方按「打开的那一刻」决定：
+        // 路由守卫里弹出的确认框不能压记录 —— 守卫正卡在一次导航中间，确认框一压一弹
+        // 会把 vue-router 用来「导航失败就退回原地址」的那次 history.go(-delta) 搅乱，
+        // 结果是点了「放弃」反而没换页（实测到过）。
+        const useHistoryEntry = typeof historyEntry === "function" ? historyEntry() : historyEntry;
+        entryId = null;
         closedByPop = false;
-        try {
-          history.pushState({ ...history.state, __dialogId: entryId }, "", location.href);
-        } catch {
-          // 文档不是「完全激活」状态时 pushState 会抛异常。
-          // 压不进去就当作没压过 —— entryId 留着会让关闭时去 back() 一个不存在的记录。
-          entryId = null;
+        if (useHistoryEntry) {
+          entryId = `dlg-${++dialogSeq}`;
+          try {
+            history.pushState({ ...history.state, __dialogId: entryId }, "", location.href);
+          } catch {
+            // 文档不是「完全激活」状态时 pushState 会抛异常。
+            // 压不进去就当作没压过 —— entryId 留着会让关闭时去 back() 一个不存在的记录。
+            entryId = null;
+          }
         }
 
         // 等这一帧渲染完，弹窗里的元素才存在
