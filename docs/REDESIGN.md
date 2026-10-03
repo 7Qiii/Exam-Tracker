@@ -1363,3 +1363,103 @@ npm run check    # 全绿；PWA 段仍报「Service Worker 已激活」
 删的是纯静态文件、没有任何脚本引用它（`supabase.js` 里的 `legacyError` /
 `toLegacySubjectRow` 只是同名，指的是数据库列映射，与这个目录无关），所以是惰性改动 ——
 PWA 检查全绿反过来证明没有误伤第十轮的接线。
+
+---
+
+## 第十三轮：错题列表的规模，和首屏不该背的代码
+
+起因是用户问「还有哪里可以优化」。这一轮全程**先量后改**，每条都留了改前 / 改后的数。
+
+### 1. 错题列表：两个独立的问题叠在一起
+
+`MistakesPage` 把筛选结果**整份**渲染、没有上限；搜索框又 `v-model` 直连
+`filters.keyword`，每敲一个字就重算全量筛选并重渲染所有卡片。
+
+实测（桌面 1440×900）：
+
+| 错题数 | DOM 节点 | 渲染耗时 |
+|---|---|---|
+| 50 | 1,451 | 27ms |
+| 200 | 5,051 | 65ms |
+| 500 | 12,251 | 148ms |
+| 1000 | 24,251 | 278ms |
+
+改法两处都向成绩页看齐（它两样本来就有）：
+
+- 按 **8 条/页**分页，复用现成的 `.pager` 样式
+- 搜索框绑草稿 `keywordDraft`，**260ms 防抖**之后才写进 `filters`
+- 换筛选回第 1 页；结果变少时把页码夹回有效范围
+
+改后：**任何条数都是 460 个节点、8 张卡片。**
+
+### 2. 首屏背了所有页面的代码
+
+router 里 8 个页面全是静态 import → 入口 chunk 628K raw / 190K gzip，
+而用户每次只看得见其中一页。改成 `() => import()`。
+
+**但只改这一处是负收益**：跨页面共享的 lucide 图标被切成一堆 0.14K 碎片，
+请求数从 4 涨到 16，省下的字节全被请求数吃回去。于是加 `manualChunks`。
+
+这里有个**量出来的教训**：第一版我还把 vue / supabase / dexie 各自拆成
+`vendor-*` 块 —— 结果它们**全都是首屏就要的**，字节一个没省，请求数却从 4 涨到 14。
+拆 vendor 只在「vendor 不必全量加载」时才有意义，这个应用不满足。
+改成**只并图标**，其余交给 Vite 默认策略。
+
+最终（gzip 传输量，含 css）：
+
+| 路由 | 改前 | 改后 |
+|---|---|---|
+| `/#/` | 214.2K | **191.4K**（js 190.1K → 167.3K）|
+| `/#/records` | 214.2K | 197.4K |
+| `/#/mistakes` | 214.2K | 183.2K |
+| `/#/backup` | 214.2K | 174.4K |
+| `/#/subjects` | 214.2K | 176.3K |
+
+即**少 12%~21% 字节，代价是请求数变多**（HTTP/2 多路复用能吸收一部分）。
+说实话收益没有一开始预期的大 —— 因为页面代码本身就不大，
+真正的大头是 vendor，其中 **supabase + dexie 就占 81K gzip**。
+
+### 3. 差点做错的一件事：以为能「不加载 Supabase」
+
+既然 vendor 是大头，很自然会想：supabase-js 只在登录 / 同步时用，
+改成懒加载不就能省 81K gzip？
+
+查了调用点才发现不行：store 初始化时（`load()` 里）就 `await getSession()`
+恢复登录态、并 `subscribeAuth()` 订阅鉴权变化 —— **Supabase 在启动路径上**。
+改成动态 import 只会把下载推到首屏之后，字节一分不少，
+却要动鉴权 / 同步这条最难验证的链路（沙箱连不上 Supabase，测不了）。
+所以**没做**，只把结论记下来。
+
+### 4. Service Worker：缓存只增不减，还缓存了别人家的东西
+
+`sw.js` 的 fetch 对每个 GET 都 `cache.put`，而且**不过滤 origin** ——
+Supabase / R2 的跨域响应也一起塞进 Cache Storage；activate 又只删**别的**
+cache 名、不动自己，于是带 hash 的旧资源永不淘汰，只能靠手改 `CACHE_NAME`。
+
+改法：跨域直接放行；只有 `/assets/`（带内容 hash，内容变了名字就变）走 cache-first；
+其余（HTML / 图标 / manifest，名字固定）保持 network-first；只缓存 200。
+`CACHE_NAME` 升到 **v4**，让旧条目在 activate 时被清掉。
+
+### 5. 故意没做的两件事
+
+- **`package.json` 加 `"type": "module"`**：能消掉跑测试时的
+  `MODULE_TYPELESS_PACKAGE_JSON` 警告，语义上也正确（所有 `.js` 都是 ESM）。
+  但它会改变 Node 对 `api/*.js` 的解析 —— 那是线上的 serverless 函数，
+  管着登录、同步、R2 上传和 AI 解析。**沙箱连不上 Vercel，这类运行时回归
+  不会体现在部署状态里，只会在线上炸。** 为了一行日志不值得。
+- **把 `vite` / `@vitejs/plugin-vue` 挪到 devDependencies**：纯卫生问题，
+  没有用户可见收益，却有可能让 Vercel 构建装不到 vite。
+
+另外还**撤回了自己提过的一条建议**：给 Supabase 加 `preconnect`。
+查了 `shouldUseSupabaseProxy()` 才发现默认走**同源代理**
+（`/api/supabase-proxy`），压根没有跨域握手可以省。
+
+### 验证
+
+```bash
+npm run check           # 全绿；PWA 段仍报「Service Worker 已激活」
+npm run check:buttons   # 131 条 / 0 个错误
+```
+
+`check` 里的交互审计**场景 7** 正好覆盖错题页的「收起表单」，a11y 也覆盖 `/mistakes`，
+所以这轮改动不是只靠自测。
