@@ -30,7 +30,7 @@ npm run build
 - AI 错题图片解析，自动生成标题、知识点和复盘内容
 - 数据导入导出，导出时会把图片转为可迁移 Data URL
 - PWA 基础缓存，保留移动端使用能力
-- 原静态版本保留在 `public/legacy/` 作为迁移参考
+- 旧静态版本已从仓库移除（原 `public/legacy/` 会进入构建产物，且其 `reset.html` 会注销 Service Worker 并清空预缓存）；需要查阅时见 git 历史
 
 ## 数据策略
 

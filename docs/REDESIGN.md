@@ -1291,3 +1291,75 @@ node scripts/verify-ui.mjs
 场景 7 的反向验证不是装饰：第一版就是因为它才暴露出「自动填的科目被当成用户输入」。
 另外每个场景都从 `reload()` 开始 —— `goto` 到只有 hash 不同的地址时浏览器可能只做
 同文档导航，上一个场景的组件状态会串进来（一开始就是这么误报了一条）。
+
+---
+
+## 第十二轮：把 `public/legacy/` 请出仓库
+
+### 1. 起因：本来只想清个死重
+
+`public/legacy/` 是 6 月 7 日迁移前的静态版本，`README.md` 写着「保留作为迁移参考」。
+本来只想问一句「要不要顺手清掉这 108K」，量了一下发现它不只是死重。
+
+### 2. 量出来的事实
+
+- Vite 把 `public/` **原样拷进 `dist/`** → 本地 `npm run build` 之后，预览服务器上
+  `/legacy/index.html` 和 `/legacy/app.js` 都是 HTTP 200（13102 B / 40634 B）。
+  **从源码构建出来的产物里都有这 108K。**
+- `legacy/reset.html` 是个迁移期的「清缓存」页，它做两件事：
+  1. `navigator.serviceWorker.getRegistrations()` → 注销本站**所有** SW
+  2. `caches.keys()` → 删掉**所有** Cache Storage
+
+  然后 `location.replace("./?v=reset-57bc308")` 跳回首页 —— 把破坏掩盖掉。
+- 新版 `public/sw.js` 的预缓存（`/`、manifest、5 个图标）正好存在那块 Cache Storage
+  里 → 谁访问到 `/legacy/reset.html`，就会**注销新版 SW + 清掉新版预缓存**，
+  打掉第十轮的成果。下次加载会重新注册，所以是**静默降级**，用户看不出原因。
+- `legacy/index.html` 引用 `./manifest.webmanifest`，而该文件不在 `public/legacy/`
+  里（只有 7 个文件）→ 404，旧应用本身就是坏的。
+- `legacy/db.js` 用 localStorage `exam-11408-state-v1`，与新版的 key 不同
+  → **不会污染新数据**，所以这不是数据安全问题。
+
+### 3. 一次差点写错的推断：生产上到底够不够得着
+
+先看 `vercel.json`：有一条兜底路由 `/(.*)` → `/index.html`。但 `/icon-192.png` 和
+`/manifest.webmanifest` 都没有单独路由，却确实能正常访问（第十轮验证过图标能装上）
+→ 于是推断「静态文件优先于兜底路由，所以 `/legacy/reset.html` 在生产上会被当真文件返回」。
+
+**这个推断是错的。** 漏看了一个文件：`.vercelignore` 第一行就是 `public/legacy`。
+`.vercelignore` 决定哪些文件**上传**到 Vercel —— 它不上传，Vercel 侧构建时
+`public/legacy` 根本不存在，`dist/legacy` 也就不会被生成。
+**所以线上从来没有服务过 `/legacy/`，那个隐患在生产上一直是够不着的。**
+
+漏看的原因值得记一笔：第一次搜引用用的是 `rg`，而它**默认跳过隐藏文件**，
+`.vercelignore` 是 dotfile，被静默略过了，于是得出了「只有 README 引用了它」的错误结论。
+`git grep` 会搜已跟踪的 dotfile，这次是靠它兜住的。
+
+修正后的结论：这 108K 与 `reset.html` 的隐患**只存在于本地 / 自建 / 非 Vercel 部署**，
+生产（Vercel）不受影响。删它依然值得 —— 死代码、本地隐患、外加能顺手删掉一行
+已经没用的 `.vercelignore` 配置 —— 但**不能**说成「打掉了线上的 PWA」。
+
+### 4. 删掉，并且验证删干净了
+
+`git rm -r public/legacy`（7 个文件），改掉 `README.md` 里那行，
+并删掉 `.vercelignore` 里已经没用的 `public/legacy`。
+
+验证的关键是**不能只看状态码**：删完之后 `/legacy/reset.html` 仍然返回 200 ——
+因为静态服务器对不存在的路径会兜底到 SPA 外壳。真正要看的是**返回的内容**：
+
+```bash
+curl -s http://127.0.0.1:4183/legacy/reset.html | grep -c "resetAppCache"  # → 0
+curl -s http://127.0.0.1:4183/legacy/reset.html | diff - dist/index.html   # → 无输出（逐字节相同）
+```
+
+`resetAppCache` 数到 0、且返回体与 `dist/index.html` 逐字节相同（都是 2011 B，
+引的是当前产物 `assets/index-U1LmRZYl.js`）→ 旧页面确实不再被服务。
+
+### 验证
+
+```bash
+npm run check    # 全绿；PWA 段仍报「Service Worker 已激活」
+```
+
+删的是纯静态文件、没有任何脚本引用它（`supabase.js` 里的 `legacyError` /
+`toLegacySubjectRow` 只是同名，指的是数据库列映射，与这个目录无关），所以是惰性改动 ——
+PWA 检查全绿反过来证明没有误伤第十轮的接线。
