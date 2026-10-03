@@ -1962,3 +1962,105 @@ iOS 上所有浏览器都是 WebKit，但**只有 Safari 能「添加到主屏�
 
 `check-pwa` 新增 25 条断言（启动图数量 / 尺寸 / manifest 品牌色 / 安装引导的显示与消失），
 `npm run check` 与 `npm run check:buttons` 全绿。
+
+---
+
+## 第十八轮：启动屏改成 Apple 那个样子 —— 一块底色，什么都不放（2026-10-03）
+
+> 公告｜优化｜启动屏按 Apple 的做法改成一块底色｜去掉了启动图上的字标和文字。Apple 的规范要求启动屏和首屏「几乎一样」，放 logo 和文字反而会多一次闪；现在从主屏幕点开，衔接处看不出来。
+
+### 1. 用户说「这个封面不好看，参考下大厂苹果的启动页面」
+
+去翻了 Apple 人机界面指南（HIG · Launching）的原文，四条要求摆在这儿：
+
+> **Downplay the launch experience.** A launch screen isn't part of an onboarding
+> experience or a splash screen, and **it isn't an opportunity for artistic expression.**
+>
+> **Design a launch screen that's nearly identical to the first screen of your app.**
+> … If your app displays a solid color before transitioning to the first screen,
+> **create a launch screen that displays only that solid color.**
+>
+> **Avoid including text on your launch screen**, even if your first screen displays text.
+>
+> **Don't advertise.** … **don't include logos or other branding elements** unless
+> they're a fixed part of your app's first screen.
+
+也就是说，上一轮那张「深蓝底 + IN 字标 + 错题本」**四条全踩**：
+它不是首屏，放了文字，放了 logo，还把启动屏当成了品牌展示位。
+后果很具体 —— 它制造了一次「深蓝 → 浅色」的闪，恰好是启动屏本来要消灭的东西。
+
+### 2. 于是改成：一块底色，不放任何东西
+
+用户「不好看」的直觉是对的，但正确的修法不是把封面做得更花，而是**让它消失**。
+现在每种外观只有一块纯色，没有任何内容。
+
+### 3. 但「取哪块底色」这件事，踩了两个坑
+
+**(a) 不能手抄 `--bg`。** 第一版老老实实从 `design-system.css` 里读 `--bg`，
+读出 `#f4f6f9`。结果和真实首屏对不上（实测首屏是 `#e9f0f9`）。
+原因是这个项目里 `--bg` 被定义了好几次，而 `main.css` 的
+`:root[data-theme="light"]`（特异度 **0,2,0**）压过了 `design-system.css` 里的
+裸 `:root`（**0,1,0**）—— 浅色真实的底色是 **`#dfe7f0`**。
+
+> 这和第 16 轮那个 bug 是**同一个特异度陷阱**，只是方向相反：
+> 那次是「媒体查询里的裸 `:root` 输给了 design-system 的裸 `:root`」，
+> 这次是「main.css 的属性选择器赢了 design-system 的裸 `:root`」。
+> 顺带说明：design-system.css 自称「视觉的最终裁决层」，但对 `--bg` 而言它其实**没赢**，
+> 这处重复定义值得单独清一次（本轮没动，因为它会改变 App 观感）。
+
+**(b) 也不能去复刻那层渐变。** 首屏 body 上叠了两层渐变，其中一条的色标是
+`rgba(197,213,232,0.78), rgba(223,231,240,0) 54%` —— **百分比色标按元素高度算**，
+而 body 高度由内容决定（实测 **3018px**，视口只有 844px）。静态图片无论怎么画都
+对不齐，而且复刻出来单张从 12KB 涨到 **505KB**（渐变被编码成抖动噪点）。
+
+实测两种做法的最大色差**是同一个量级**（Δ≈13/255）：
+
+```
+平铺 #dfe7f0：  顶部 Δ5   中部 Δ8   底部 Δ17
+复刻渐变：      顶部 Δ2   中部 Δ7   底部 Δ13
+```
+
+既然复刻渐变买不到什么，还把体积翻 40 倍，就用平铺底色。
+
+### 4. 颜色现在从哪来：让浏览器自己算
+
+不抄任何一处颜色，也不猜哪个 `--bg` 会赢 —— 直接把 `src/main.js` 里那 4 个 CSS
+按同样的顺序内联进一个空页面，**读 `getComputedStyle(document.body).backgroundColor`**。
+由浏览器按完整层叠算出来，改了 CSS 重新生成即可，永不漂移。
+
+`check-pwa` 也照这个口径验：开两个页面读真实首屏的 body 底色，再和 PNG 的
+**真实像素**对（每张 3×3 采 9 个点，顺便证明它确实是纯色 —— 中间那一点能抓到
+「有人在启动屏中间画了个 logo」这种回归）。
+
+### 5. 顺带把 PNG 改成自己编码
+
+纯色图没必要开无头浏览器截图。改成直接写 PNG 字节（`node:zlib` 的 `deflateSync`
++ `crc32`），并且每行用 **Up 过滤器**（存「本行 − 上一行」，纯色图里除了第一行
+整行都是 0）—— 生成从 20 秒降到 1 秒，也不再依赖 Chrome。
+
+### 6. 验证
+
+`check-pwa` 的启动图一段现在 22 张逐张过：
+
+```
+iOS 启动图
+  ok   声明了 22 张启动图
+  ok   读出 App 首屏两种主题的 body 底色（浅 #dfe7f0 / 深 #0f141b）
+  ok   启动图数量与 screens.json 一致（11 档机型 × 2 种外观 = 22 张）
+  ok   每一档机型的浅色 / 深色两条 link 都在
+  ok   1170x2532 12 / 13 / 14 尺寸与底色都对
+  …（11 档全过）
+  ok   screens.json 记的 light 底色与 App 首屏一致（#dfe7f0）
+  ok   screens.json 记的 dark 底色与 App 首屏一致（#0f141b）
+```
+
+衔接实测（把启动图接在首屏截图上面，接缝处画一条品红线）：
+
+```
+dark : 接缝上方 #0f141b  接缝下方 #0f141b   完全一致
+light: 接缝上方 #dfe7f0  接缝下方 #e9f0f9   Δ≈9（首屏那层渐变，见 3(b)）
+```
+
+深色是逐像素相等；浅色顶部只差 Δ5 左右，往下逐渐拉开到 Δ17 ——
+这也是为什么最终选了 `#dfe7f0`：它同时等于**状态栏的 `theme-color`**，
+顶部（视线最先落到的位置）匹配得最好。

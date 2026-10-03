@@ -1,57 +1,96 @@
-[
-  {
-    "file": "640x1136.png",
-    "media": "(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)",
-    "note": "SE 1代 / 5s"
+{
+  "colors": {
+    "light": "#dfe7f0",
+    "dark": "#0f141b"
   },
-  {
-    "file": "750x1334.png",
-    "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)",
-    "note": "SE 2/3代 / 8 / 7 / 6s"
-  },
-  {
-    "file": "1125x2436.png",
-    "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "X / XS / 11 Pro / 12·13 mini"
-  },
-  {
-    "file": "1170x2532.png",
-    "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "12 / 13 / 14"
-  },
-  {
-    "file": "1179x2556.png",
-    "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "14 Pro / 15 / 15 Pro / 16"
-  },
-  {
-    "file": "1206x2622.png",
-    "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "16 Pro"
-  },
-  {
-    "file": "828x1792.png",
-    "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)",
-    "note": "XR / 11"
-  },
-  {
-    "file": "1242x2688.png",
-    "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "XS Max / 11 Pro Max"
-  },
-  {
-    "file": "1284x2778.png",
-    "media": "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "12·13 Pro Max / 14 Plus"
-  },
-  {
-    "file": "1290x2796.png",
-    "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "14 Pro Max / 15 Plus / 15 Pro Max / 16 Plus"
-  },
-  {
-    "file": "1320x2868.png",
-    "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)",
-    "note": "16 Pro Max"
-  }
-]
+  "screens": [
+    {
+      "pixels": "640x1136",
+      "light": "/splash/light/640x1136.png",
+      "dark": "/splash/dark/640x1136.png",
+      "media": "(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)",
+      "note": "SE 1代 / 5s"
+    },
+    {
+      "pixels": "750x1334",
+      "light": "/splash/light/750x1334.png",
+      "dark": "/splash/dark/750x1334.png",
+      "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)",
+      "note": "SE 2/3代 / 8 / 7 / 6s"
+    },
+    {
+      "pixels": "1125x2436",
+      "light": "/splash/light/1125x2436.png",
+      "dark": "/splash/dark/1125x2436.png",
+      "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "X / XS / 11 Pro / 12·13 mini"
+    },
+    {
+      "pixels": "1170x2532",
+      "light": "/splash/light/1170x2532.png",
+      "dark": "/splash/dark/1170x2532.png",
+      "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "12 / 13 / 14"
+    },
+    {
+      "pixels": "1179x2556",
+      "light": "/splash/light/1179x2556.png",
+      "dark": "/splash/dark/1179x2556.png",
+      "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "14 Pro / 15 / 15 Pro / 16"
+    },
+    {
+      "pixels": "1206x2622",
+      "light": "/splash/light/1206x2622.png",
+      "dark": "/splash/dark/1206x2622.png",
+      "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "16 Pro"
+    },
+    {
+      "pixels": "828x1792",
+      "light": "/splash/light/828x1792.png",
+      "dark": "/splash/dark/828x1792.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)",
+      "note": "XR / 11"
+    },
+    {
+      "pixels": "1242x2688",
+      "light": "/splash/light/1242x2688.png",
+      "dark": "/splash/dark/1242x2688.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "XS Max / 11 Pro Max"
+    },
+    {
+      "pixels": "1284x2778",
+      "light": "/splash/light/1284x2778.png",
+      "dark": "/splash/dark/1284x2778.png",
+      "media": "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "12·13 Pro Max / 14 Plus"
+    },
+    {
+      "pixels": "1290x2796",
+      "light": "/splash/light/1290x2796.png",
+      "dark": "/splash/dark/1290x2796.png",
+      "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "14 Pro Max / 15 Plus / 15 Pro Max / 16 Plus"
+    },
+    {
+      "pixels": "1320x2868",
+      "light": "/splash/light/1320x2868.png",
+      "dark": "/splash/dark/1320x2868.png",
+      "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)",
+      "note": "16 Pro Max"
+    }
+  ]
+}

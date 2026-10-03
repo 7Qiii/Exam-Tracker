@@ -16,6 +16,9 @@
  *   5. iOS 需要的 apple-touch-icon 存在（iOS 不认 SVG）
  *   6. Service Worker 真的注册成功（可安装的必要条件）
  *   7. 快捷方式的 URL 与路由模式匹配（hash 路由必须带 /#/）
+ *   8. iOS 启动图：每档机型浅 / 深两条都在、真实像素尺寸正确、
+ *      而且底色真的等于 App 的 --bg（采样 PNG 像素，不是信配置）
+ *   9. iOS 安装引导只在 iPhone Safari 上出现，关掉后刷新也不再出现
  *
  * 用法：node scripts/check-pwa.mjs
  */
@@ -160,56 +163,119 @@ check(
   "一个 apple-touch-startup-image 都没有 —— 从主屏幕启动会先闪一张白屏"
 );
 
-// 和生成器的清单对答案。index.html 里的 media 是手贴的，机型列表在
-// public/splash/screens.json 里，两边会漂移，所以要逐条比。
-const screensPath = join(ROOT, "public", "splash", "screens.json");
-if (existsSync(screensPath)) {
-  const expected = JSON.parse(await readFile(screensPath, "utf8"));
-  check(
-    expected.length === startupLinks.length,
-    `启动图数量与 screens.json 一致（${expected.length} 档机型）`,
-    `index.html 里有 ${startupLinks.length} 张，screens.json 里是 ${expected.length} 张 —— 两边漂移了`
-  );
-  const missing = expected.filter((e) => !startupLinks.some((l) => l.media === e.media));
-  check(
-    missing.length === 0,
-    "screens.json 里每一档机型都在 index.html 里有对应的 link",
-    `缺少：${missing.map((m) => m.note).join("、")}`
-  );
+// 启动屏底色必须和 App 首屏的 body 底色一致，否则「启动屏 → 首屏」会闪一下。
+// 颜色不在这里抄第二遍 —— 开两个页面让**浏览器按真实层叠**算出 body 的
+// backgroundColor，再和 PNG 的真实像素对。这样改了 CSS 忘了重新生成，这里就会挂。
+// （注意不能只读 design-system.css 的 --bg：main.css 里 :root[data-theme="light"]
+//   特异度更高，浅色真实的底色是它说了算。）
+const APP_BG = {};
+for (const mode of ["light", "dark"]) {
+  const ctx = await browser.newContext({ viewport: { width: 320, height: 568 } });
+  const p = await ctx.newPage();
+  await p.goto(base, { waitUntil: "load" });
+  await p.waitForTimeout(300);
+  await p.evaluate((m) => {
+    document.documentElement.dataset.theme = m;
+  }, mode);
+  APP_BG[mode] = await p.evaluate(() => {
+    const parts = getComputedStyle(document.body).backgroundColor.match(/\d+/g).map(Number);
+    return `#${parts.slice(0, 3).map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  });
+  await ctx.close();
 }
+check(
+  !!APP_BG.light && !!APP_BG.dark,
+  `读出 App 首屏两种主题的 body 底色（浅 ${APP_BG.light} / 深 ${APP_BG.dark}）`,
+  "读不到 body 的计算背景色"
+);
 
-// 每张图都要能取到，而且**真实像素必须和 media 查询算出来的完全一致**。
-// 对不上时 iOS 会直接不用这张图 —— 表现是「启动图时有时无」，非常难查。
-for (const link of startupLinks) {
-  const st = await page.evaluate((href) => fetch(href).then((r) => r.status).catch(() => 0), link.href);
-  if (st !== 200) {
-    bad(`${link.href} 取不到（HTTP ${st}）`);
-    continue;
-  }
-  const parsed = /device-width:\s*(\d+)px.*device-height:\s*(\d+)px.*-webkit-device-pixel-ratio:\s*([\d.]+)/.exec(link.media);
-  if (!parsed) {
-    bad(`${link.href} 的 media 解析不了：${link.media}`);
-    continue;
-  }
-  const w = Number(parsed[1]) * Number(parsed[3]);
-  const h = Number(parsed[2]) * Number(parsed[3]);
-  const actual = await page.evaluate(async (href) => {
-    const blob = await (await fetch(href)).blob();
-    const url = URL.createObjectURL(blob);
+/** 取一张图的真实像素尺寸 + 若干个采样点的颜色（用来证明它是一块纯色）。 */
+const probePng = (href) =>
+  page.evaluate(async (url) => {
+    const blob = await (await fetch(url)).blob();
+    const objectUrl = URL.createObjectURL(blob);
     const img = await new Promise((res) => {
       const i = new Image();
       i.onload = () => res(i);
       i.onerror = () => res(null);
-      i.src = url;
+      i.src = objectUrl;
     });
-    URL.revokeObjectURL(url);
-    return img ? [img.naturalWidth, img.naturalHeight] : null;
-  }, link.href);
+    if (!img) {
+      URL.revokeObjectURL(objectUrl);
+      return null;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const hex = (x, y) => {
+      const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+      return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+    };
+    // 3×3 采样：正中间那一点能抓到「有人在启动屏中间放了个 logo」这种回归。
+    const points = [0.25, 0.5, 0.75].flatMap((fy) =>
+      [0.25, 0.5, 0.75].map((fx) => hex(Math.floor(img.naturalWidth * fx), Math.floor(img.naturalHeight * fy)))
+    );
+    URL.revokeObjectURL(objectUrl);
+    return { w: img.naturalWidth, h: img.naturalHeight, colors: [...new Set(points)] };
+  }, href);
+
+// 和生成器的清单对答案。index.html 里的 link 是贴上去的，机型列表在
+// public/splash/screens.json 里，两边会漂移，所以要逐档比。
+const screensPath = join(ROOT, "public", "splash", "screens.json");
+if (existsSync(screensPath)) {
+  const { screens: expected, colors: declaredColors } = JSON.parse(await readFile(screensPath, "utf8"));
   check(
-    actual && actual[0] === w && actual[1] === h,
-    `${link.href} ${actual?.[0]}×${actual?.[1]} 与 media 要求一致`,
-    `尺寸对不上：实际 ${actual?.[0]}×${actual?.[1]}，media 要求 ${w}×${h}`
+    expected.length * 2 === startupLinks.length,
+    `启动图数量与 screens.json 一致（${expected.length} 档机型 × 2 种外观 = ${expected.length * 2} 张）`,
+    `index.html 里有 ${startupLinks.length} 张，screens.json 要求 ${expected.length * 2} 张 —— 两边漂移了`
   );
+  const missing = expected.filter(
+    (e) => !startupLinks.some((l) => l.media === e.media) || !startupLinks.some((l) => l.media === e.mediaDark)
+  );
+  check(
+    missing.length === 0,
+    "每一档机型的浅色 / 深色两条 link 都在",
+    `缺少：${missing.map((m) => m.note).join("、")}`
+  );
+
+  // 逐档机型核对四条：link 在、图能取到、**真实像素 = media 算出来的值**、
+  // **真实像素颜色 = App 首屏的 body 底色**。尺寸对不上时 iOS 会直接不用这张图
+  //（表现是「启动图时有时无」，极难查）；颜色对不上则会「启动屏 → 首屏」闪一下。
+  for (const screen of expected) {
+    const [w, h] = screen.pixels.split("x").map(Number);
+    const results = [];
+    for (const mode of ["light", "dark"]) {
+      const href = screen[mode];
+      const link = startupLinks.find((l) => l.href === href);
+      if (!link) {
+        results.push(`${mode} 没有 link`);
+        continue;
+      }
+      const probe = await probePng(href);
+      if (!probe) {
+        results.push(`${mode} 取不到`);
+        continue;
+      }
+      if (probe.w !== w || probe.h !== h) results.push(`${mode} 尺寸 ${probe.w}×${probe.h}≠${w}×${h}`);
+      // 纯色：9 个采样点必须同色，否则说明有人在启动屏上画了东西
+      if (probe.colors.length !== 1) results.push(`${mode} 不是纯色（${probe.colors.join("/")}）`);
+      else if (probe.colors[0] !== APP_BG[mode]) {
+        results.push(`${mode} 底色 ${probe.colors[0]}≠首屏 ${APP_BG[mode]}`);
+      }
+    }
+    check(results.length === 0, `${screen.pixels} ${screen.note} 尺寸与底色都对`, results.join("；"));
+  }
+
+  // screens.json 里记的颜色也要和 App 首屏一致，否则说明生成器读错了来源
+  for (const mode of ["light", "dark"]) {
+    check(
+      (declaredColors?.[mode] || "") === APP_BG[mode],
+      `screens.json 记的 ${mode} 底色与 App 首屏一致（${declaredColors?.[mode]}）`,
+      `screens.json 写的是 ${declaredColors?.[mode]}，App 首屏是 ${APP_BG[mode]} —— 生成器读的颜色来源不对`
+    );
+  }
 }
 
 console.log("\niOS 安装引导");
