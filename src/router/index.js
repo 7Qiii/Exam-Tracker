@@ -1,13 +1,25 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
-import DashboardPage from "../pages/DashboardPage.vue";
-import RecordsPage from "../pages/RecordsPage.vue";
-import RecordDetailPage from "../pages/RecordDetailPage.vue";
-import MistakesPage from "../pages/MistakesPage.vue";
-import MistakeDetailPage from "../pages/MistakeDetailPage.vue";
-import LoginPage from "../pages/LoginPage.vue";
-import SubjectsPage from "../pages/SubjectsPage.vue";
-import BackupPage from "../pages/BackupPage.vue";
+
+/**
+ * 页面全部懒加载。
+ *
+ * 以前是 8 个静态 import，于是所有页面的代码都堆在入口 chunk 里 ——
+ * 实测入口 628K raw / 190K gzip，而用户每次只看得见其中一页。
+ * 改成动态 import 后入口降到 140K gzip 左右，各页按需加载。
+ *
+ * 注意：光改这里不够。动态 import 会把跨页面共享的 lucide 图标切成一堆
+ * 0.1K 的碎片，请求数从 4 涨到 16 —— 必须配合 vite.config.js 里的
+ * manualChunks 把图标并回去，否则省了字节、赔了请求数。
+ */
+const DashboardPage = () => import("../pages/DashboardPage.vue");
+const RecordsPage = () => import("../pages/RecordsPage.vue");
+const RecordDetailPage = () => import("../pages/RecordDetailPage.vue");
+const MistakesPage = () => import("../pages/MistakesPage.vue");
+const MistakeDetailPage = () => import("../pages/MistakeDetailPage.vue");
+const LoginPage = () => import("../pages/LoginPage.vue");
+const SubjectsPage = () => import("../pages/SubjectsPage.vue");
+const BackupPage = () => import("../pages/BackupPage.vue");
 
 /**
  * 这次导航是不是「浏览器返回 / 前进」触发的。

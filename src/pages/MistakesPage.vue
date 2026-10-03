@@ -8,9 +8,9 @@
  * - 每行可以直接切掌握状态，不用进详情页；主按钮是「复习」而不是「详情」。
  * - 排序默认按创建时间，符合「一题一题往下过」的习惯。
  */
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { BookOpenCheck, Image, Inbox, Plus, Trash2 } from "@lucide/vue";
+import { BookOpenCheck, ChevronLeft, ChevronRight, Image, Inbox, Plus, Trash2 } from "@lucide/vue";
 import ImageSyncQueue from "../components/ImageSyncQueue.vue";
 import MistakeForm from "../components/MistakeForm.vue";
 import DsEmptyState from "../components/ds/DsEmptyState.vue";
@@ -43,6 +43,16 @@ const SORT_OPTIONS = MISTAKE_SORT_OPTIONS;
 const filters = reactive(readMistakeFilters(route.query));
 const showForm = ref(false);
 const savingId = ref("");
+
+/**
+ * 分页。
+ *
+ * 以前这里把筛选结果整份渲染出来，没有上限 —— 实测 500 条错题是 12,251 个 DOM
+ * 节点 / 148ms，1000 条是 24,251 个 / 278ms（还只是桌面端，手机上要再乘几倍）。
+ * 成绩页一直是 8 条一页，这里对齐它。
+ */
+const page = ref(1);
+const pageSize = 8;
 
 /**
  * 收起 / 展开新增错题表单。收起时表单会被 v-if 拆掉，填过（甚至跑过 AI 解析）
@@ -103,6 +113,8 @@ const statusCounts = computed(() => {
 });
 
 const filteredMistakes = computed(() => filterAndSortMistakes(store.mistakes, filters, store.subjectName));
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredMistakes.value.length / pageSize)));
+const pagedMistakes = computed(() => filteredMistakes.value.slice((page.value - 1) * pageSize, page.value * pageSize));
 
 const activeFilterCount = computed(
   () =>
@@ -111,14 +123,50 @@ const activeFilterCount = computed(
 
 const hasFilter = computed(() => hasActiveMistakeFilters(filters));
 
-// 筛选条件同步到地址栏：刷新、分享、前进后退都不会丢
+/**
+ * 搜索框做 260ms 防抖（和成绩页同一套做法）。
+ *
+ * 以前是 `v-model` 直连 `filters.keyword`：每敲一个字就重算一遍全量筛选，
+ * 再把所有卡片重渲染一次 —— 500 条错题实测 148ms/键，手机上会明显卡。
+ * 现在输入框绑草稿，停手 260ms 之后才写进 filters。
+ */
+const keywordDraft = ref(filters.keyword);
+let keywordTimer = null;
+watch(keywordDraft, (value) => {
+  if (keywordTimer) window.clearTimeout(keywordTimer);
+  keywordTimer = window.setTimeout(() => {
+    if (filters.keyword !== value) filters.keyword = value;
+  }, 260);
+});
+
+// 外部改 filters.keyword 时（清空筛选、前进后退恢复）要把草稿跟上，
+// 否则输入框显示的和实际生效的筛选会不一致。
+watch(
+  () => filters.keyword,
+  (value) => {
+    if (value !== keywordDraft.value) keywordDraft.value = value;
+  }
+);
+
+onBeforeUnmount(() => {
+  if (keywordTimer) window.clearTimeout(keywordTimer);
+});
+
+// 筛选条件同步到地址栏：刷新、分享、前进后退都不会丢。
+// 换筛选一定要回到第 1 页，否则会停在一个「结果变了但页码没变」的空页上。
 watch(
   () => ({ ...filters }),
   (value) => {
+    page.value = 1;
     router.replace({ path: "/mistakes", query: toMistakeQuery(value) });
   },
   { deep: true }
 );
+
+// 结果变少（删错题、改状态后被筛掉）时把页码夹回有效范围
+watch(pageCount, (count) => {
+  if (page.value > count) page.value = count;
+});
 
 /** 详情页带着同一套筛选条件打开，上一题/下一题才不会跑出当前队列 */
 function reviewLink(id) {
@@ -217,7 +265,7 @@ function formatDate(value) {
     <DsFilterBar :min-field-width="140">
       <label class="ds-field">
         <span class="ds-field-label">搜索</span>
-        <input v-model.trim="filters.keyword" type="search" placeholder="题目、知识点或解析" />
+        <input v-model.trim="keywordDraft" type="search" placeholder="题目、知识点或解析" />
       </label>
       <label class="ds-field">
         <span class="ds-field-label">科目</span>
@@ -268,41 +316,50 @@ function formatDate(value) {
     <!-- 数据来自本地 IndexedDB，通常是瞬时读完，但首次打开仍可能有一帧空白，
          这里用骨架屏顶上，避免先闪一下「错题库还是空的」再跳出内容。 -->
     <DsLoadingState v-if="!store.isReady" variant="cards" :rows="4" label="正在读取错题库…" />
-    <div v-else-if="filteredMistakes.length" class="ds-card-list">
-      <article v-for="item in filteredMistakes" :key="item.id" class="review-card">
-        <RouterLink class="review-card-main" :to="reviewLink(item.id)">
-          <span class="review-card-title">{{ item.title }}</span>
-          <span class="review-card-meta">
-            <span>{{ store.subjectName(item.subjectId) }}</span>
-            <span>{{ item.knowledgePoint || "未分类知识点" }}</span>
-            <span>{{ item.difficulty || "难度未填" }}</span>
-            <span>{{ formatDate(item.createdAt) }} 创建</span>
-            <span v-if="imageCount(item.id)"><Image :size="13" /> {{ imageCount(item.id) }} 张图</span>
-            <span v-if="item.analysis">已写解析</span>
-            <span v-else>待补解析</span>
-          </span>
-        </RouterLink>
+    <template v-else-if="filteredMistakes.length">
+      <div class="ds-card-list">
+        <article v-for="item in pagedMistakes" :key="item.id" class="review-card">
+          <RouterLink class="review-card-main" :to="reviewLink(item.id)">
+            <span class="review-card-title">{{ item.title }}</span>
+            <span class="review-card-meta">
+              <span>{{ store.subjectName(item.subjectId) }}</span>
+              <span>{{ item.knowledgePoint || "未分类知识点" }}</span>
+              <span>{{ item.difficulty || "难度未填" }}</span>
+              <span>{{ formatDate(item.createdAt) }} 创建</span>
+              <span v-if="imageCount(item.id)"><Image :size="13" /> {{ imageCount(item.id) }} 张图</span>
+              <span v-if="item.analysis">已写解析</span>
+              <span v-else>待补解析</span>
+            </span>
+          </RouterLink>
 
-        <div class="review-card-side">
-          <div class="review-status-switch" role="group" aria-label="掌握状态">
-            <button
-              v-for="status in STATUS_OPTIONS"
-              :key="status"
-              type="button"
-              :class="{ active: (item.status || '待复盘') === status }"
-              :disabled="Boolean(savingId)"
-              @click="setStatus(item, status)"
-            >
-              {{ status }}
+          <div class="review-card-side">
+            <div class="review-status-switch" role="group" aria-label="掌握状态">
+              <button
+                v-for="status in STATUS_OPTIONS"
+                :key="status"
+                type="button"
+                :class="{ active: (item.status || '待复盘') === status }"
+                :disabled="Boolean(savingId)"
+                @click="setStatus(item, status)"
+              >
+                {{ status }}
+              </button>
+            </div>
+            <RouterLink class="secondary-button compact" :to="reviewLink(item.id)">复习</RouterLink>
+            <button class="icon-button danger" type="button" title="删除错题" aria-label="删除错题" @click="removeMistake(item)">
+              <Trash2 :size="15" />
             </button>
           </div>
-          <RouterLink class="secondary-button compact" :to="reviewLink(item.id)">复习</RouterLink>
-          <button class="icon-button danger" type="button" title="删除错题" aria-label="删除错题" @click="removeMistake(item)">
-            <Trash2 :size="15" />
-          </button>
-        </div>
-      </article>
-    </div>
+        </article>
+      </div>
+
+      <!-- 分页：和成绩页共用同一套 .pager 样式 -->
+      <div v-if="pageCount > 1" class="pager">
+        <button type="button" :disabled="page === 1" @click="page -= 1"><ChevronLeft :size="16" />上一页</button>
+        <span>{{ page }} / {{ pageCount }}</span>
+        <button type="button" :disabled="page === pageCount" @click="page += 1">下一页<ChevronRight :size="16" /></button>
+      </div>
+    </template>
 
     <DsEmptyState
       v-else
