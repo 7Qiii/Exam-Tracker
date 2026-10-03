@@ -56,7 +56,7 @@ const form = reactive({
  * 关联成绩都是自动填的（见下面那个 watcher），算进去会让表单一打开就是脏的。
  * 图片单独算一路：它是「已选但未保存」的文件，不在 form 里。
  * ------------------------------------------------------------------ */
-const { markPrefill, resetDirty } = useUnsavedFields(
+const { isDirty, resetDirty } = useUnsavedFields(
   form,
   ["title", "knowledgePoint", "questionText", "analysis", "nextReviewAt"],
   { extraDirty: () => files.value.length > 0 }
@@ -195,11 +195,31 @@ function parseErrorMessage(message) {
   }
 }
 
+/** 已经灌进表单的「源」。只有它变了才重新灌，见下面。 */
+let appliedSourceKey = null;
+
 watch(
   () => [store.visibleSubjects, props.mistake, props.sourceRecordId, store.records.length],
   () => {
     const source = props.mistake || {};
     const queryRecord = !props.mistake && props.sourceRecordId ? store.records.find((record) => record.id === props.sourceRecordId) : null;
+
+    const sourceKey = `${props.mistake?.id || "new"}|${props.sourceRecordId || ""}`;
+    // 源没变、但源里的东西还没到位：直接打开 /mistakes?recordId=xxx 时成绩表可能还没加载完。
+    // 这种情况只在**表单还没脏**的时候重试一次，否则会把用户已经输入的内容冲掉。
+    const waitingForSource = !props.mistake && Boolean(props.sourceRecordId) && !queryRecord && !isDirty.value;
+
+    if (sourceKey === appliedSourceKey && !waitingForSource) {
+      // 源没变就一个字段都不动。
+      //
+      // 以前这里是无条件重灌：后台同步拉回一条成绩（records.length 变了）、
+      // 或者科目表被重新赋值（visibleSubjects 重算），都会把用户正在输入的内容
+      // 冲掉 —— 实测标题会直接变回空。只补一个「还没填上」的默认科目。
+      if (!form.subjectId) form.subjectId = source.subjectId || store.visibleSubjects[0]?.id || "";
+      return;
+    }
+    appliedSourceKey = sourceKey;
+
     form.subjectId = source.subjectId || store.visibleSubjects[0]?.id || "";
     form.title = source.title || "";
     form.knowledgePoint = source.knowledgePoint || "";
@@ -214,10 +234,10 @@ watch(
       form.subjectId = queryRecord.subjectId;
       form.title = queryRecord.paperName ? `${queryRecord.paperName} 错题` : form.title;
     }
-    // 自动填充结束 —— 此刻的样子就是「用户还没动过」的基线。
-    // 从成绩页点「基于本成绩新增错题」过来时标题是自动填的（`xxx 错题`），
-    // 记成基线才不会一进来就被当成「有未保存内容」。
-    markPrefill();
+    // 源换了 → 表单现在就是源的样子，**无条件**重记基线。
+    // 一来从成绩页点「基于本成绩新增错题」过来时标题是自动填的（`xxx 错题`），
+    // 二来换了一道题之后如果不重记，表单会一直显示「有未保存内容」。
+    resetDirty();
   },
   { immediate: true, deep: true }
 );

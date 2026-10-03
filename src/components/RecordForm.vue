@@ -44,7 +44,7 @@ const form = reactive({
  * （科目取第一个可见科目、满分跟着科目、日期默认今天），算进去的话
  * 表单一打开就是「脏」的 —— 见 composables/useUnsavedChanges.js 里的说明。
  * ------------------------------------------------------------------ */
-const { markPrefill, resetDirty } = useUnsavedFields(form, [
+const { resetDirty } = useUnsavedFields(form, [
   "paperName",
   "exerciseBookName",
   "exercisePage",
@@ -119,9 +119,24 @@ const exerciseBooks = computed(() => {
   return [...new Set(books)].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 });
 
+/** 已经灌进表单的「源」。只有它变了才重新灌，见下面。 */
+let appliedSourceKey = null;
+
 watch(
   () => [store.visibleSubjects, props.record],
   () => {
+    const sourceKey = props.record?.id || "new";
+    if (sourceKey === appliedSourceKey) {
+      // 源没变就一个字段都不动。
+      //
+      // 以前这里是无条件重灌：科目表被重新赋值时（store.visibleSubjects 每次重算
+      // 都是个新数组，同步拉回科目就会重算）编辑态的表单会被整个覆盖一遍 ——
+      // 实测改过的卷名和备注直接变回原值。只补一个「还没填上」的默认科目。
+      if (!form.subjectId && store.visibleSubjects.length) form.subjectId = store.visibleSubjects[0].id;
+      return;
+    }
+    appliedSourceKey = sourceKey;
+
     if (props.record) {
       form.subjectId = props.record.subjectId || "";
       form.recordType = props.record.recordType || "paper";
@@ -142,10 +157,10 @@ watch(
       }
       ensurePaperVariant();
     }
-    // 自动填充结束 —— 此刻的样子就是「用户还没动过」的基线。
-    // 科目表是异步来的，这个 watcher 之后还会再跑一次；markPrefill 内部
-    // 只在表单还没脏的时候才挪基线，所以不会盖掉用户已经输入的内容。
-    markPrefill();
+    // 源换了 → 表单现在就是源的样子，**无条件**重记基线。
+    // 这里不能省：换了一条成绩之后如果不重记，表单会一直显示「有未保存内容」，
+    // 关的时候白问一句。
+    resetDirty();
   },
   { immediate: true }
 );

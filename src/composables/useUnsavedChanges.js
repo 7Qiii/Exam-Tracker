@@ -73,10 +73,15 @@ function normalizeFieldValue(value) {
  * （analyzeWithAi 直接改 form.title / questionText / analysis），一个事件都没有；
  * 上传的图片同理。而这些恰恰是花了一次 AI 调用换来的、最不该丢的内容。
  *
- * 所以反过来做：让表单在**自动填充结束**的时候调 markPrefill() 记下当时的字段值
+ * 所以反过来做：让表单在**自动填充结束**的时候调 resetDirty() 记下当时的字段值
  * 当基线，之后只要用户动了其中任何一个字段就算脏。编辑态也一样 —— 自动填充把
  * 记录的值灌进来时顺手记成基线，不用再单独跟 record 逐字段比（还能避开
  * paperVariant 这类「落库前会被规范化」的字段造成的假脏）。
+ *
+ * 注意 resetDirty() 是**无条件**重记基线的，所以调用它的时机很关键：
+ * 只能用在「表单内容确实刚刚被整体设成某个已知状态」的时候（自动填充结束、保存成功）。
+ * 反过来，自动填充本身必须**只在源变了的时候**才跑 —— 判脏只管得住
+ * 「有没有未保存内容」这个标记，管不住内容本身会不会被覆盖。
  *
  * @param {object} form      reactive 表单对象
  * @param {string[]} fields  用户会真正输入的字段名
@@ -93,28 +98,17 @@ export function useUnsavedFields(form, fields, { extraDirty } = {}) {
     return fields.some((field) => normalizeFieldValue(form[field]) !== normalizeFieldValue(base[field]));
   });
 
-  function capture() {
-    prefill.value = Object.fromEntries(fields.map((field) => [field, form[field]]));
-  }
-
   /**
-   * 自动填充结束后调用。
-   * **已经脏了就不挪基线** —— 否则一次异步的自动填充会把基线盖到用户输入上，
-   * 表单会凭空变回「没改过」，保护就失效了。
+   * 把当前内容认作基线，表单回到「没改过」。
+   * 两处会调：保存成功之后、以及自动填充灌完一轮之后。
    */
-  function markPrefill() {
-    if (isDirty.value) return;
-    capture();
-  }
-
-  /** 保存成功后调用：把当前内容认作新的基线，表单回到「没改过」。 */
   function resetDirty() {
-    capture();
+    prefill.value = Object.fromEntries(fields.map((field) => [field, form[field]]));
   }
 
   useUnsavedForm(isDirty);
 
-  return { isDirty, markPrefill, resetDirty };
+  return { isDirty, resetDirty };
 }
 
 /**
