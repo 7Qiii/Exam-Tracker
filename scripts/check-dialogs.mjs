@@ -10,6 +10,7 @@
  *   2. Tab / Shift+Tab 若干次，焦点始终留在弹窗内
  *   3. Escape 能关掉
  *   4. 关掉后焦点回到打开它的那个按钮
+ *   5. 返回手势（手机侧滑 / 安卓系统返回键）只关弹窗、不换页
  *
  * 用法：
  *   node scripts/check-dialogs.mjs
@@ -277,6 +278,57 @@ async function checkDialog(browser, base, spec) {
   return { problems, consoleErrors };
 }
 
+/**
+ * 返回手势（手机侧滑 / 安卓系统返回键）只关弹窗、不换页。
+ *
+ * 单独开一个页面跑，而不是接在 checkDialog 后面：合成成绩那个弹窗关掉之后
+ * 再用同一个按钮是打不开的（要先重新勾选记录），复用页面会误报「弹窗没打开」。
+ *
+ * 用页面内的 history.back() 而不是 page.goBack()：弹窗压进去的是一条**同地址**
+ * 的记录，这条返回不产生导航，Playwright 的 goBack 会一直等 load 事件。
+ * history.back() 走的正是浏览器返回键那一条代码路径。
+ */
+async function checkBackGesture(browser, base, spec) {
+  const problems = [];
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${base}/#${spec.route}`, { waitUntil: "load" });
+    await page.waitForTimeout(2200);
+
+    await spec.open(page);
+    await page.waitForTimeout(700);
+    if (!(await page.locator(spec.selector).count())) {
+      problems.push("弹窗没打开（选择器找不到）");
+      return problems;
+    }
+
+    const before = await page.evaluate(() => ({ hash: location.hash, marker: history.state?.__dialogId ?? null }));
+    if (!before.marker) {
+      problems.push("打开时没往历史里压记录（history.state.__dialogId 为空），手机返回手势会直接离开当前页");
+    }
+
+    await page.evaluate(() => history.back());
+    await page.waitForTimeout(800);
+
+    const after = await page.evaluate(
+      `(() => ({
+        hash: location.hash,
+        marker: history.state?.__dialogId ?? null,
+        open: Boolean(document.querySelector(${JSON.stringify(spec.selector)}))
+      }))()`
+    );
+
+    if (after.open) problems.push(`返回手势关不掉弹窗（还开着，页面已经从 ${before.hash} 换到 ${after.hash}）`);
+    if (after.hash !== before.hash) problems.push(`返回手势换了页：${before.hash} → ${after.hash}`);
+    if (after.marker) problems.push(`返回后历史里还留着标记 ${after.marker}，之后按返回会「没反应」一下`);
+  } catch (error) {
+    problems.push(`执行出错：${String(error.message)}`);
+  } finally {
+    await page.close();
+  }
+  return problems;
+}
+
 async function main() {
   if (!existsSync(DIST)) throw new Error("dist/ 不存在，先跑一次 npm run build。");
 
@@ -290,12 +342,13 @@ async function main() {
   for (const spec of dialogs) {
     const { problems, consoleErrors } = await checkDialog(browser, base, spec);
     if (consoleErrors.length) problems.push(`控制台报错：${consoleErrors[0]}`);
+    problems.push(...(await checkBackGesture(browser, base, spec)));
     if (problems.length) {
       failed += 1;
       console.log(`✗ ${spec.name}`);
       problems.forEach((problem) => console.log(`    · ${problem}`));
     } else {
-      console.log(`✓ ${spec.name} —— 焦点进入 / Tab 不逃逸 / Escape 关闭 / 焦点归位 / 滚动锁定`);
+      console.log(`✓ ${spec.name} —— 焦点进入 / Tab 不逃逸 / Escape 关闭 / 焦点归位 / 滚动锁定 / 返回手势只关弹窗`);
     }
   }
 

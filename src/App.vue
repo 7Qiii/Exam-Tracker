@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import {
   BarChart3,
@@ -29,6 +29,8 @@ import { useTrackerStore } from "./stores/tracker";
 const store = useTrackerStore();
 const route = useRoute();
 const router = useRouter();
+/** 正文容器。换页后把焦点移到这里，见下面的 route watcher */
+const mainRef = ref(null);
 const isSidebarOpen = ref(false);
 const isOnline = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const globalSearch = ref("");
@@ -172,12 +174,59 @@ function openGlobalResult(item = globalSearchResults.value[0]) {
  *
  * 之前只有「选中一条结果」和「路由变化」会收起它 —— 输入几个字之后
  * 点页面别处，那个浮层会一直挂在那儿挡住下面的内容。
- *
- * 这里可以放心用 blur：结果项用的是 @mousedown.prevent，点它们不会让
- * 输入框失焦，所以不会出现「刚点下去结果就被关掉」。
  */
 function closeGlobalSearch() {
   isGlobalSearchOpen.value = false;
+}
+
+/**
+ * 输入框失焦时要不要收起浮层。
+ *
+ * 不能直接 closeGlobalSearch：结果项就在这个浮层里，键盘用户按 Tab 从输入框
+ * 移到结果上时，输入框同样会失焦 —— 之前一失焦就收起，浮层先没了，结果项
+ * 对键盘来说等于不存在。所以只在焦点真的离开整个搜索框时才收。
+ * relatedTarget 为空（点到页面空白、或浮层被移除）也算离开。
+ */
+function onSearchBlur(event) {
+  const next = event.relatedTarget;
+  if (next && searchBoxRef.value?.contains(next)) return;
+  closeGlobalSearch();
+}
+
+/**
+ * 搜索浮层的键盘操作。
+ *
+ * ↑↓ 在输入框和结果之间移动（从输入框按 ↑ 直接落到最后一条），Escape 收起。
+ * Enter 不用管：焦点在输入框时走 form 的 submit（打开第一条），
+ * 焦点在结果项时按钮自己会触发 click。
+ */
+function onSearchKeydown(event) {
+  const root = searchBoxRef.value;
+  if (!root) return;
+
+  if (event.key === "Escape") {
+    if (!isGlobalSearchOpen.value) return;
+    event.preventDefault();
+    closeGlobalSearch();
+    return;
+  }
+
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  if (!isGlobalSearchOpen.value) return;
+  const items = [...root.querySelectorAll(".global-search-result")];
+  if (!items.length) return;
+
+  // 拦掉默认行为，否则光标会在输入框里跳到行首/行尾
+  event.preventDefault();
+  const current = items.indexOf(document.activeElement);
+  const step = event.key === "ArrowDown" ? 1 : -1;
+  const next =
+    current === -1
+      ? step === 1
+        ? 0
+        : items.length - 1
+      : (current + step + items.length) % items.length;
+  items[next].focus();
 }
 
 useDismissable(isGlobalSearchOpen, searchBoxRef, { onClose: closeGlobalSearch });
@@ -243,6 +292,12 @@ watch(
   () => {
     closeSidebar();
     isGlobalSearchOpen.value = false;
+    // 换页后把焦点移到正文。
+    // 不移动的话焦点会掉回 body：键盘用户按 Tab 得从文档最开头、
+    // 也就是侧栏那一长串导航重新走一遍，才够得到刚打开的详情页。
+    // preventScroll 是必须的 —— 否则聚焦会把页面滚回正文顶部，
+    // 和 router 的 scrollBehavior 抢方向盘（返回列表时位置就保不住了）。
+    nextTick(() => mainRef.value?.focus({ preventScroll: true }));
   }
 );
 
@@ -353,7 +408,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="topbar-tools">
-          <form ref="searchBoxRef" class="search-box global-search" @submit.prevent="openGlobalResult()">
+          <form
+            ref="searchBoxRef"
+            class="search-box global-search"
+            @submit.prevent="openGlobalResult()"
+            @keydown="onSearchKeydown"
+          >
             <Search :size="17" />
             <input
               v-model="globalSearch"
@@ -361,15 +421,18 @@ onBeforeUnmount(() => {
               aria-label="搜索成绩和错题"
               @focus="isGlobalSearchOpen = true"
               @input="isGlobalSearchOpen = true"
-              @blur="closeGlobalSearch"
+              @blur="onSearchBlur"
             />
             <div v-if="isGlobalSearchOpen && globalSearch" class="global-search-popover">
+              <!-- @mousedown.prevent 保住输入框的焦点（鼠标路径），
+                   @click 让键盘 Enter 也能打开（焦点在按钮上时浏览器发的是 click） -->
               <button
                 v-for="item in globalSearchResults"
                 :key="item.id"
                 type="button"
                 class="global-search-result"
                 @mousedown.prevent="openGlobalResult(item)"
+                @click="openGlobalResult(item)"
               >
                 <strong>{{ item.title }}</strong>
                 <span>{{ item.type }} · {{ item.meta }}</span>
@@ -417,7 +480,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <main>
+      <main ref="mainRef" tabindex="-1">
         <div v-if="!store.isReady" class="loading-panel">
           <Upload :size="22" />
           <span>正在加载本地学习档案...</span>

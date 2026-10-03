@@ -680,6 +680,14 @@ label {
   background: var(--surface-soft);
 }
 
+/* 搜索结果现在可以用键盘 Tab / ↑↓ 走到，必须看得见焦点落在哪一条上。
+   用 :focus-visible 而不是 :focus —— 鼠标点的时候不要多出一个圈。 */
+.global-search-result:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+  background: var(--surface-soft);
+}
+
 /* 分段控件 */
 .segmented,
 .announcement-tabs,
