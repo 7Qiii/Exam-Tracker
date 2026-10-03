@@ -68,11 +68,24 @@ async function startServer() {
   return { server, port: server.address().port };
 }
 
-/** 同一份卷子不同年份的三次成绩 —— 它们必须并进同一列 */
+/**
+ * 导出用的数据集：1 组「真题」（3 个年份要并成一列）+ 4 组各自独立的卷子。
+ *
+ * 为什么自己带全 5 组：以前这里只塞 3 条英语真题，另外 4 组靠「演示数据」
+ * 凑 —— 老版本 seedIfEmpty() 无条件往空库灌 4 条成绩。修掉那个 bug 之后
+ * （云端模式下不再灌），这个脚本就只剩 1 组了，列数断言跟着失败。
+ * 依赖演示数据本身就是错的：那是产品功能，不是测试夹具。
+ *
+ * 期望结果：序号列 + 5 组 × 2 字段 = 11 列。
+ */
 const SEED = [
   { id: "e2e-en-09", subjectId: "english1", recordType: "paper", paperName: "09真题", score: 61, fullScore: 100, durationMinutes: 70, date: "2025-03-01", createdAt: "2025-03-01T10:00:00.000Z", note: "" },
   { id: "e2e-en-11", subjectId: "english1", recordType: "paper", paperName: "11真题", score: 66, fullScore: 100, durationMinutes: 72, date: "2025-04-01", createdAt: "2025-04-01T10:00:00.000Z", note: "" },
-  { id: "e2e-en-12", subjectId: "english1", recordType: "paper", paperName: "12真题", score: 71, fullScore: 100, durationMinutes: 74, date: "2025-05-01", createdAt: "2025-05-01T10:00:00.000Z", note: "" }
+  { id: "e2e-en-12", subjectId: "english1", recordType: "paper", paperName: "12真题", score: 71, fullScore: 100, durationMinutes: 74, date: "2025-05-01", createdAt: "2025-05-01T10:00:00.000Z", note: "" },
+  { id: "e2e-408-1", subjectId: "cs408", recordType: "paper", paperName: "408 综合模拟 01", score: 86, fullScore: 150, durationMinutes: 180, date: "2025-06-01", createdAt: "2025-06-01T10:00:00.000Z", note: "" },
+  { id: "e2e-math-1", subjectId: "math1", recordType: "paper", paperName: "数一 模拟 01", score: 92, fullScore: 150, durationMinutes: 170, date: "2025-06-08", createdAt: "2025-06-08T10:00:00.000Z", note: "" },
+  { id: "e2e-en-read", subjectId: "english1", recordType: "paper", paperName: "英一 阅读专项", score: 68, fullScore: 100, durationMinutes: 70, date: "2025-06-15", createdAt: "2025-06-15T10:00:00.000Z", note: "" },
+  { id: "e2e-pol-1", subjectId: "politics", recordType: "paper", paperName: "政治 选择题套卷", score: 63, fullScore: 100, durationMinutes: 60, date: "2025-06-22", createdAt: "2025-06-22T10:00:00.000Z", note: "" }
 ];
 
 /** 应用用的是 Dexie/IndexedDB，等它自己建好库之后直接往里塞记录 */
@@ -210,9 +223,10 @@ async function main() {
     if (result.allText.includes("12真题")) problems.push("12真题 已经被排除，却还是写进了文件");
 
     if (!result.allText.includes("408 综合模拟 01")) {
-      problems.push("demo 记录 408 综合模拟 01 丢了 —— 说明喂给导出的记录集不对");
+      problems.push("408 综合模拟 01 丢了 —— 说明喂给导出的记录集不对");
     }
-    if (!result.allText.includes("数一 模拟 01")) problems.push("demo 记录 数一 模拟 01 丢了");
+    if (!result.allText.includes("数一 模拟 01")) problems.push("数一 模拟 01 丢了");
+    if (!result.allText.includes("政治 选择题套卷")) problems.push("政治 选择题套卷 丢了");
 
     if (consoleErrors.length) problems.push(`控制台报错：${consoleErrors[0]}`);
   } catch (error) {

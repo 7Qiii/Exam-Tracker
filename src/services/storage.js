@@ -59,7 +59,67 @@ export function createDemoMistakes() {
   ];
 }
 
-export async function seedIfEmpty() {
+/**
+ * 种子数据的「指纹」。
+ *
+ * 判定只用内容指纹，**不看 id**：老版本用 crypto.randomUUID() 生成 id，
+ * 那批已经漏进云端的记录认不出来，得靠内容兜住。而如果拿 id 前缀当标记，
+ * 用户改过一条演示数据之后它仍然是「demo-」，就永远不会被同步 ——
+ * 改过的数据反而丢了。只看内容就没这个问题：改过就不再算演示数据，
+ * 会正常参与同步。
+ *
+ * 这几条的科目、名称、分数、用时、备注都是写死的常量，真实数据撞不上。
+ */
+function recordFingerprint(record) {
+  return [record.subjectId, record.paperName, record.score, record.fullScore, record.durationMinutes, record.note].join("|");
+}
+
+function mistakeFingerprint(mistake) {
+  return [mistake.subjectId, mistake.title, mistake.knowledgePoint, mistake.reason].join("|");
+}
+
+const DEMO_RECORD_FINGERPRINTS = new Set(createDemoRecords().map(recordFingerprint));
+const DEMO_MISTAKE_FINGERPRINTS = new Set(createDemoMistakes().map(mistakeFingerprint));
+
+export function isDemoRecord(record) {
+  return Boolean(record) && DEMO_RECORD_FINGERPRINTS.has(recordFingerprint(record));
+}
+
+export function isDemoMistake(mistake) {
+  return Boolean(mistake) && DEMO_MISTAKE_FINGERPRINTS.has(mistakeFingerprint(mistake));
+}
+
+const DEMO_SEEDED_KEY = "exam-tracker-demo-seeded";
+
+function hasSeededDemo() {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(DEMO_SEEDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markDemoSeeded() {
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(DEMO_SEEDED_KEY, "1");
+  } catch {
+    /* 存不进去就退化成「空库时还可能再种一次」，不影响主流程 */
+  }
+}
+
+/**
+ * 补齐默认科目，并在明确允许时灌一次演示数据。
+ *
+ * 演示数据以前是**无条件**灌的：只要 records / mistakes 表为空就写 4 条成绩
+ * 加 2 道错题。后果是它会被同步当成「本地新增」上传到云端，从此每台设备、
+ * 每次同步都会把它拉回来 —— 用户看到的就是「几条自己从没记过的成绩」。
+ * 所以现在改成三条约束：
+ *   1. 默认**不灌**，seedDemo 由调用方显式开启（只在纯本地模式开）；
+ *   2. 只在 records 和 mistakes **都**为空时灌 —— 以前各自独立判断，
+ *      把错题删光也会被重新塞两道进来；
+ *   3. 灌过一次就不再灌，否则用户删掉之后下次空库又冒出来。
+ */
+export async function seedIfEmpty({ seedDemo = false } = {}) {
   const subjectCount = await db.subjects.count();
   if (!subjectCount) {
     await db.subjects.bulkPut(defaultSubjects);
@@ -67,19 +127,19 @@ export async function seedIfEmpty() {
     await db.subjects.bulkPut(normalizeSubjects(await db.subjects.toArray()));
   }
 
-  const recordCount = await db.records.count();
-  if (!recordCount) {
-    await db.records.bulkPut(createDemoRecords());
-  }
+  if (!seedDemo || hasSeededDemo()) return;
 
+  const recordCount = await db.records.count();
   const mistakeCount = await db.mistakes.count();
-  if (!mistakeCount) {
-    await db.mistakes.bulkPut(createDemoMistakes());
-  }
+  if (recordCount || mistakeCount) return;
+
+  await db.records.bulkPut(createDemoRecords());
+  await db.mistakes.bulkPut(createDemoMistakes());
+  markDemoSeeded();
 }
 
-export async function loadAllData() {
-  await seedIfEmpty();
+export async function loadAllData(options = {}) {
+  await seedIfEmpty(options);
   const [subjects, records, mistakes, images] = await Promise.all([
     db.subjects.toArray(),
     db.records.toArray(),
@@ -170,7 +230,7 @@ function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, durationM
   const date = new Date();
   date.setDate(date.getDate() + daysAgo);
   return {
-    id: crypto.randomUUID(),
+    id: `demo-record-${subjectId}`,
     subjectId,
     paperName,
     paperVariant,
@@ -190,7 +250,7 @@ function sampleMistake(subjectId, title, knowledgePoint, reason, status, daysAgo
   created.setDate(created.getDate() + daysAgo);
   const now = created.toISOString();
   return {
-    id: crypto.randomUUID(),
+    id: `demo-mistake-${subjectId}`,
     subjectId,
     title,
     knowledgePoint,

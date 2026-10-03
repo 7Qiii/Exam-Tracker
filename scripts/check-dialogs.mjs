@@ -120,6 +120,56 @@ async function click(page, selector, label, { timeout = 5000 } = {}) {
   }
 }
 
+/**
+ * 弹窗要能打开，前提是页面里真的有成绩 —— 导出、合成、删除都是围绕记录的操作。
+ *
+ * 以前这里白拿「演示数据」：老版本 seedIfEmpty() 无条件往空库灌 4 条成绩，
+ * 所以随便打开 /#/records 就有数据。后来修掉了那个 bug（云端模式下不再灌），
+ * 这个脚本就跟着空了 —— 不是回归，是它一直在依赖一件不该依赖的事。
+ * 现在自己塞数据，和 check-export.mjs 一个路子。
+ */
+const DIALOG_SEED = [
+  { id: "dlg-1", subjectId: "math1", recordType: "paper", paperName: "模拟 01", score: 92, fullScore: 150, durationMinutes: 170, date: "2026-09-20", createdAt: "2026-09-20T10:00:00.000Z", note: "" },
+  { id: "dlg-2", subjectId: "math1", recordType: "paper", paperName: "模拟 02", score: 98, fullScore: 150, durationMinutes: 165, date: "2026-09-27", createdAt: "2026-09-27T10:00:00.000Z", note: "" },
+  { id: "dlg-3", subjectId: "math1", recordType: "paper", paperName: "模拟 03", score: 104, fullScore: 150, durationMinutes: 160, date: "2026-10-02", createdAt: "2026-10-02T10:00:00.000Z", note: "" }
+];
+
+/** 应用用的是 Dexie/IndexedDB，等它自己建好库之后直接往里塞记录 */
+function seedRecords(page, records) {
+  return page.evaluate(
+    (rows) =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open("exam-tracker-v3");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction("records", "readwrite");
+          const store = tx.objectStore("records");
+          rows.forEach((row) => store.put(row));
+          tx.oncomplete = () => {
+            db.close();
+            resolve(rows.length);
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    records
+  );
+}
+
+/**
+ * 打开路由 → 等应用建库 → 塞数据 → 重载让 store 读到。
+ *
+ * 必须重载：store 在挂载时一次性读 IndexedDB，塞完不重载页面看到的还是空列表。
+ */
+async function openWithSeed(page, base, route) {
+  await page.goto(`${base}/#${route}`, { waitUntil: "load" });
+  await page.waitForTimeout(2200);
+  await seedRecords(page, DIALOG_SEED);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(2200);
+}
+
 const DIALOGS = [
   {
     name: "导出面板",
@@ -207,8 +257,7 @@ async function checkDialog(browser, base, spec) {
   const isOpen = () => page.locator(spec.selector).count().then((count) => count > 0);
 
   try {
-    await page.goto(`${base}/#${spec.route}`, { waitUntil: "load" });
-    await page.waitForTimeout(2200);
+    await openWithSeed(page, base, spec.route);
 
     await spec.open(page);
     await page.waitForTimeout(700);
@@ -292,8 +341,7 @@ async function checkBackGesture(browser, base, spec) {
   const problems = [];
   const page = await browser.newPage();
   try {
-    await page.goto(`${base}/#${spec.route}`, { waitUntil: "load" });
-    await page.waitForTimeout(2200);
+    await openWithSeed(page, base, spec.route);
 
     await spec.open(page);
     await page.waitForTimeout(700);

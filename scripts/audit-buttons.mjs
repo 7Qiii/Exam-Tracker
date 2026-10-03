@@ -85,6 +85,53 @@ const ALL_ROUTES = [
 const CHROME_SELECTORS = [".topbar", ".sidebar", ".bottom-nav"];
 
 /**
+ * 审核用的数据。
+ *
+ * 没有成绩，/records 上就没有成绩卡片，卡片上的按钮（删除、基于本成绩新增错题…）
+ * 一个都审不到；没有错题，/mistakes/:id 那一行直接是「全部 0」。实测条目从
+ * 131 掉到 62 —— 报告照样全绿，但审的按钮少了一半，这种「绿」是假的。
+ *
+ * 以前这批数据是白拿演示数据的（老版本 seedIfEmpty() 无条件往空库灌）。
+ * 修掉「演示数据漏进账号」那个 bug 之后就没有了 —— 但依赖演示数据当夹具本来
+ * 就错，那是产品功能。所以自己塞，名字也刻意用「审计」，避免和种子数据撞指纹。
+ */
+const AUDIT_SEED = {
+  records: [
+    { id: "audit-rec-1", subjectId: "cs408", recordType: "paper", paperName: "审计卷 01", score: 86, fullScore: 150, durationMinutes: 180, date: "2026-09-25", createdAt: "2026-09-25T10:00:00.000Z", note: "" },
+    { id: "audit-rec-2", subjectId: "math1", recordType: "paper", paperName: "审计卷 02", score: 92, fullScore: 150, durationMinutes: 170, date: "2026-09-27", createdAt: "2026-09-27T10:00:00.000Z", note: "" },
+    { id: "audit-rec-3", subjectId: "english1", recordType: "paper", paperName: "审计卷 03", score: 68, fullScore: 100, durationMinutes: 70, date: "2026-09-29", createdAt: "2026-09-29T10:00:00.000Z", note: "" },
+    { id: "audit-rec-4", subjectId: "politics", recordType: "paper", paperName: "审计卷 04", score: 63, fullScore: 100, durationMinutes: 60, date: "2026-10-01", createdAt: "2026-10-01T10:00:00.000Z", note: "" }
+  ],
+  mistakes: [
+    { id: "audit-mis-1", subjectId: "cs408", title: "审计错题 01", knowledgePoint: "操作系统", reason: "concept", difficulty: "中等", status: "待复盘", sourceRecordId: "", questionText: "", analysis: "", nextReviewAt: "", createdAt: "2026-09-25T10:00:00.000Z", updatedAt: "2026-09-25T10:00:00.000Z" },
+    { id: "audit-mis-2", subjectId: "math1", title: "审计错题 02", knowledgePoint: "高等数学", reason: "method", difficulty: "困难", status: "已整理", sourceRecordId: "", questionText: "", analysis: "", nextReviewAt: "", createdAt: "2026-09-23T10:00:00.000Z", updatedAt: "2026-09-23T10:00:00.000Z" }
+  ]
+};
+
+/** 应用用的是 Dexie/IndexedDB，等它自己建好库之后直接往里塞 */
+function seedAuditData(page) {
+  return page.evaluate(
+    (payload) =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open("exam-tracker-v3");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction(["records", "mistakes"], "readwrite");
+          payload.records.forEach((row) => tx.objectStore("records").put(row));
+          payload.mistakes.forEach((row) => tx.objectStore("mistakes").put(row));
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    AUDIT_SEED
+  );
+}
+
+/**
  * 每次点击前要清掉的本地偏好。
  *
  * 导出面板的「每组字段」和「每列包含哪些成绩」都是持久化的：不清的话，
@@ -259,6 +306,13 @@ async function main() {
   const base = `http://127.0.0.1:${port}`;
   const browser = await chromium.launch({ executablePath: findBrowser(), headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+
+  // 先塞一次数据。所有页面共用同一个 context，IndexedDB 是共享的，塞一次就够。
+  const seedPage = await context.newPage();
+  await seedPage.goto(`${base}/#/records`, { waitUntil: "load" });
+  await seedPage.waitForTimeout(2200);
+  await seedAuditData(seedPage);
+  await seedPage.close();
 
   const records = [];
   const totals = { 正常: 0, 报错: 0, 无可见变化: 0, 危险操作已拦截: 0 };

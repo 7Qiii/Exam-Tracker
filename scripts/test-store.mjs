@@ -287,6 +287,120 @@ const trashPersisted = await (async () => {
 check("移入回收站会写 localStorage", trashPersisted.some((e) => e.record.paperName === "落盘检查"), true);
 
 // ---------------------------------------------------------------------------
+section("测试桩自检：write() 必须对 db.<table> 可见");
+// ---------------------------------------------------------------------------
+// 这一节存在的理由：下面「演示数据」那节曾经失败，但错的不是源码，是桩。
+// stubDatabase 的 write() 当时用 rows.set(name, [...values]) 换掉了数组，
+// 而各表方法是闭包捕获的旧数组 —— 于是 db.records.count() 和
+// dbStub.read() 各看各的，「种子灌没灌进去」实际是在一个幻影数据库上断言。
+// 桩是测试的地基，地基错了，上面所有结论都不可信，所以先钉住它。
+//
+// 注意这里复用外层那个 dbStub、跑完把原数据写回去 —— 不能在这里再调一次
+// stubDatabase(db)：那会把 db.records 重新指向一张新表，外层 dbStub 就悬空了。
+{
+  const original = dbStub.read("records");
+  const originalMistakes = dbStub.read("mistakes");
+
+  dbStub.write("records", [{ id: "probe-a" }]);
+  check("write() 之后 count() 立刻看得到", await db.records.count(), 1);
+
+  await db.records.bulkPut([{ id: "probe-b" }]);
+  check("write() 之后 bulkPut 落在同一张表（count）", await db.records.count(), 2);
+  checkDeep(
+    "write() 之后 bulkPut 落在同一张表（read）",
+    dbStub.read("records").map((r) => r.id).sort(),
+    ["probe-a", "probe-b"]
+  );
+
+  dbStub.write("records", []);
+  check("write([]) 之后 count() 也归零", await db.records.count(), 0);
+
+  dbStub.write("records", original);
+  dbStub.write("mistakes", originalMistakes);
+  checkDeep(
+    "自检结束后原数据原样还回去",
+    dbStub.read("records").map((r) => r.id).sort(),
+    original.map((r) => r.id).sort()
+  );
+}
+
+// ---------------------------------------------------------------------------
+section("演示数据：不能自己长出来，也不能被同步到云端");
+// ---------------------------------------------------------------------------
+// 起因：用户反馈「每次同步都会出现四条自己从没记过的成绩」。链路是
+//   seedIfEmpty() 往空库灌演示数据
+//   → mergeCloudEntries 把「本地有、云端没有」的条目标成待同步
+//   → retryUnsyncedData 把它们上传
+//   → 从此每台设备、每次同步都拉回来。
+// 下面把「灌」和「认」两头都钉住。
+
+const { seedIfEmpty, isDemoRecord, isDemoMistake, createDemoRecords, createDemoMistakes } = await import(
+  "../src/services/storage.js"
+);
+
+const demoRecord = createDemoRecords()[0];
+const demoMistake = createDemoMistakes()[0];
+
+// —— 识别 ——
+check("演示成绩能被认出来", isDemoRecord(demoRecord), true);
+check("演示错题能被认出来", isDemoMistake(demoMistake), true);
+
+// 老版本用随机 UUID 生成的、已经漏进云端的那批，只能靠内容认
+check(
+  "老演示成绩（随机 UUID）也能靠内容认出来",
+  isDemoRecord({ ...demoRecord, id: "6f1c2b8e-0000-4000-8000-000000000001" }),
+  true
+);
+check(
+  "真实成绩不会被误判",
+  isDemoRecord({
+    id: "real-1",
+    subjectId: "math1",
+    paperName: "25超越2",
+    score: 119,
+    fullScore: 150,
+    durationMinutes: 170,
+    note: "最后一道大题没做完。"
+  }),
+  false
+);
+check(
+  "改过备注的演示成绩不再算演示数据（改过的应该能正常同步）",
+  isDemoRecord({ ...demoRecord, note: "我自己写的备注" }),
+  false
+);
+
+// —— 灌种子 ——
+function resetDemoTables() {
+  dbStub.write("records", []);
+  dbStub.write("mistakes", []);
+  env.storage.removeItem("exam-tracker-demo-seeded");
+}
+
+resetDemoTables();
+await seedIfEmpty();
+check("默认不灌演示数据（空库也不灌）", dbStub.read("records").length, 0);
+
+await seedIfEmpty({ seedDemo: true });
+check("显式开启后灌入 4 条演示成绩", dbStub.read("records").length, 4);
+check("同时灌入 2 道演示错题", dbStub.read("mistakes").length, 2);
+
+// 用户把它们删光 —— 再空库也不能重新长出来
+dbStub.write("records", []);
+dbStub.write("mistakes", []);
+await seedIfEmpty({ seedDemo: true });
+check("灌过一次之后再空库也不会重新灌", dbStub.read("records").length, 0);
+
+// 只删错题、成绩还在：以前两个表各自判断，会补两道错题进来
+env.storage.removeItem("exam-tracker-demo-seeded");
+dbStub.write("records", [{ id: "real-1" }]);
+dbStub.write("mistakes", []);
+await seedIfEmpty({ seedDemo: true });
+check("成绩还在时不会补种错题", dbStub.read("mistakes").length, 0);
+
+resetDemoTables();
+
+// ---------------------------------------------------------------------------
 
 const cleared = env.cleanup();
 console.log(`\n${failed === 0 ? "全部通过" : "有失败"}：${passed} 通过 / ${failed} 失败（清理了 ${cleared} 个定时器）`);

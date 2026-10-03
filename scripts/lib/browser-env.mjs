@@ -214,9 +214,30 @@ export function stubDatabase(db, { seed = {} } = {}) {
     };
   }
 
+  // replaceAllData() 走的是 db.transaction("rw", ...)，那是 Dexie 的真方法 ——
+  // Node 里没有 IndexedDB，一调用就炸。桩里直接把回调执行掉，不做隔离：
+  // 要测的是「事务里做了哪些写操作」，不是 Dexie 的事务语义。
+  db.transaction = async (...args) => {
+    const callback = args[args.length - 1];
+    return typeof callback === "function" ? callback() : undefined;
+  };
+
   return {
     rows,
     read: (name) => rows.get(name).map((row) => ({ ...row })),
-    write: (name, values) => rows.set(name, [...values])
+    /**
+     * 原地替换表内容，**不能**用 rows.set(name, [...values]) 换数组。
+     *
+     * 各表方法（put / bulkPut / count …）都是闭包捕获上面那个 table 引用，
+     * 一旦 write 把 Map 里的数组换成新的，db.records.count() 读旧数组、
+     * dbStub.read() 读新数组，两边就是两个不同的表了 —— 断言会在一个
+     * 「幻影数据库」上通过或失败。踩过一次：seedIfEmpty 明明正确地在
+     * 空库时灌了种子，测试却读到 0，因为 count() 看到的还是替换前那批数据。
+     */
+    write: (name, values) => {
+      const table = rows.get(name);
+      table.length = 0;
+      table.push(...values);
+    }
   };
 }

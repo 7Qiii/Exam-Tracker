@@ -5,6 +5,8 @@ import {
   db,
   exportPortableData,
   importPortableData,
+  isDemoMistake,
+  isDemoRecord,
   loadAllData,
   normalizeSubjects,
   replaceAllData
@@ -96,7 +98,10 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   async function load() {
     syncError.value = "";
-    const localData = await loadAllData();
+    // 只有纯本地模式才灌演示数据。
+    // 云端模式下用户的数据在云上，本地灌进去的假数据会被同步当成「本地新增」
+    // 上传，从此每台设备每次同步都拉回来 —— 就是用户看到的「从没记过的成绩」。
+    const localData = await loadAllData({ seedDemo: !isSupabaseConfigured });
     subjects.value = normalizeSubjects(localData.subjects);
     records.value = localData.records;
     purgeExpiredDeletedRecords();
@@ -155,11 +160,14 @@ export const useTrackerStore = defineStore("tracker", () => {
       const localMistakes = mistakes.value;
       user.value = data.user;
       subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
-      records.value = mergeCloudEntries(data.records, localRecords, "updatedAt", isSameRecord);
-      mistakes.value = mergeCloudEntries(data.mistakes, localMistakes, "updatedAt", isSameMistake);
+      records.value = mergeCloudEntries(data.records, localRecords, "updatedAt", isSameRecord, isDemoRecord);
+      mistakes.value = mergeCloudEntries(data.mistakes, localMistakes, "updatedAt", isSameMistake, isDemoMistake);
       images.value = mergeCloudImages(data.images);
       syncMode.value = "cloud";
       lastSyncedAt.value = new Date().toISOString();
+      // 先清理再算签名：签名要反映清理后的状态，否则下一次加载会因为签名不一致
+      // 又整表重写一遍。
+      await purgeDemoEntries();
       const signature = dataSignature({ subjects: subjects.value, records: records.value, mistakes: mistakes.value, images: images.value });
       if (signature !== lastCloudSignature) {
         await replaceAllData({
@@ -842,12 +850,18 @@ export const useTrackerStore = defineStore("tracker", () => {
     return [...cloudImages, ...localPending];
   }
 
-  function mergeCloudEntries(cloudEntries, localEntries, stampField, isSame = null) {
+  function mergeCloudEntries(cloudEntries, localEntries, stampField, isSame = null, isDemo = null) {
     const merged = new Map(cloudEntries.map((entry) => [entry.id, { ...entry, pendingSync: false }]));
     localEntries.forEach((entry) => {
       const cloudEntry = merged.get(entry.id);
       if (!cloudEntry) {
-        merged.set(entry.id, { ...entry, pendingSync: Boolean(user.value && supabase) });
+        // 本地有、云端没有 → 排队上传。
+        // 但演示数据永远不上传：一旦上传，它就被「洗白」成真实的云端记录，
+        // 之后每台设备、每次同步都会把它拉回来。
+        merged.set(entry.id, {
+          ...entry,
+          pendingSync: Boolean(user.value && supabase) && !(isDemo && isDemo(entry))
+        });
         return;
       }
       const localIsNewer = isNewerEntry(entry, cloudEntry, stampField);
@@ -874,8 +888,9 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   async function retryUnsyncedData() {
     if (!user.value || !supabase) return;
-    const recordQueue = records.value.filter((record) => record.pendingSync);
-    const mistakeQueue = mistakes.value.filter((mistake) => mistake.pendingSync);
+    // 双保险：即使某处把演示数据标成了待同步，这里也不上传。
+    const recordQueue = records.value.filter((record) => record.pendingSync && !isDemoRecord(record));
+    const mistakeQueue = mistakes.value.filter((mistake) => mistake.pendingSync && !isDemoMistake(mistake));
     await Promise.all([
       ...recordQueue.map(async (record) => {
         const synced = await safeCloud(() => upsertRecord(record));
@@ -886,6 +901,45 @@ export const useTrackerStore = defineStore("tracker", () => {
         if (synced) markMistakeSynced(mistake.id);
       })
     ]);
+  }
+
+  /**
+   * 清掉已经「洗白」进云端的演示数据。
+   *
+   * 光堵住源头（不再灌、不再上传）还不够：老版本已经把 4 条成绩 / 2 道错题
+   * 同步上去了，它们在云端是真实记录。用户只要登录，runCloudLoad() 还是会
+   * 把它们拉回来 —— 看起来就是「删了又出现，删不掉」。
+   * 所以这里在云端加载之后主动清一次。
+   *
+   * 只删「指纹完全命中」的：用户改过的（改分数、改备注…）指纹不再匹配，
+   * 一律当真实数据保留。删之前照例进回收站，24 小时内还能恢复。
+   */
+  async function purgeDemoEntries() {
+    if (!user.value || !supabase) return 0;
+
+    const demoRecords = records.value.filter(isDemoRecord);
+    const demoMistakes = mistakes.value.filter(isDemoMistake);
+    if (!demoRecords.length && !demoMistakes.length) return 0;
+
+    for (const record of demoRecords) {
+      saveDeletedRecord(record);
+      await db.records.delete(record.id);
+      await safeCloud(() => deleteRecordCloud(record.id));
+    }
+    for (const mistake of demoMistakes) {
+      await db.mistakes.delete(mistake.id);
+      await safeCloud(() => deleteMistakeCloud(mistake.id));
+    }
+
+    const recordIds = new Set(demoRecords.map((record) => record.id));
+    const mistakeIds = new Set(demoMistakes.map((mistake) => mistake.id));
+    records.value = records.value.filter((record) => !recordIds.has(record.id));
+    mistakes.value = mistakes.value.filter((mistake) => !mistakeIds.has(mistake.id));
+    images.value = images.value.filter((image) => !(image.ownerType === "mistake" && mistakeIds.has(image.ownerId)));
+
+    const total = demoRecords.length + demoMistakes.length;
+    notify(`已清理 ${total} 条旧版本自动生成的演示数据。`, "info", 5200);
+    return total;
   }
 
   async function markRecordSynced(id) {

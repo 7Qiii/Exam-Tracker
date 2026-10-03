@@ -56,11 +56,72 @@ const server = createServer(async (req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
+/**
+ * 这些场景都要「列表里真的有成绩」才有意义：滚动、点进详情、搜索、新增错题。
+ *
+ * 以前这份数据是白拿的 —— 老版本 seedIfEmpty() 无条件往空库灌 4 条演示成绩，
+ * 随便打开 /#/records 就有内容。修掉那个 bug 之后（云端模式下不再灌演示数据），
+ * 这里就空了。问题不在修复本身：拿「演示数据」当测试夹具从一开始就是错的，
+ * 那是产品功能，随时可能变。所以现在自己塞。
+ *
+ * 8 条是为了在 390×844 的小屏上真的能滚起来；名字带「模拟」是给场景 6 的
+ * 搜索用的；demo-1 是给场景 2 的详情页用的（它直接 goto #/records/demo-1）。
+ */
+const SEED = Array.from({ length: 8 }, (_, index) => ({
+  id: `demo-${index + 1}`,
+  subjectId: "math1",
+  recordType: "paper",
+  paperName: `模拟 ${String(index + 1).padStart(2, "0")}`,
+  score: 88 + index,
+  fullScore: 150,
+  durationMinutes: 165 + index,
+  date: `2026-09-${String(index + 20).padStart(2, "0")}`,
+  createdAt: `2026-09-${String(index + 20).padStart(2, "0")}T10:00:00.000Z`,
+  note: ""
+}));
+
+/** 应用用的是 Dexie/IndexedDB，等它自己建好库之后直接往里塞记录 */
+function seedRecords(page) {
+  return page.evaluate(
+    (rows) =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open("exam-tracker-v3");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction("records", "readwrite");
+          const store = tx.objectStore("records");
+          rows.forEach((row) => store.put(row));
+          tx.oncomplete = () => {
+            db.close();
+            resolve(rows.length);
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    SEED
+  );
+}
+
+/**
+ * 打开页面 → 等应用建库 → 塞数据 → 重载。
+ *
+ * 每个 page 都要单独来一次：Playwright 的 browser.newPage() 会新开一个
+ * browser context，IndexedDB 不共享。
+ */
+async function openSeeded(page, url) {
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1200);
+  await seedRecords(page);
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(1000);
+}
+
 const browser = await chromium.launch({ channel: "chrome" });
 
 // 用小屏跑，列表才有足够长度滚起来
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-await page.goto(base, { waitUntil: "networkidle" });
+await openSeeded(page, base);
 
 const scrollY = () => page.evaluate(() => Math.round(window.scrollY));
 const goto = async (hash) => {
@@ -205,8 +266,7 @@ console.log("\n场景 6：搜索浮层的键盘操作（Tab / ↑↓ / Enter / E
 // 搜索框在 ≤820px 是 display:none（手机规则把它藏了），所以这一场景要单独开一个
 // 宽一点的视口。用同一个 page 改视口也行，但列表/布局的其它断言会被牵连。
 const searchPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-await searchPage.goto(`${base}/#/records`, { waitUntil: "networkidle" });
-await searchPage.waitForTimeout(1500);
+await openSeeded(searchPage, `${base}/#/records`);
 const SEARCH = 'input[aria-label="搜索成绩和错题"]';
 // 用 fill 而不是 type：fill 会先清空，省得上一段测试留下的关键字被接在后面
 await searchPage.fill(SEARCH, "模拟");
@@ -273,6 +333,7 @@ await searchPage.close();
  * 另外这几个场景要反复开关表单，和前面共用页面会互相串状态。
  * ------------------------------------------------------------------ */
 const formPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await openSeeded(formPage, `${base}/#/records`);
 
 /**
  * 每个场景都从「真刷新」开始。
