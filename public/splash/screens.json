@@ -91,6 +91,118 @@
       "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)",
       "mediaDark": "(prefers-color-scheme: dark) and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)",
       "note": "16 Pro Max"
+    },
+    {
+      "pixels": "1536x2048",
+      "light": "/splash/light/1536x2048.png",
+      "dark": "/splash/dark/1536x2048.png",
+      "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "note": "iPad 9.7 / mini 1-5"
+    },
+    {
+      "pixels": "2048x1536",
+      "light": "/splash/light/2048x1536.png",
+      "dark": "/splash/dark/2048x1536.png",
+      "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "note": "iPad 9.7 / mini 1-5 · 横屏"
+    },
+    {
+      "pixels": "1620x2160",
+      "light": "/splash/light/1620x2160.png",
+      "dark": "/splash/dark/1620x2160.png",
+      "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "note": "iPad 10.2"
+    },
+    {
+      "pixels": "2160x1620",
+      "light": "/splash/light/2160x1620.png",
+      "dark": "/splash/dark/2160x1620.png",
+      "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "note": "iPad 10.2 · 横屏"
+    },
+    {
+      "pixels": "1640x2360",
+      "light": "/splash/light/1640x2360.png",
+      "dark": "/splash/dark/1640x2360.png",
+      "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "note": "iPad 10.9 / Air 4-5 / Air 11 M2"
+    },
+    {
+      "pixels": "2360x1640",
+      "light": "/splash/light/2360x1640.png",
+      "dark": "/splash/dark/2360x1640.png",
+      "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "note": "iPad 10.9 / Air 4-5 / Air 11 M2 · 横屏"
+    },
+    {
+      "pixels": "1668x2224",
+      "light": "/splash/light/1668x2224.png",
+      "dark": "/splash/dark/1668x2224.png",
+      "media": "(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "note": "iPad Pro 10.5"
+    },
+    {
+      "pixels": "2224x1668",
+      "light": "/splash/light/2224x1668.png",
+      "dark": "/splash/dark/2224x1668.png",
+      "media": "(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "note": "iPad Pro 10.5 · 横屏"
+    },
+    {
+      "pixels": "1668x2388",
+      "light": "/splash/light/1668x2388.png",
+      "dark": "/splash/dark/1668x2388.png",
+      "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "note": "iPad Pro 11"
+    },
+    {
+      "pixels": "2388x1668",
+      "light": "/splash/light/2388x1668.png",
+      "dark": "/splash/dark/2388x1668.png",
+      "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "note": "iPad Pro 11 · 横屏"
+    },
+    {
+      "pixels": "2048x2732",
+      "light": "/splash/light/2048x2732.png",
+      "dark": "/splash/dark/2048x2732.png",
+      "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "note": "iPad Pro 12.9 / 13"
+    },
+    {
+      "pixels": "2732x2048",
+      "light": "/splash/light/2732x2048.png",
+      "dark": "/splash/dark/2732x2048.png",
+      "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "note": "iPad Pro 12.9 / 13 · 横屏"
+    },
+    {
+      "pixels": "1488x2266",
+      "light": "/splash/light/1488x2266.png",
+      "dark": "/splash/dark/1488x2266.png",
+      "media": "(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)",
+      "note": "iPad mini 6"
+    },
+    {
+      "pixels": "2266x1488",
+      "light": "/splash/light/2266x1488.png",
+      "dark": "/splash/dark/2266x1488.png",
+      "media": "(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "mediaDark": "(prefers-color-scheme: dark) and (device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)",
+      "note": "iPad mini 6 · 横屏"
     }
   ]
 }

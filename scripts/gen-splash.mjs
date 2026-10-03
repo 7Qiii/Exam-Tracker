@@ -39,7 +39,7 @@
  */
 import { createRequire } from "node:module";
 import { deflateSync, crc32 } from "node:zlib";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const WORKSPACE = "C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace";
@@ -78,15 +78,71 @@ export const IPHONE_SCREENS = [
   { width: 440, height: 956, ratio: 3, note: "16 Pro Max" }
 ];
 
-export const splashPixels = (screen) => `${screen.width * screen.ratio}x${screen.height * screen.ratio}`;
+/**
+ * iPad 各代的**竖屏**尺寸（CSS 点）。
+ *
+ * 这里就是「iPad 装了却看不到启动屏」的根因所在：上一版只列了 iPhone，
+ * iPad 上没有任何一条 media 查询能匹配上 —— iOS 匹配不到就退回白屏，
+ * 不报错、不提示，看起来就像「iPad 不支持启动屏」。其实支持，只是没给图。
+ *
+ * 两个和 iPhone 不一样的地方：
+ *   1. **iPad 要区分横竖屏。** iPhone 的 device-width/height 恒定竖屏值，
+ *      一条查询就够；iPad 能转，所以每种尺寸要 portrait / landscape 各一张。
+ *   2. **横屏那一条的 device-width 仍然是竖屏值。** 这是最容易写错的地方：
+ *      device-width/device-height 在 iOS 上**永远**是竖屏读数，不随旋转变化，
+ *      变的只是当前 orientation 条件是否成立。所以横屏的 media 查询里
+ *      宽高照写竖屏的 768×1024，只有**图片**要转成 2048×1536。
+ *      写成 (device-width: 1024px) 的横屏查询永远不会匹配。
+ */
+export const IPAD_BASE = [
+  { width: 768, height: 1024, ratio: 2, note: "iPad 9.7 / mini 1-5" },
+  { width: 810, height: 1080, ratio: 2, note: "iPad 10.2" },
+  { width: 820, height: 1180, ratio: 2, note: "iPad 10.9 / Air 4-5 / Air 11 M2" },
+  { width: 834, height: 1112, ratio: 2, note: "iPad Pro 10.5" },
+  { width: 834, height: 1194, ratio: 2, note: "iPad Pro 11" },
+  { width: 1024, height: 1366, ratio: 2, note: "iPad Pro 12.9 / 13" },
+  { width: 744, height: 1133, ratio: 2, note: "iPad mini 6" }
+];
+
+export const IPAD_SCREENS = IPAD_BASE.flatMap((screen) => [
+  { ...screen, orientation: "portrait" },
+  { ...screen, orientation: "landscape", note: `${screen.note} · 横屏` }
+]);
+
+/** iPhone 不用管方向（device-width 恒定竖屏），iPad 必须区分。 */
+export const ALL_SCREENS = [
+  ...IPHONE_SCREENS.map((screen) => ({ ...screen, orientation: null })),
+  ...IPAD_SCREENS
+];
+
+/**
+ * 图片的真实像素。
+ * 横屏那张要把宽高对调 —— 但**只对图片**，media 查询里仍是竖屏读数。
+ */
+export const screenPixels = (screen) =>
+  screen.orientation === "landscape"
+    ? { w: screen.height * screen.ratio, h: screen.width * screen.ratio }
+    : { w: screen.width * screen.ratio, h: screen.height * screen.ratio };
+
+export const splashPixels = (screen) => {
+  const { w, h } = screenPixels(screen);
+  return `${w}x${h}`;
+};
 export const splashPath = (mode, screen) => `/splash/${mode}/${splashPixels(screen)}.png`;
 
 /**
  * iOS 匹配启动图用的 media 查询，必须和图片的真实像素完全对应。
  * 深色那一条在设备条件前再加一个 prefers-color-scheme 条件。
+ * 带方向的那一条（iPad）在最后追加 orientation 条件。
  */
 export const splashMedia = (screen, mode) => {
-  const device = `(device-width: ${screen.width}px) and (device-height: ${screen.height}px) and (-webkit-device-pixel-ratio: ${screen.ratio})`;
+  const parts = [
+    `(device-width: ${screen.width}px)`,
+    `(device-height: ${screen.height}px)`,
+    `(-webkit-device-pixel-ratio: ${screen.ratio})`
+  ];
+  if (screen.orientation) parts.push(`(orientation: ${screen.orientation})`);
+  const device = parts.join(" and ");
   return mode === "dark" ? `(prefers-color-scheme: dark) and ${device}` : device;
 };
 
@@ -166,17 +222,31 @@ for (const mode of ["light", "dark"]) {
 await browser.close();
 
 let total = 0;
+const expected = new Set();
 for (const mode of ["light", "dark"]) {
   const color = COLORS[mode];
   const dir = join(OUT_DIR, mode);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   console.log(`\n${mode}  ${color}`);
-  for (const screen of IPHONE_SCREENS) {
-    const w = screen.width * screen.ratio;
-    const h = screen.height * screen.ratio;
-    writeFileSync(join(dir, `${w}x${h}.png`), solidPng(w, h, color));
+  for (const screen of ALL_SCREENS) {
+    const { w, h } = screenPixels(screen);
+    const name = `${w}x${h}.png`;
+    expected.add(name);
+    writeFileSync(join(dir, name), solidPng(w, h, color));
     total += 1;
-    console.log(`  ${`${w}x${h}.png`.padEnd(14)} ${String(w).padStart(4)}×${h}  ${screen.note}`);
+    console.log(`  ${name.padEnd(14)} ${String(w).padStart(4)}×${String(h).padEnd(4)}  ${screen.note}`);
+  }
+}
+
+// 清掉上一版留下的、这版不再需要的图 —— 否则机型列表一变，旧图会一直躺在
+// 产物里，index.html 不引用它、check 也看不见它，但 dist 会一直带着它发出去。
+for (const mode of ["light", "dark"]) {
+  const dir = join(OUT_DIR, mode);
+  for (const file of readdirSync(dir)) {
+    if (file.endsWith(".png") && !expected.has(file)) {
+      unlinkSync(join(dir, file));
+      console.log(`  (清理旧图 ${mode}/${file})`);
+    }
   }
 }
 
@@ -187,7 +257,7 @@ writeFileSync(
   `${JSON.stringify(
     {
       colors: COLORS,
-      screens: IPHONE_SCREENS.map((screen) => ({
+      screens: ALL_SCREENS.map((screen) => ({
         pixels: splashPixels(screen),
         light: splashPath("light", screen),
         dark: splashPath("dark", screen),
@@ -200,4 +270,6 @@ writeFileSync(
     2
   )}\n`
 );
-console.log(`\n共 ${total} 张（${IPHONE_SCREENS.length} 档机型 × 2 种外观），清单见 public/splash/screens.json`);
+console.log(
+  `\n共 ${total} 张（${ALL_SCREENS.length} 档机型 × 2 种外观：iPhone ${IPHONE_SCREENS.length} + iPad ${IPAD_SCREENS.length}），清单见 public/splash/screens.json`
+);

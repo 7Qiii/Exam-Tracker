@@ -2064,3 +2064,108 @@ light: 接缝上方 #dfe7f0  接缝下方 #e9f0f9   Δ≈9（首屏那层渐变�
 深色是逐像素相等；浅色顶部只差 Δ5 左右，往下逐渐拉开到 Δ17 ——
 这也是为什么最终选了 `#dfe7f0`：它同时等于**状态栏的 `theme-color`**，
 顶部（视线最先落到的位置）匹配得最好。
+
+---
+
+## 第十九轮：iPad 装到主屏幕看不到启动屏 —— 因为压根没给它图（2026-10-04）
+
+> 公告｜修复｜iPad 装到主屏幕不再闪白屏｜补上了 iPad 全部 7 种尺寸的启动图（横竖屏各一张）。之前只做了 iPhone，iPad 上一条规则都匹配不到，于是退回白屏。
+
+### 1. 用户说「为什么我 ipad 添加到主屏幕没有这个所谓的启动动画」
+
+先说结论：**不是 iPad 不支持，是上一版一张 iPad 的图都没给。**
+
+`scripts/gen-splash.mjs` 里那个机型数组叫 `IPHONE_SCREENS`，字面意思，
+里面 11 档全是 iPhone。而 iOS 匹配启动图是**严格精确匹配** ——
+`device-width` / `device-height` / `-webkit-device-pixel-ratio` 三个值
+必须和当前设备完全相等，差一点都不认。于是 iPad 上 22 条 `<link>` 全部落空，
+iOS 没有可用的启动图，就退回白屏。
+
+这个失败是**静默**的：不报错、不警告、控制台干净。看起来就像「iPad 不支持这功能」。
+
+Apple 开发者论坛 thread #733490 里有人踩过一模一样的坑，原话：
+
+> I still use the `apple-touch-startup-image` link method. **It does still work for me**
+> but it involves specifying every i-device resolution and is a complete pain.
+> If it is not working for you, **double check that you have an exact match for your
+> device's screen resolution** in your list of apple-touch-startup-image links.
+
+### 2. 顺手排掉一个假情报
+
+搜「apple-touch-startup-image 失效」会命中好几篇中文站的文章，口径还互相打架
+（一篇说 iOS 8 就移除了，一篇说 iOS 15.4 彻底废弃，一篇说 iOS 7 后就不生效），
+共同结论是「这功能已经死了，只能靠 JS 盖一层假启动屏」。
+
+**这是错的，而且是 AI 生成的错误内容。** 三条反证：
+
+1. Apple 归档文档《Configuring Web Applications》至今仍完整描述这个 link，
+   没有任何废弃标记。
+2. 上面的论坛帖里，2023-10 有人明确说「it does still work for me」，
+   2024-02 还有人继续在用。
+3. 最硬的一条：**用户自己的 iPhone 上是能看到的**。真被 iOS 移除了，
+   iPhone 也该没有。
+
+那几篇文章真正说对的只有一句：匹配必须精确。而它们把「你没写对分辨率」
+误判成了「功能被删了」。
+
+### 3. iPad 和 iPhone 有两处不一样
+
+**(a) iPad 要区分横竖屏。** iPhone 的 `device-width` / `device-height`
+恒定是竖屏读数，一条规则就够用；iPad 能转，所以每种尺寸要 portrait / landscape
+各一张。
+
+**(b) 横屏那条的 `device-width` 仍然是竖屏值。** 这是最容易写错、且错得最安静的地方：
+`device-width` / `device-height` 在 iOS 上**永远**是竖屏读数，不随旋转变化 ——
+变的只是 `(orientation: ...)` 这个条件成不成立。所以横屏那条应该写成
+
+```
+(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)
+```
+
+而**图片**才是转过来的 2048×1536。如果顺手把查询也写成
+`(device-width: 1024px) and (device-height: 768px)`，语法完全合法、
+但永远不会匹配。`check-pwa` 现在专门断言这一条（宽必须 < 高）。
+
+### 4. 覆盖到哪些 iPad
+
+7 种尺寸 × 2 个方向 = 14 档：
+
+| 尺寸（点） | 像素 | 机型 |
+| --- | --- | --- |
+| 768 × 1024 | 1536 × 2048 | iPad 9.7 / mini 1-5 |
+| 810 × 1080 | 1620 × 2160 | iPad 10.2 |
+| 820 × 1180 | 1640 × 2360 | iPad 10.9 / Air 4-5 / Air 11 M2 |
+| 834 × 1112 | 1668 × 2224 | iPad Pro 10.5 |
+| 834 × 1194 | 1668 × 2388 | iPad Pro 11 |
+| 1024 × 1366 | 2048 × 2732 | iPad Pro 12.9 / 13 |
+| 744 × 1133 | 1488 × 2266 | iPad mini 6 |
+
+用户的 iPad Air 5 是 820 × 1180 @2x → `1640x2360.png`，正好在其中。
+现在一共 25 档机型 × 2 种外观 = **50 张**，合计 784KB。
+
+### 5. 为什么上一版的验证全绿却漏了 iPad
+
+这是这一轮最值得记的一点。
+
+`check-pwa` 原来的断言是拿 `index.html` 和 `public/splash/screens.json` **对答案**：
+数量一致、每档的浅色/深色两条都在、每张图尺寸和颜色都对。
+
+问题在于 —— **`screens.json` 当时也只有 iPhone**。两边一致地缺失，
+于是「数量一致 ✓」「每档都在 ✓」全部通过。
+
+> 自洽的清单证明不了清单是完整的。
+
+所以补了三条点名的断言：iPad 至少要有 768×1024 / 834×1194 / 1024×1366 三档、
+landscape 查询数量够、以及横屏查询的宽必须小于高。
+
+（这三条断言第一次跑就失败了 —— 因为我写的期望值漏了 `(orientation: portrait)`。
+正好证明它有牙齿。）
+
+### 6. 用户需要做的一步
+
+iOS 会**缓存 web clip 的启动图配置**，光部署新的不够。要：
+
+1. 长按主屏幕上的图标 → 移除
+2. Safari 里重新打开站点 → 分享 → 添加到主屏幕
+
+`index.html` 本身是 network-first，Service Worker 不会卡住新 HTML。

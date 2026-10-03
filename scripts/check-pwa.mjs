@@ -18,6 +18,10 @@
  *   7. 快捷方式的 URL 与路由模式匹配（hash 路由必须带 /#/）
  *   8. iOS 启动图：每档机型浅 / 深两条都在、真实像素尺寸正确、
  *      而且底色真的等于 App 的 --bg（采样 PNG 像素，不是信配置）
+ *   8b. iPad 必须真的被覆盖到，且横屏那条的 device-width 仍是竖屏读数。
+ *      「数量一致 / 每档都在」是拿 index.html 和 screens.json 对答案，
+ *      两边一致地漏掉 iPad 时它们照样全绿 —— 自洽的清单证明不了清单完整，
+ *      所以这里点名要求 iPad 机型。上一版就是这么漏的。
  *   9. iOS 安装引导只在 iPhone Safari 上出现，关掉后刷新也不再出现
  *
  * 用法：node scripts/check-pwa.mjs
@@ -238,6 +242,45 @@ if (existsSync(screensPath)) {
     missing.length === 0,
     "每一档机型的浅色 / 深色两条 link 都在",
     `缺少：${missing.map((m) => m.note).join("、")}`
+  );
+
+  // 下面这几条是专为「iPad 装到主屏幕却看不到启动屏」加的。
+  //
+  // 为什么上面那些断言抓不到：它们都是拿 index.html 和 screens.json 对答案，
+  // 而上一版 screens.json 本身也只有 iPhone —— 两边一致地缺失，于是「数量一致」
+  // 「每档都在」全部通过，iPad 却一张图都没有。**自洽的清单证明不了清单是完整的**，
+  // 必须点名要求 iPad 覆盖，否则同样的回归下次照样溜过去。
+  const REQUIRED_IPAD = [
+    { media: "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)", why: "iPad 9.7 / mini" },
+    { media: "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)", why: "iPad Pro 11" },
+    { media: "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)", why: "iPad Pro 12.9 / 13" }
+  ];
+  const missingIpad = REQUIRED_IPAD.filter((r) => !startupLinks.some((l) => l.media === r.media));
+  check(
+    missingIpad.length === 0,
+    `iPad 有启动图覆盖（${REQUIRED_IPAD.map((r) => r.why).join("、")}）`,
+    `缺少 iPad 的 media 查询：${missingIpad.map((r) => r.why).join("、")} —— iPad 上会退回白屏`
+  );
+
+  const landscapeLinks = startupLinks.filter((l) => l.media.includes("(orientation: landscape)"));
+  check(
+    landscapeLinks.length >= 6,
+    `iPad 横屏也覆盖了（${landscapeLinks.length} 条 landscape 查询）`,
+    "iPad 横屏没有启动图，横着点开会闪白屏"
+  );
+
+  // 横屏那条的 device-width 必须是**竖屏读数**（宽 < 高）。device-width/height 在
+  // iOS 上永远不随旋转变化，把横屏写成 (device-width: 1024px) and (device-height: 768px)
+  // 是这块最常见的错，且错得静默 —— 查询语法合法，只是永远不匹配。
+  const badLandscape = landscapeLinks.filter((l) => {
+    const w = Number(/device-width:\s*(\d+)px/.exec(l.media)?.[1] || 0);
+    const h = Number(/device-height:\s*(\d+)px/.exec(l.media)?.[1] || 0);
+    return !(w > 0 && h > 0 && w < h);
+  });
+  check(
+    badLandscape.length === 0,
+    "横屏查询的 device-width 仍是竖屏读数（宽 < 高）",
+    `${badLandscape.length} 条横屏查询把宽高写反了，永远不会匹配`
   );
 
   // 逐档机型核对四条：link 在、图能取到、**真实像素 = media 算出来的值**、

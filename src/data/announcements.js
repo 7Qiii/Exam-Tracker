@@ -5,9 +5,16 @@
  * 改了会在 npm run check 里被判定为过期。要改内容请改更新日志里的
  * `> 公告｜类型｜标题｜摘要` 那一行，然后重新生成。
  *
- * 共 17 条，最新一条 2026-10-03。
+ * 共 18 条，最新一条 2026-10-04。
  */
 export const announcements = [
+  {
+    id: "round-19",
+    type: "fix",
+    title: "iPad 装到主屏幕不再闪白屏",
+    summary: "补上了 iPad 全部 7 种尺寸的启动图（横竖屏各一张）。之前只做了 iPhone，iPad 上一条规则都匹配不到，于是退回白屏。",
+    time: "2026-10-04"
+  },
   {
     id: "round-18",
     type: "polish",
