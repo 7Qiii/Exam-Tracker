@@ -557,6 +557,13 @@ p.topbar-heading {
   border: 1px solid var(--line);
   border-radius: 18px;
   display: grid;
+  /*
+   * 第三行（列表）必须是 minmax(0, 1fr)，否则公告一多就会被裁掉而不是滚动：
+   * 隐式行是 auto，等于 max-content，列表撑到内容那么高之后父级的
+   * overflow: hidden 直接把它剪掉，列表自己的 overflow: auto 根本没机会生效。
+   * 之前只有 4 条公告，怎么都不会超出，所以这个坑一直没暴露。
+   */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 12px;
   overflow: hidden;
   background:
@@ -623,6 +630,7 @@ p.topbar-heading {
   display: grid;
   gap: 0;
   overflow: auto;
+  min-height: 0;
   padding-right: 4px;
 }
 
@@ -652,6 +660,12 @@ p.topbar-heading {
 
 .announcement-item.polish i {
   background: var(--green);
+}
+
+/* 修复单独给一色：和「优化」混成同一种绿的话，
+   「修了一个 bug」和「顺手整理了一下」在列表里就分不出来了 */
+.announcement-item.fix i {
+  background: var(--orange);
 }
 
 .announcement-item strong {

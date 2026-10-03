@@ -1,47 +1,25 @@
 <script setup>
 import { computed, ref } from "vue";
 import { Bell, Megaphone, Sparkles, Timeline, X } from "@lucide/vue";
+import { announcements } from "../data/announcements.js";
 
 const isOpen = ref(false);
 const activeTab = ref("timeline");
 
-const updates = [
-  {
-    id: "paper-variant-sync",
-    type: "feature",
-    title: "数一卷型已支持跨设备同步",
-    summary: "真题 / 模拟卷会写入云端字段，并带隐藏备注兜底，旧表结构也能还原。",
-    time: "2026-08-13 23:20"
-  },
-  {
-    id: "dark-record-form",
-    type: "polish",
-    title: "新增成绩暗色模式增强",
-    summary: "重做分段按钮、输入框和字段标题对比度，跟随系统暗色也会生效。",
-    time: "2026-08-13 23:18"
-  },
-  {
-    id: "average-paper-filter",
-    type: "feature",
-    title: "首页均分支持数一真题 / 模拟卷切换",
-    summary: "选择数一后，均分、最近成绩和图表会按卷型同步更新。",
-    time: "2026-08-13 22:40"
-  },
-  {
-    id: "restore-records",
-    type: "feature",
-    title: "成绩删除后 24 小时内可恢复",
-    summary: "记录页新增最近删除入口，误删后可以在一天内找回。",
-    time: "2026-08-13 21:30"
-  }
-];
-
+/**
+ * 通知页签是手写的运营提示，**不**从更新日志生成。
+ *
+ * 它回答的是「你现在需要做什么」，和「最近改了什么」不是一回事，
+ * 所以不该混进时间线。代价是它仍然要手工维护 —— 只放当下确实成立的事，
+ * 过期的（比如早就补完的字段迁移）要及时删掉，否则会误导人去改一个
+ * 已经不需要改的东西。
+ */
 const notices = [
   {
-    id: "schema-paper-variant",
-    title: "建议确认 Supabase 字段",
-    summary: "如果新设备仍看不到卷型，请在 Supabase SQL Editor 执行 records.paper_variant 的 add column 语句。",
-    time: "重要"
+    id: "missing-columns",
+    title: "新设备看不到卷型或用时？",
+    summary: "多半是云端表还缺对应的列。应用会自动降级、不会报错，补上列就能恢复完整同步。",
+    time: "提示"
   },
   {
     id: "refresh-deploy",
@@ -51,19 +29,57 @@ const notices = [
   }
 ];
 
-const currentItems = computed(() => (activeTab.value === "timeline" ? updates : notices));
-const unreadCount = computed(() => updates.length);
+const SEEN_KEY = "exam-tracker-announcements-seen";
+
+function readSeen() {
+  try {
+    return localStorage.getItem(SEEN_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+const seenId = ref(readSeen());
+
+/**
+ * 角标 = 「比你上次打开时多了几条」。
+ *
+ * 以前这里是 `announcements.length`，等于公告总条数 —— 永远显示 4，
+ * 看过也不会消，角标就失去了全部意义。
+ * 只存「看过的最新一条 id」而不是一串已读列表：公告是有序的，
+ * 记住最新的那条就等价于记住全部，也不用无限增长。
+ */
+const unreadCount = computed(() => {
+  const index = announcements.findIndex((item) => item.id === seenId.value);
+  return index < 0 ? announcements.length : index;
+});
+
+const unreadLabel = computed(() => (unreadCount.value > 9 ? "9+" : String(unreadCount.value)));
+
+function markSeen() {
+  const newest = announcements[0]?.id ?? "";
+  if (!newest || seenId.value === newest) return;
+  seenId.value = newest;
+  try {
+    localStorage.setItem(SEEN_KEY, newest);
+  } catch {
+    /* 存不进去就退化成「每次打开都显示角标」，不影响主流程 */
+  }
+}
 
 function toggleOpen() {
   isOpen.value = !isOpen.value;
+  if (isOpen.value) markSeen();
 }
+
+const currentItems = computed(() => (activeTab.value === "timeline" ? announcements : notices));
 </script>
 
 <template>
   <div class="announcement-center">
     <button class="ghost-button icon-only announcement-trigger" type="button" title="系统公告" aria-label="系统公告" @click="toggleOpen">
       <Bell :size="18" />
-      <span v-if="unreadCount" class="notification-dot">{{ unreadCount }}</span>
+      <span v-if="unreadCount" class="notification-dot">{{ unreadLabel }}</span>
     </button>
 
     <div v-if="isOpen" class="announcement-popover">
@@ -93,7 +109,7 @@ function toggleOpen() {
           <i></i>
           <div>
             <strong>{{ item.title }}</strong>
-            <p>{{ item.summary }}</p>
+            <p v-if="item.summary">{{ item.summary }}</p>
             <span>{{ item.time }}</span>
           </div>
         </article>
@@ -101,7 +117,7 @@ function toggleOpen() {
 
       <div class="announcement-foot">
         <Sparkles :size="14" />
-        <span>以后每次功能更新都会放在这里。</span>
+        <span>每次功能更新都会自动同步到这里。</span>
       </div>
     </div>
   </div>
