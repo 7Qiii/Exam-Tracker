@@ -36,8 +36,13 @@ const isOnline = ref(typeof navigator === "undefined" ? true : navigator.onLine)
 const globalSearch = ref("");
 const isGlobalSearchOpen = ref(false);
 const searchBoxRef = ref(null);
-const themeMode = ref("light");
+const themeMode = ref("system");
 const themeStorageKey = "exam-tracker-theme-mode";
+// 状态栏颜色跟随解析后的模式，否则安卓/iOS 的状态栏和页面底色永远对不上。
+// 取的是各自 --bg 的值：浅色 #dfe7f0（main.css 的 :root[data-theme="light"]），
+// 深色 #0f141b（design-system.css 的 :root[data-theme="dark"]）。
+const THEME_COLOR = { light: "#dfe7f0", dark: "#0f141b" };
+let systemThemeQuery = null;
 const signatureStorageKey = "exam-tracker-signature";
 const signatureText = ref("稳住节奏，今天继续推进");
 const signatureDraft = ref("");
@@ -235,17 +240,27 @@ function normalizeThemeMode(value) {
   return ["system", "light", "dark"].includes(value) ? value : "system";
 }
 
+// 「跟随系统」不是第三种外观，它只是「按系统在浅色 / 深色里挑一个」。
+//
+// 以前它靠 CSS 的 @media (prefers-color-scheme: dark) 兜底，而 design-system.css
+// 最后加载、里面的裸 :root 浅色 token 和媒体查询里的 :root 优先级相同却更靠后，
+// 于是系统是深色时页面反而渲染成浅色 —— 而且还是和「浅色」模式不同的第三种样子。
+// 现在统一在这里解析成 light / dark 再写 data-theme，三种模式只剩两套外观。
+function resolveThemeMode(mode) {
+  const normalized = normalizeThemeMode(mode);
+  if (normalized !== "system") return normalized;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 function applyThemeMode(mode) {
   if (typeof document === "undefined") return;
-  const normalized = normalizeThemeMode(mode);
+  const resolved = resolveThemeMode(mode);
   const root = document.documentElement;
-  if (normalized === "system") {
-    root.removeAttribute("data-theme");
-    root.style.colorScheme = "light dark";
-  } else {
-    root.dataset.theme = normalized;
-    root.style.colorScheme = normalized;
-  }
+  root.dataset.theme = resolved;
+  root.style.colorScheme = resolved;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", THEME_COLOR[resolved] || THEME_COLOR.light);
 }
 
 function setThemeMode(mode) {
@@ -255,6 +270,17 @@ function setThemeMode(mode) {
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(themeStorageKey, normalized);
   }
+}
+
+// 停在「跟随系统」时，系统临时切换深浅（比如到了日落时间）页面要立刻跟上。
+function handleSystemThemeChange() {
+  if (themeMode.value === "system") applyThemeMode("system");
+}
+
+function watchSystemTheme() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+  systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  systemThemeQuery.addEventListener?.("change", handleSystemThemeChange);
 }
 
 function showSignatureSplash() {
@@ -313,7 +339,8 @@ function syncSidebarForViewport() {
 }
 
 onMounted(() => {
-  setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey) || "light"));
+  setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey) || "system"));
+  watchSystemTheme();
   signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
   store.load();
   window.addEventListener("online", updateOnlineState);
@@ -323,6 +350,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  systemThemeQuery?.removeEventListener?.("change", handleSystemThemeChange);
+  systemThemeQuery = null;
   if (signatureTimer) window.clearTimeout(signatureTimer);
   window.removeEventListener("online", updateOnlineState);
   window.removeEventListener("offline", updateOnlineState);

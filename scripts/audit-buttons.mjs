@@ -259,7 +259,13 @@ const SIGNATURE = `(() => {
     colorScheme: document.documentElement.style.colorScheme || "",
     // 分段控件 / 主题色板这类只挪 .active 高亮、文字一个字都不变，
     // 不带上就会把「导出主题」这种按钮误判成无反应
-    activeText: [...document.querySelectorAll(".active")].map((el) => (el.innerText || "").replace(/\\s+/g, "")).join("§")
+    activeText: [...document.querySelectorAll(".active")].map((el) => (el.innerText || "").replace(/\\s+/g, "")).join("§"),
+    // 外观切换器是纯图标按钮，innerText 是空串：从「浅色」点到「跟随系统」时
+    // 高亮确实挪了，但 activeText 一个字都不变，于是被记成「点了没反应」。
+    // 主题改成「跟随系统 = 按系统解析成浅色/深色」之后，这两个按钮在系统是浅色时
+    // 渲染结果本来就一样（这正是修复的目标），所以更不能靠 theme 属性去区分，
+    // 只能看高亮落在哪个按钮上。
+    activeTheme: document.querySelector(".theme-switcher button.active")?.getAttribute("aria-label") || ""
   };
 })()`;
 
@@ -292,7 +298,12 @@ function classify(before, after, errors) {
   if (after.hash !== before.hash) return "路由跳转";
   if (after.toasts > before.toasts) return "Toast 反馈";
   if (after.theme !== before.theme || after.colorScheme !== before.colorScheme) return "主题切换";
-  if (after.textHash !== before.textHash || after.visibleButtons !== before.visibleButtons || after.activeText !== before.activeText) {
+  if (
+    after.textHash !== before.textHash ||
+    after.visibleButtons !== before.visibleButtons ||
+    after.activeText !== before.activeText ||
+    after.activeTheme !== before.activeTheme
+  ) {
     return "界面变化";
   }
   return "无可见变化";

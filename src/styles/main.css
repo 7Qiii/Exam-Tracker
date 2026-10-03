@@ -3650,9 +3650,13 @@ textarea,
   background: rgba(248, 250, 253, 0.96);
 }
 
-/* Liquid glass system theme: follows OS light/dark mode and avoids glare. */
+/* Liquid glass 浅色 token。
+   这里原来是 color-scheme: light dark，意思是「让浏览器按系统挑」—— 那是旧的
+   「跟随系统靠 CSS 媒体查询兜」思路的残留。现在深浅由 JS 解析后写死 data-theme，
+   内联的 color-scheme 永远覆盖样式表，所以这句已经不起作用，而且会误导下一个人
+   以为 CSS 还在跟系统走。删掉；这里的 token 只作为「万一没写上 data-theme」的兜底，
+   取值和 :root[data-theme="light"] 一致。 */
 :root {
-  color-scheme: light dark;
   --bg: #dfe7f0;
   --surface: rgba(236, 241, 247, 0.66);
   --surface-soft: rgba(224, 232, 242, 0.62);
@@ -3825,139 +3829,6 @@ th {
 
 .bottom-nav {
   background: rgba(232, 238, 246, 0.68);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #11161d;
-    --surface: rgba(25, 31, 40, 0.72);
-    --surface-soft: rgba(32, 39, 50, 0.7);
-    --glass: rgba(28, 35, 45, 0.58);
-    --glass-strong: rgba(35, 42, 54, 0.7);
-    --ink: #f4f7fb;
-    --muted: #a7b0bd;
-    --line: rgba(255, 255, 255, 0.11);
-    --line-strong: rgba(255, 255, 255, 0.18);
-    --blue: #5aa7ff;
-    --green: #3ed68f;
-    --orange: #ffb452;
-    --purple: #a49bff;
-    --red: #ff6b64;
-    --soft-shadow: 0 1px 1px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    --shadow: 0 20px 54px rgba(0, 0, 0, 0.32);
-  }
-
-  body {
-    background:
-      linear-gradient(180deg, rgba(36, 46, 60, 0.92) 0, rgba(17, 22, 29, 0) 330px),
-      linear-gradient(135deg, rgba(24, 57, 88, 0.54), rgba(17, 22, 29, 0) 52%),
-      var(--bg);
-  }
-
-  .brand-mark {
-    background: rgba(244, 247, 251, 0.92);
-    color: #11161d;
-  }
-
-  .brand strong,
-  .sidebar-card strong,
-  p.topbar-heading,
-  .section-head h2,
-  .list-card strong,
-  td,
-  th,
-  label,
-  input,
-  select,
-  textarea {
-    color: var(--ink);
-  }
-
-  .sidebar,
-  .bottom-nav,
-  .sync-stats article,
-  .queue-row,
-  .table-wrap,
-  .list-card,
-  .record-card,
-  .subject-editor,
-  .detail-panel,
-  .loading-panel,
-  .composite-dialog,
-  .composite-total-bar article,
-  .composite-source-editor,
-  .composite-selection-bar,
-  .inline-alert,
-  .offline-banner,
-  .dialog-hint {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015)),
-      var(--glass);
-  }
-
-  .sidebar-card,
-  .account-pill,
-  .sync-pill,
-  .topbar-tools .icon-only,
-  .topbar-tools .icon-button,
-  .drawer-close,
-  .menu-button,
-  input,
-  select,
-  textarea,
-  .search-box,
-  .segmented,
-  .secondary-button,
-  .ghost-button,
-  .icon-button,
-  .pager button,
-  .detail-pill,
-  .record-card-meta-line span,
-  .record-type-pill,
-  .selected-record-chip,
-  .selection-count {
-    background: rgba(39, 47, 60, 0.58);
-    color: var(--ink);
-  }
-
-  input:focus,
-  select:focus,
-  textarea:focus {
-    background: rgba(49, 59, 74, 0.72);
-  }
-
-  .nav-item,
-  .nav-item svg,
-  .section-meta,
-  .list-card span,
-  .empty,
-  .empty-cell {
-    color: var(--muted);
-  }
-
-  
-  .list-card:hover,
-  .record-card:hover,
-  .record-card.is-selected,
-  .subject-editor:hover {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
-      rgba(43, 52, 66, 0.72);
-  }
-
-  .composite-dialog-backdrop,
-  .sidebar-backdrop {
-    background: rgba(9, 12, 17, 0.48);
-  }
-
-  th {
-    background: rgba(48, 58, 72, 0.58);
-  }
-
-  td,
-  th {
-    border-bottom-color: rgba(255, 255, 255, 0.08);
-  }
 }
 
 /* Product surface refresh: calm data-workspace styling shared by every route. */
@@ -4889,6 +4760,39 @@ textarea:focus {
 :root[data-theme="dark"] .theme-switcher button.active {
   background: rgba(255, 255, 255, 0.12);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 下面五条原先只写在 @media (prefers-color-scheme: dark) 里。
+   后果是「跟随系统 + 系统深色」有这些效果，手动选「深色」反而全丢：
+   输入框聚焦没有底色、卡片悬停没有反馈、表头和行线还是浅色的、遮罩不够暗。
+   深色现在只有 data-theme="dark" 一条路径，所以在这里补齐。 */
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] textarea:focus {
+  background: rgba(49, 59, 74, 0.72);
+}
+
+:root[data-theme="dark"] .list-card:hover,
+:root[data-theme="dark"] .record-card:hover,
+:root[data-theme="dark"] .record-card.is-selected,
+:root[data-theme="dark"] .subject-editor:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+    rgba(43, 52, 66, 0.72);
+}
+
+:root[data-theme="dark"] .composite-dialog-backdrop,
+:root[data-theme="dark"] .sidebar-backdrop {
+  background: rgba(9, 12, 17, 0.48);
+}
+
+:root[data-theme="dark"] th {
+  background: rgba(48, 58, 72, 0.58);
+}
+
+:root[data-theme="dark"] td,
+:root[data-theme="dark"] th {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 520px) {
@@ -6899,49 +6803,4 @@ textarea:focus {
 :root[data-theme="dark"] .announcement-tabs button.active {
   background: rgba(90, 167, 255, 0.2);
   color: #f4f8ff;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .record-form label,
-  :root:not([data-theme]) .record-form .field-group > span {
-    color: rgba(238, 244, 252, 0.86);
-  }
-
-  :root:not([data-theme]) .record-form input,
-  :root:not([data-theme]) .record-form select,
-  :root:not([data-theme]) .record-form textarea {
-    border-color: rgba(255, 255, 255, 0.14);
-    background: rgba(11, 16, 23, 0.68);
-    color: #f4f7fb;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  }
-
-  :root:not([data-theme]) .record-form .segmented {
-    border-color: rgba(255, 255, 255, 0.11);
-    background: rgba(11, 16, 23, 0.46);
-  }
-
-  :root:not([data-theme]) .record-form .segmented button {
-    color: rgba(226, 233, 242, 0.72);
-  }
-
-  :root:not([data-theme]) .record-form .segmented button.active,
-  :root:not([data-theme]) .paper-kind-tabs button.active,
-  :root:not([data-theme]) .paper-kind-segmented button.active,
-  :root:not([data-theme]) .announcement-tabs button.active {
-    background: rgba(90, 167, 255, 0.2);
-    color: #f4f8ff;
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
-  :root:not([data-theme]) .announcement-popover {
-    background:
-      linear-gradient(180deg, rgba(31, 39, 51, 0.9), rgba(18, 24, 33, 0.86)),
-      rgba(18, 24, 33, 0.86);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
-  }
-
-  :root:not([data-theme]) .announcement-tabs {
-    background: rgba(11, 16, 23, 0.48);
-  }
 }

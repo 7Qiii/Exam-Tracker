@@ -3,13 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#101828" />
+    <!-- theme-color 由下面那段内联脚本按当前主题改写，这里的初值只是脚本没跑起来时的兜底 -->
+    <meta name="theme-color" content="#dfe7f0" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- 主题必须在首屏渲染前定下来。
+         以前 data-theme 是等 Vue 挂载后才写的，于是「跟随系统 + 系统深色」会先
+         闪一下浅色再翻成深色；而且在这之前 <html> 上根本没有 data-theme，
+         CSS 里所有 [data-theme=...] 规则都落空。这里在解析阶段就按
+         「已存偏好 → 系统」算出最终值直接写到 <html> 上，
+         App.vue 挂载后会再执行一次同样的逻辑（幂等）。
+         必须放在样式表之前，否则第一帧还是会用错主题。 -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        try {
+          var mode = localStorage.getItem("exam-tracker-theme-mode");
+          if (mode !== "light" && mode !== "dark" && mode !== "system") mode = "system";
+          var resolved =
+            mode === "system"
+              ? window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : mode;
+          root.dataset.theme = resolved;
+          root.style.colorScheme = resolved;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", resolved === "dark" ? "#0f141b" : "#dfe7f0");
+        } catch (error) {
+          // 隐私模式下访问 localStorage 会抛错：退回浅色，不影响渲染
+          root.dataset.theme = "light";
+        }
+      })();
+    </script>
     <!-- 用 default 而不是 black-translucent。
-         black-translucent 会让状态栏文字变白并浮在内容之上，而这个应用顶部是
-         浅色（#f6f8fb）的，白字在上面基本看不见；default 给不透明状态栏 + 深色
-         文字，任何主题下都读得清。
+         black-translucent 会让状态栏文字变白并浮在内容之上，而这个应用顶部在浅色
+         主题下是浅色的（#dfe7f0 起），白字在上面基本看不见；default 给不透明状态栏
+         + 深色文字，任何主题下都读得清。
          配合下面的 viewport-fit=cover，还要靠 CSS 里的 safe-area-inset-top
          把内容顶下来，否则内容仍然会钻到状态栏底下。 -->
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
