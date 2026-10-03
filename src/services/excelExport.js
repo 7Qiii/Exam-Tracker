@@ -339,7 +339,7 @@ export async function exportRecordsToExcel({
     ? [...records]
     : [...records].sort((a, b) => compareExportRecordsByName(a, b, subjectMap));
 
-  workbook.creator = "Exam Tracker";
+  workbook.creator = "Score Record";
   workbook.created = new Date();
   workbook.modified = new Date();
   workbook.properties.date1904 = false;

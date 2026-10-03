@@ -425,9 +425,9 @@ onBeforeUnmount(() => {
     <aside class="sidebar" :class="{ open: isSidebarOpen }">
       <div class="sidebar-head">
         <RouterLink class="brand" to="/" @click="closeSidebar">
-          <span class="brand-mark">ET</span>
+          <span class="brand-mark">SR</span>
           <span>
-            <strong>Exam Tracker</strong>
+            <strong>Score Record</strong>
             <small>Study OS</small>
           </span>
         </RouterLink>
@@ -437,9 +437,9 @@ onBeforeUnmount(() => {
       </div>
 
       <RouterLink class="brand desktop-brand" to="/">
-        <span class="brand-mark">ET</span>
+        <span class="brand-mark">SR</span>
         <span>
-          <strong>Exam Tracker</strong>
+          <strong>Score Record</strong>
           <small>Study OS</small>
         </span>
       </RouterLink>
@@ -478,7 +478,7 @@ onBeforeUnmount(() => {
       <div v-if="showInstallHint" class="offline-banner install-hint">
         <Share :size="15" />
         <span>
-          把「错题本」装到主屏幕：点底部的<b>分享</b>按钮，选「添加到主屏幕」，
+          把「Score Record」装到主屏幕：点底部的<b>分享</b>按钮，选「添加到主屏幕」，
           之后就能像 App 一样全屏打开，断网也能用。
         </span>
         <button type="button" aria-label="不再提示安装" @click="dismissInstallHint">

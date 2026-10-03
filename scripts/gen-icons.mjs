@@ -33,8 +33,11 @@ const raw = await readFile(SRC, "utf8");
  * 全出血版本：把圆角改成直角。
  * 透明圆角在 iOS 上会被填成黑色，看起来像图坏了 ——
  * 交给系统自己去裁形状才是对的。
+ *
+ * 注意是**全部**替换（/g）：底色、渐变叠加、高光各有一层 rect，只换第一层的话
+ * 剩下的还带着圆角，全出血时四角就会露出没铺满的边。
  */
-const fullBleed = raw.replace(/rx="96"/, 'rx="0"');
+const fullBleed = raw.replace(/rx="96"/g, 'rx="0"');
 
 /** 补上明确宽高，光栅化时尺寸才可控（viewBox 本身不提供内在尺寸） */
 const sized = (svg, px) => svg.replace("<svg ", `<svg width="${px}" height="${px}" `);
@@ -66,8 +69,9 @@ const results = await page.evaluate(async (targets) => {
     canvas.width = t.size;
     canvas.height = t.size;
     const ctx = canvas.getContext("2d");
-    // 先用底色铺满，再画图 —— 万一 SVG 有透明区域也不会露出透明通道
-    ctx.fillStyle = "#18212f";
+    // 先用底色铺满，再画图 —— 万一 SVG 有透明区域也不会露出透明通道。
+    // 这个值要和 icon.svg 里那个 hex 基底一致（check-pwa 读的也是那一层）。
+    ctx.fillStyle = "#E6ECFF";
     ctx.fillRect(0, 0, t.size, t.size);
     ctx.drawImage(img, 0, 0, t.size, t.size);
     URL.revokeObjectURL(url);

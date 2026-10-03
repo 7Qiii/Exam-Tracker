@@ -236,15 +236,23 @@ p.topbar-heading {
   width: 32px;
   height: 32px;
   border-radius: var(--r-sm);
-  background: var(--ink);
-  color: var(--surface);
+  background: linear-gradient(135deg, #2b47ee, #8b5cf6);
+  color: #ffffff;
   font-size: 13px;
   font-weight: 800;
   box-shadow: none;
 }
 
+/* 品牌色和主屏幕图标统一：图标是浅底 + 靛蓝→紫的上升条形，侧栏标记直接取
+   条形那段颜色，两边才像同一个东西（以前浅色下是近黑 #1d1d1f、深色下是
+   --blue-fill，本身就不一致）。
+   两个主题都要显式写一遍，而且必须待在 design-system.css 里 —— main.css
+   也有 :root[data-theme="light"|"dark"] .brand-mark，特异度同样是 (0,2,0)，
+   只有靠「design-system 最后加载」才压得过。漏写哪个主题，那个主题就会
+   退回 main.css 的近黑 / 浅灰。 */
+:root[data-theme="light"] .brand-mark,
 :root[data-theme="dark"] .brand-mark {
-  background: var(--blue-fill);
+  background: linear-gradient(135deg, #2b47ee, #8b5cf6);
   color: #ffffff;
 }
 

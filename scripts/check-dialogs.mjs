@@ -21,6 +21,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { createRequire } from "node:module";
+import { listenSafePort } from "./lib/safe-listen.mjs";
 
 // playwright-core 装在托管工作区里（不污染项目依赖），ESM 不认 NODE_PATH
 const WORKSPACE = "C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace";
@@ -82,7 +83,7 @@ async function startServer() {
       res.end();
     }
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await listenSafePort(server);
   return { server, port: server.address().port };
 }
 

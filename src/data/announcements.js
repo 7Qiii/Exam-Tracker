@@ -5,9 +5,16 @@
  * 改了会在 npm run check 里被判定为过期。要改内容请改更新日志里的
  * `> 公告｜类型｜标题｜摘要` 那一行，然后重新生成。
  *
- * 共 18 条，最新一条 2026-10-04。
+ * 共 19 条，最新一条 2026-10-04。
  */
 export const announcements = [
+  {
+    id: "round-20",
+    type: "polish",
+    title: "换了新名字和新图标",
+    summary: "主屏幕上的名字从「错题本」改成 Score Record，图标从深藏青的「IN」换成浅色渐变 + 上升条形。",
+    time: "2026-10-04"
+  },
   {
     id: "round-19",
     type: "fix",

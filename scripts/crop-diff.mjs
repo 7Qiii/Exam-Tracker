@@ -23,6 +23,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { extname, join } from "node:path";
 import { createRequire } from "node:module";
+import { listenSafePort } from "./lib/safe-listen.mjs";
 
 const WORKSPACE = "C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace";
 const chromium = createRequire(`${WORKSPACE}/package.json`)("playwright-core").chromium;
@@ -48,7 +49,7 @@ const server = createServer(async (req, res) => {
   res.writeHead(200, { "content-type": MIME[extname(f)] || "application/octet-stream" });
   res.end(await readFile(f));
 });
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
+await listenSafePort(server);
 const base = `http://127.0.0.1:${server.address().port}`;
 
 const browser = await chromium.launch({ channel: "chrome" });
