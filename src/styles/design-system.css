@@ -45,6 +45,14 @@
   --purple: #7c5cf5;
   --purple-soft: #f1edff;
 
+  /* 「填充面」色：会被白字/白图标压在上面的底。
+     必须和 --blue / --red 分开 —— 深色模式下 --blue 会调亮成 #5aa7ff
+     （当文字/图标色很好用），但拿它当按钮底再压白字就只有 2.5:1，读不清。
+     这两个 token 在两种主题下都保持足够深，白字恒过 WCAG AA（4.5:1）。
+     深色主题故意不覆盖它们：填充色不该随主题变浅。 */
+  --blue-fill: #2f6fed;
+  --red-fill: #dc2626;
+
   /* 圆角 */
   --r-sm: 6px;
   --r-md: 10px;
@@ -236,7 +244,7 @@ p.topbar-heading {
 }
 
 :root[data-theme="dark"] .brand-mark {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: #ffffff;
 }
 
@@ -482,14 +490,14 @@ p.topbar-heading {
 
 .primary-button {
   border: 1px solid transparent;
-  background: var(--blue);
+  background: var(--blue-fill);
   color: #ffffff;
   padding: 0 14px;
   box-shadow: none;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--blue) 88%, #000000);
+  background: color-mix(in srgb, var(--blue-fill) 88%, #000000);
   border-color: transparent;
   box-shadow: none;
   transform: none;
@@ -591,7 +599,7 @@ p.topbar-heading {
 }
 
 .avatar-dot.online {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: #ffffff;
 }
 
@@ -1750,7 +1758,9 @@ tbody tr.is-selected {
 }
 
 .ds-record-card-score small {
-  color: var(--muted-soft);
+  /* 分母（/150）是 12px 的实际信息，不是装饰。
+     --muted-soft 压在这种柔面板上只有 2.3:1，太淡；退一档到 --muted 有 4.2:1。 */
+  color: var(--muted);
   font-size: 12px;
   font-weight: 500;
 }
@@ -2196,12 +2206,12 @@ tbody tr.is-selected {
    -------------------------------------------------------------------------- */
 .primary-button.is-danger {
   border-color: transparent;
-  background: var(--red);
+  background: var(--red-fill);
   color: #ffffff;
 }
 
 .primary-button.is-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--red) 86%, #000000);
+  background: color-mix(in srgb, var(--red-fill) 86%, #000000);
   border-color: transparent;
 }
 

@@ -98,6 +98,20 @@ if (manifestRes === 200) {
       (manifest.icons || []).some((i) => (i.purpose || "").includes("maskable")),
       "有 maskable 图标（安卓/鸿蒙裁圆角不会切到内容）"
     );
+
+    // 启动配色必须和图标底色一致：安卓的启动屏就是「background_color + 图标」，
+    // 两者不同色会看到一块突兀的方底。直接从 icon.svg 里读，别在这里再抄一遍颜色，
+    // 否则改了图标忘了改这里，测试反而会替错误的组合背书。
+    const iconSvg = await readFile(join(ROOT, "public", "icon.svg"), "utf8");
+    const brandBg = /<rect[^>]*fill="(#[0-9a-fA-F]{3,8})"/.exec(iconSvg)?.[1]?.toLowerCase() || "";
+    check(!!brandBg, `从 icon.svg 读出品牌底色（${brandBg || "读不到"}）`, "icon.svg 里找不到 <rect fill=...>");
+    for (const key of ["background_color", "theme_color"]) {
+      check(
+        (manifest[key] || "").toLowerCase() === brandBg,
+        `manifest ${key} 与图标底色一致（${manifest[key]}）`,
+        `manifest ${key} 是 ${manifest[key]}，图标底色是 ${brandBg} —— 启动屏会和图标不同色`
+      );
+    }
   }
 }
 
@@ -132,6 +146,117 @@ if (links.appleIcon) {
   check(st === 200, `apple-touch-icon 可访问（HTTP ${st}）`);
   check(!links.appleIcon.endsWith(".svg"), "apple-touch-icon 不是 SVG", "iOS 不支持 SVG 主屏幕图标");
 }
+
+console.log("\niOS 启动图");
+const startupLinks = await page.evaluate(() =>
+  [...document.querySelectorAll('link[rel="apple-touch-startup-image"]')].map((el) => ({
+    href: el.getAttribute("href"),
+    media: el.getAttribute("media") || ""
+  }))
+);
+check(
+  startupLinks.length > 0,
+  `声明了 ${startupLinks.length} 张启动图`,
+  "一个 apple-touch-startup-image 都没有 —— 从主屏幕启动会先闪一张白屏"
+);
+
+// 和生成器的清单对答案。index.html 里的 media 是手贴的，机型列表在
+// public/splash/screens.json 里，两边会漂移，所以要逐条比。
+const screensPath = join(ROOT, "public", "splash", "screens.json");
+if (existsSync(screensPath)) {
+  const expected = JSON.parse(await readFile(screensPath, "utf8"));
+  check(
+    expected.length === startupLinks.length,
+    `启动图数量与 screens.json 一致（${expected.length} 档机型）`,
+    `index.html 里有 ${startupLinks.length} 张，screens.json 里是 ${expected.length} 张 —— 两边漂移了`
+  );
+  const missing = expected.filter((e) => !startupLinks.some((l) => l.media === e.media));
+  check(
+    missing.length === 0,
+    "screens.json 里每一档机型都在 index.html 里有对应的 link",
+    `缺少：${missing.map((m) => m.note).join("、")}`
+  );
+}
+
+// 每张图都要能取到，而且**真实像素必须和 media 查询算出来的完全一致**。
+// 对不上时 iOS 会直接不用这张图 —— 表现是「启动图时有时无」，非常难查。
+for (const link of startupLinks) {
+  const st = await page.evaluate((href) => fetch(href).then((r) => r.status).catch(() => 0), link.href);
+  if (st !== 200) {
+    bad(`${link.href} 取不到（HTTP ${st}）`);
+    continue;
+  }
+  const parsed = /device-width:\s*(\d+)px.*device-height:\s*(\d+)px.*-webkit-device-pixel-ratio:\s*([\d.]+)/.exec(link.media);
+  if (!parsed) {
+    bad(`${link.href} 的 media 解析不了：${link.media}`);
+    continue;
+  }
+  const w = Number(parsed[1]) * Number(parsed[3]);
+  const h = Number(parsed[2]) * Number(parsed[3]);
+  const actual = await page.evaluate(async (href) => {
+    const blob = await (await fetch(href)).blob();
+    const url = URL.createObjectURL(blob);
+    const img = await new Promise((res) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => res(null);
+      i.src = url;
+    });
+    URL.revokeObjectURL(url);
+    return img ? [img.naturalWidth, img.naturalHeight] : null;
+  }, link.href);
+  check(
+    actual && actual[0] === w && actual[1] === h,
+    `${link.href} ${actual?.[0]}×${actual?.[1]} 与 media 要求一致`,
+    `尺寸对不上：实际 ${actual?.[0]}×${actual?.[1]}，media 要求 ${w}×${h}`
+  );
+}
+
+console.log("\niOS 安装引导");
+// 桌面浏览器上这条提示不该出现（检测的是 iOS Safari UA）
+check(
+  !(await page.evaluate(() => !!document.querySelector(".install-hint"))),
+  "桌面浏览器上不出现「添加到主屏幕」引导"
+);
+
+const IOS_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+
+async function iosPage(extra) {
+  const context = await browser.newContext({
+    userAgent: IOS_UA,
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true
+  });
+  const p = await context.newPage();
+  if (extra) await p.addInitScript(extra);
+  await p.goto(base, { waitUntil: "load" });
+  await p.waitForTimeout(1500);
+  return { context, page: p };
+}
+
+const hasHint = (p) => p.evaluate(() => !!document.querySelector(".install-hint"));
+
+const ios = await iosPage();
+check(await hasHint(ios.page), "iPhone Safari 上出现「添加到主屏幕」引导", "iOS 用户看不到安装方法");
+if (await hasHint(ios.page)) {
+  await ios.page.locator(".install-hint button").click();
+  await ios.page.waitForTimeout(300);
+  check(!(await hasHint(ios.page)), "点关闭后引导消失");
+  await ios.page.reload({ waitUntil: "load" });
+  await ios.page.waitForTimeout(1500);
+  check(!(await hasHint(ios.page)), "刷新后不再出现（已记到 localStorage）");
+}
+await ios.context.close();
+
+// 已经装到主屏幕（standalone）时不该再提
+const standalone = await iosPage(() => {
+  Object.defineProperty(navigator, "standalone", { value: true, configurable: true });
+});
+check(!(await hasHint(standalone.page)), "已装到主屏幕（standalone）时不再提示");
+await standalone.context.close();
 
 console.log("\nService Worker");
 const swState = await page.evaluate(async () => {

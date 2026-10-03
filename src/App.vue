@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Share,
   Sun,
   Upload,
   X
@@ -236,6 +237,56 @@ function onSearchKeydown(event) {
 
 useDismissable(isGlobalSearchOpen, searchBoxRef, { onClose: closeGlobalSearch });
 
+/* ------------------------------------------------------------------ *
+ * iOS「添加到主屏幕」引导
+ *
+ * 只提两件事：**只有 iOS Safari 提**，**只有还没装到主屏幕时提**。
+ *   - iOS 上所有浏览器都跑 WebKit，但「添加到主屏幕」只有 Safari 有，
+ *     微信 / QQ / UC / Chrome(iOS) 都做不到 —— 在那儿提示只会让人白找一通。
+ *   - 已经装好了（standalone）就没必要再提。
+ *   - 关掉之后记在 localStorage，不再打扰。
+ * 桌面浏览器永远不满足第一个条件，所以这条提示不会出现在任何审计里 ——
+ * 它由 scripts/check-pwa.mjs 用 iPhone UA 单独验。
+ * ------------------------------------------------------------------ */
+
+const IOS_HINT_KEY = "exam-tracker-ios-install-hint-dismissed";
+const isIosSafari = ref(false);
+const isStandalone = ref(false);
+// 默认当成「已关掉」：探测是在 onMounted 里做的，先当关掉可以避免首帧闪一下。
+const isInstallHintDismissed = ref(true);
+
+function detectInstallContext() {
+  if (typeof navigator === "undefined") return;
+  const ua = navigator.userAgent || "";
+  // iPadOS 13+ 的 UA 是 Macintosh，只能靠「Mac 平台 + 多点触控」认出来
+  const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  // 只认 Safari：其他 iOS 浏览器都在 UA 里带自己的标记
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|MicroMessenger|QQBrowser|UCBrowser|DingTalk|Weibo/.test(ua);
+  isIosSafari.value = isIos && isSafari;
+  isStandalone.value =
+    navigator.standalone === true ||
+    (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches);
+  try {
+    isInstallHintDismissed.value = localStorage.getItem(IOS_HINT_KEY) === "1";
+  } catch (error) {
+    // 隐私模式下 localStorage 会抛错：当作已关掉，不弹
+    isInstallHintDismissed.value = true;
+  }
+}
+
+const showInstallHint = computed(
+  () => isIosSafari.value && !isStandalone.value && !isInstallHintDismissed.value
+);
+
+function dismissInstallHint() {
+  isInstallHintDismissed.value = true;
+  try {
+    localStorage.setItem(IOS_HINT_KEY, "1");
+  } catch (error) {
+    /* 存不下就算了，至少这次会话不再显示 */
+  }
+}
+
 function normalizeThemeMode(value) {
   return ["system", "light", "dark"].includes(value) ? value : "system";
 }
@@ -339,6 +390,7 @@ function syncSidebarForViewport() {
 }
 
 onMounted(() => {
+  detectInstallContext();
   setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey) || "system"));
   watchSystemTheme();
   signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
@@ -423,6 +475,16 @@ onBeforeUnmount(() => {
 
     <div class="workspace">
       <div v-if="!isOnline" class="offline-banner">当前离线，新增内容会先保存在本地。</div>
+      <div v-if="showInstallHint" class="offline-banner install-hint">
+        <Share :size="15" />
+        <span>
+          把「错题本」装到主屏幕：点底部的<b>分享</b>按钮，选「添加到主屏幕」，
+          之后就能像 App 一样全屏打开，断网也能用。
+        </span>
+        <button type="button" aria-label="不再提示安装" @click="dismissInstallHint">
+          <X :size="14" />
+        </button>
+      </div>
       <header class="topbar">
         <div class="topbar-title">
           <button class="menu-button" type="button" aria-label="打开导航" @click="toggleSidebar">

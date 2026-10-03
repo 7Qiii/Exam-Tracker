@@ -17,6 +17,7 @@
     "check:announcements": "node scripts/check-announcements.mjs",
     "check:theme": "node scripts/check-theme.mjs",
     "gen:announcements": "node scripts/gen-announcements.mjs",
+    "gen:splash": "node scripts/gen-splash.mjs",
     "check:duration": "node scripts/test-duration.mjs",
     "check:sorting": "node scripts/test-sorting.mjs",
     "check:pwa": "node scripts/check-pwa.mjs",

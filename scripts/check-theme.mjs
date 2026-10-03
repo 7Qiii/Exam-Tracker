@@ -22,11 +22,13 @@
  *   C. 选「浅色」后，系统配色不该再有任何影响；
  *   D. 选「深色」后，系统配色不该再有任何影响。
  *
- * 另外钉四件事：
+ * 另外钉五件事：
  *   4. 切换器的高亮必须正好落在选中的那个按钮上；
  *   5. CSS 里不许再出现 @media (prefers-color-scheme: dark)（防止有人又开一条路径）；
  *   6. 首屏渲染前 data-theme 就要写好（把 JS 主包掐断也必须有值，否则会闪浅色）；
- *   7. 停在「跟随系统」时系统配色变了，页面要实时跟上，且不能靠刷新。
+ *   7. 停在「跟随系统」时系统配色变了，页面要实时跟上，且不能靠刷新；
+ *   8. 颜色正确性：任何视口 / 模式 / 路由下，都不许有对比度 < 3:1 的文字，
+ *      也不许在深色底上出现写死的中性浅面（详见下面 colorAudit 的注释）。
  *
  * 比对时会排除 .theme-switcher 子树：选了不同模式，高亮本来就该落在不同按钮上，
  * 那是「正确的不同」。它的状态由第 4 组断言单独负责。
@@ -128,6 +130,110 @@ const SNAPSHOT = (props) =>
       return out;
     });
 
+// ---------------------------------------------------------------------------
+// 颜色正确性探针
+//
+// 上面那个 SNAPSHOT 比的是「一致性」：一个写死的浅色背景在两条深色路径下
+// 都同样错，它反而认为「一致」而放过。所以这里补「正确性」这一半，抓两类缺陷：
+//
+//   A. 对比度 < 3:1 —— 字色和底色太接近，读不清。
+//   B. 浅色融合 —— 深色模式里出现一块「中性 + 高亮」的底（写死的白 / 浅灰），
+//      压在深色面上。这正是 `.subject-editor-meta i { background: #ffffff }`
+//      那类缺陷的通用形式。加「低饱和」是为了不把绿色掌握度圆点这类
+//      「亮色强调点」误判成缺陷 —— 深色底上放亮色圆点是设计本意。
+//
+// 必须写成「真函数」交给 evaluate，不要写成模板字符串：
+// 模板字符串会把 `\(` 吃成 `(`，正则静默失效，探针变成永远通过。
+function colorAudit() {
+  const parse = (c) => {
+    const m = /rgba?\(([^)]+)\)/.exec(c);
+    if (m) {
+      const p = m[1].split(",").map((v) => parseFloat(v));
+      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    }
+    // color-mix() 的结果会被序列化成 color(srgb r g b / a)
+    const s = /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/.exec(c);
+    if (s) return { r: +s[1] * 255, g: +s[2] * 255, b: +s[3] * 255, a: s[4] === undefined ? 1 : +s[4] };
+    return null;
+  };
+  const lum = ({ r, g, b }) => {
+    const f = (v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  const ratio = (a, b) => {
+    const l1 = lum(a);
+    const l2 = lum(b);
+    const hi = Math.max(l1, l2);
+    const lo = Math.min(l1, l2);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  // 从 el 自身向上找第一个不透明纯色背景；遇到渐变 / 图片就放弃。
+  const surface = (el) => {
+    let node = el;
+    while (node && node.nodeType === 1) {
+      const cs = getComputedStyle(node);
+      if (cs.backgroundImage && cs.backgroundImage !== "none") return null;
+      const bg = parse(cs.backgroundColor);
+      if (bg && bg.a > 0.5) return bg;
+      node = node.parentElement;
+    }
+    return null;
+  };
+  const label = (el) =>
+    el.tagName.toLowerCase() +
+    (typeof el.className === "string" && el.className ? "." + el.className.trim().split(/\s+/).join(".") : "");
+
+  const contrast = [];
+  const fusion = [];
+  for (const el of document.querySelectorAll("body *")) {
+    // 切换器自身的高亮本来就随选择变化，不参与颜色正确性判断。
+    if (el.closest(".theme-switcher")) continue;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === "hidden" || cs.display === "none") continue;
+    if (parseFloat(cs.opacity) < 0.3) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) continue;
+
+    const own = parse(cs.backgroundColor);
+    if (own && own.a > 0.5 && el.parentElement) {
+      const spread = Math.max(own.r, own.g, own.b) - Math.min(own.r, own.g, own.b);
+      if (spread < 24) {
+        const ancestor = surface(el.parentElement);
+        if (ancestor && lum(own) > 0.5 && lum(ancestor) < 0.2) {
+          fusion.push({
+            sel: label(el),
+            own: cs.backgroundColor,
+            ancestor: `rgba(${ancestor.r},${ancestor.g},${ancestor.b},${ancestor.a})`
+          });
+        }
+      }
+    }
+
+    const text = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join("");
+    if (!text) continue;
+    const fg = parse(cs.color);
+    const bg = surface(el);
+    if (!fg || !bg) continue;
+    const c = ratio(fg, bg);
+    if (c >= 3) continue;
+    contrast.push({
+      sel: label(el),
+      text: text.slice(0, 20),
+      color: cs.color,
+      bg: `rgba(${bg.r},${bg.g},${bg.b},${bg.a})`,
+      ratio: Math.round(c * 100) / 100
+    });
+  }
+  return { contrast, fusion };
+}
+
+// 阈值取 3:1（WCAG 大字号 / 非文本图形的下限），刻意用最宽松那一档：
+// 次要文字本来就该比正文淡，卡 4.5:1 会把设计意图当成缺陷，制造噪音。
+const MIN_CONTRAST = 3;
+
 // 页面里得有内容，否则比对的是空壳，断言没有意义。
 const SEED = {
   records: Array.from({ length: 4 }, (_, i) => ({
@@ -202,6 +308,33 @@ async function capture(browser, base, colorScheme, mode, route) {
   const snap = await page.evaluate(SNAPSHOT, SNAPSHOT_PROPS);
   await context.close();
   return { applied, snap };
+}
+
+/**
+ * 颜色正确性采样：一个 (视口 × 模式) 只建一次 context，
+ * 之后靠 hash 切路由，省掉重复加载 —— 这组要跑 4 个 context × 3 条路由，
+ * 每条都全量加载的话会把 npm run check 拖慢一倍。
+ */
+async function captureColors(browser, base, mode, routes, viewport) {
+  const context = await browser.newContext({ colorScheme: mode, viewport });
+  const page = await context.newPage();
+  await page.goto(`${base}/#/`, { waitUntil: "load" });
+  await page.waitForTimeout(1200);
+  await seed(page);
+  await page.evaluate((value) => localStorage.setItem("exam-tracker-theme-mode", value), mode);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(1500);
+  const out = [];
+  for (const route of routes) {
+    await page.evaluate((r) => {
+      location.hash = `#${r}`;
+    }, route);
+    await page.waitForTimeout(900);
+    const result = await page.evaluate(colorAudit);
+    out.push({ route, ...result });
+  }
+  await context.close();
+  return out;
 }
 
 /** 逐元素比对，返回差异列表（空数组 = 完全一致）。 */
@@ -350,6 +483,46 @@ try {
       );
     }
     await context.close();
+  }
+
+  // ---- 8. 颜色正确性：对比度 + 浅色融合 ----
+  //
+  // 必须带上「手机」视口：`.topbar` 这类样式只存在于 @media (max-width: 820px)，
+  // 桌面截图永远照不到。深色模式下整条 topbar 曾是浅色底 + 近白字，
+  // 就是这个盲区漏掉的（它对主题探针「一致」，所以只有对比度探针抓得住）。
+  {
+    console.log("\n──── 颜色正确性（对比度 / 浅色融合）────");
+    const COLOR_ROUTES = ["/", "/records", "/subjects"];
+    const COLOR_VIEWPORTS = [
+      ["手机 390", { width: 390, height: 844 }],
+      ["桌面 1440", { width: 1440, height: 900 }]
+    ];
+    for (const [vlabel, viewport] of COLOR_VIEWPORTS) {
+      for (const mode of ["light", "dark"]) {
+        const samples = await captureColors(browser, base, mode, COLOR_ROUTES, viewport);
+        for (const sample of samples) {
+          const where = `${vlabel} · ${mode} · ${sample.route}`;
+          check(
+            sample.contrast.length === 0,
+            `${where} 没有对比度 < ${MIN_CONTRAST}:1 的文字`,
+            `${where} 有 ${sample.contrast.length} 处对比度 < ${MIN_CONTRAST}:1 —— ${sample.contrast
+              .slice(0, 3)
+              .map((h) => `<${h.sel}>「${h.text}」 ${h.ratio}:1（字 ${h.color} / 底 ${h.bg}）`)
+              .join("；")}`
+          );
+          // 浅色融合只在深色模式下才是缺陷：浅色模式里浅底浅面是正常的。
+          const fusion = mode === "dark" ? sample.fusion : [];
+          check(
+            fusion.length === 0,
+            `${where} 没有「深色底 + 写死浅面」的融合`,
+            `${where} 有 ${fusion.length} 处浅色融合 —— ${fusion
+              .slice(0, 3)
+              .map((h) => `<${h.sel}> 自身 ${h.own} 压在 ${h.ancestor} 上`)
+              .join("；")}`
+          );
+        }
+      }
+    }
   }
 
   // ---- A/B/C/D：逐元素比对 ----
