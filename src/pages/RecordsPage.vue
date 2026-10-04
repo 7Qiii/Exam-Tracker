@@ -207,7 +207,14 @@ const selectionProgress = computed(() => {
   const total = selectedRecords.value.length;
   return total >= 2 ? Math.min(100, Math.round((total / 4) * 100)) : total ? 25 : 0;
 });
-const shouldShowRestorePanel = computed(() => isRestorePanelOpen.value || store.deletedRecords.length > 0);
+// 面板只在 isRestorePanelOpen 为真时显示。
+//
+// 以前这里写的是 `isRestorePanelOpen.value || store.deletedRecords.length > 0`，
+// 于是只要最近删除里还剩一条，面板就**永远展开** —— 那个「最近删除 N」按钮
+// 点下去毫无反应，用户只能看着一长串已删记录挂在成绩列表上方。
+// 删除时会自动把它打开（见 deleteRecord 和批量删除），所以去掉这个兜底
+// 不会丢掉「误删了怎么办」的提示。
+const shouldShowRestorePanel = computed(() => isRestorePanelOpen.value);
 const rawHealthIssues = computed(() => buildHealthIssues());
 const ignoredHealthIssues = computed(() => rawHealthIssues.value.filter((issue) => ignoredHealthIssueIds.value.includes(issue.id)));
 const healthIssues = computed(() => rawHealthIssues.value.filter((issue) => !ignoredHealthIssueIds.value.includes(issue.id)));

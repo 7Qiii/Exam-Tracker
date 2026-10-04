@@ -704,6 +704,66 @@ label {
   background: var(--surface-soft);
 }
 
+/* <main tabindex="-1"> 只是「程序化聚焦」的落点 —— 换页后把焦点移进正文，
+   好让键盘用户不必从侧栏那一长串导航重新 Tab 一遍（见 App.vue 的 watch）。
+   它不是 Tab 停靠点，键盘用户永远不会停在它上面，所以它的焦点环没有信息量。
+   不抑制的话浏览器会按默认样式画一圈（iOS Safari 上是蓝色），表现为
+   「每次进页面都有一圈蓝框，点一下才消失」。
+   用 :focus-visible 一起写上：程序化聚焦在部分浏览器里会命中它。 */
+main:focus,
+main:focus-visible {
+  outline: none;
+}
+
+/* 科目排序手柄。从 <span> 换成了 <button>，所以要抹掉浏览器的默认按钮外观 ——
+   换 button 是为了能用键盘操作（Tab 能到达、方向键能排序）：拖拽只是鼠标和
+   触摸用户才有的路径，不该是唯一的排序方式。 */
+.drag-handle {
+  position: relative;
+  min-height: 40px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+  cursor: grab;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  border-radius: var(--r-sm);
+  /* 触摸拖动时必须禁掉浏览器手势，否则会被当成页面滚动，pointermove 直接断掉 */
+  touch-action: none;
+}
+
+/* 手柄在网格里只占 24px 宽，够不到 44px 的触摸目标下限（iPad 上很难瞄准）。
+   用伪元素把可点区域向外扩到 44×56，不改网格布局。
+   向右只压到「颜色块」那一列，而它是纯展示、没有交互，不会抢走谁的点击。 */
+.drag-handle::after {
+  content: "";
+  position: absolute;
+  inset: -8px -10px;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* 拖动中：源行淡出，落点行给出明确边框，让人知道松手会插到哪 */
+.subject-editor.is-dragging {
+  opacity: 0.5;
+}
+
+.subject-editor.is-drop-target {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.2);
+}
+
 /* 分段控件 */
 .segmented,
 .announcement-tabs,

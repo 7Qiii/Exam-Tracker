@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, nextTick, reactive, ref } from "vue";
 import { BookOpenCheck, ClipboardList, Eye, Layers, GripVertical, Palette, Plus, Save, Trash2 } from "@lucide/vue";
 import { defaultSubjects, isDefaultSubject } from "../services/storage";
 import { useConfirm } from "../composables/useConfirm";
@@ -13,7 +13,9 @@ const store = useTrackerStore();
 const { confirm } = useConfirm();
 const message = ref("");
 const error = ref("");
-const draggingId = ref("");
+const dragId = ref("");
+const dropTargetId = ref("");
+let dragPointerId = null;
 
 const form = reactive({ name: "", fullScore: 100, color: "#177ddc" });
 const defaultIds = new Set(defaultSubjects.map((subject) => subject.id));
@@ -113,13 +115,69 @@ async function moveSubject(fromId, toId) {
   message.value = "科目顺序已更新。";
 }
 
-function onDragStart(subject) {
-  draggingId.value = subject.id;
+/* ------------------------------------------------------------------ *
+ * 拖拽排序
+ *
+ * 原来用的是 HTML5 拖放（article 上挂 draggable + dragstart/drop），有两个
+ * 致命问题：
+ *   1. **触摸设备上完全不触发。** iOS Safari / Android Chrome 不会从触摸手势里
+ *      派发 dragstart，所以 iPad 上这个功能等于不存在 —— 而 iPad 正是目标设备。
+ *   2. 整张卡片都是拖拽源，可卡片里全是 input，想选个文字都会变成拖拽。
+ * 改成 Pointer Events：鼠标、触控笔、手指走同一条代码路径，只在手柄上起拖。
+ * 手柄还要 touch-action: none，否则浏览器会把这个手势当成页面滚动。
+ * ------------------------------------------------------------------ */
+function onHandleDown(event, subject) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  dragId.value = subject.id;
+  dropTargetId.value = "";
+  dragPointerId = event.pointerId;
+  // 指针捕获能保证手指滑出手柄后仍收得到 move/up。捕获失败不影响拖拽本身
+  // （后面用坐标做命中测试，不依赖事件落在哪），所以吞掉异常继续。
+  try {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  } catch {
+    /* 合成事件或指针已释放 —— 忽略 */
+  }
+  event.preventDefault();
 }
 
-async function onDrop(subject) {
-  await moveSubject(draggingId.value, subject.id);
-  draggingId.value = "";
+/** 指针下面是哪一行的科目。按坐标做命中测试，不依赖拖拽源自身的事件。 */
+function subjectIdAt(x, y) {
+  const row = document.elementFromPoint(x, y)?.closest("[data-subject-id]");
+  return row?.getAttribute("data-subject-id") || "";
+}
+
+function onHandleMove(event) {
+  if (!dragId.value || event.pointerId !== dragPointerId) return;
+  const overId = subjectIdAt(event.clientX, event.clientY);
+  dropTargetId.value = overId && overId !== dragId.value ? overId : "";
+}
+
+async function onHandleUp(event) {
+  if (!dragId.value || event.pointerId !== dragPointerId) return;
+  const from = dragId.value;
+  const to = dropTargetId.value;
+  dragId.value = "";
+  dropTargetId.value = "";
+  dragPointerId = null;
+  if (to) await moveSubject(from, to);
+}
+
+/**
+ * 手柄上的方向键。拖拽不该是唯一的排序方式 —— 键盘和读屏用户够不到拖拽，
+ * 24px 的手柄在触摸下也不好瞄准。方向键每次挪一格，挪完把焦点还回同一个
+ * 科目的手柄，否则连按第二下就断了。
+ */
+async function onHandleKeydown(event, subject) {
+  const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+  if (!delta) return;
+  const ids = rows.value.map((row) => row.id);
+  const neighbor = ids[ids.indexOf(subject.id) + delta];
+  if (!neighbor) return;
+  event.preventDefault();
+  await moveSubject(subject.id, neighbor);
+  await nextTick();
+  document.querySelector(`[data-drag-handle="${subject.id}"]`)?.focus();
 }
 
 async function remove(subject) {
@@ -261,12 +319,23 @@ async function remove(subject) {
             v-for="subject in rows"
             :key="subject.id"
             class="subject-editor"
-            draggable="true"
-            @dragstart="onDragStart(subject)"
-            @dragover.prevent
-            @drop.prevent="onDrop(subject)"
+            :class="{ 'is-dragging': dragId === subject.id, 'is-drop-target': dropTargetId === subject.id }"
+            :data-subject-id="subject.id"
           >
-            <span class="drag-handle" title="拖拽排序"><GripVertical :size="16" /></span>
+            <button
+              class="drag-handle"
+              type="button"
+              :data-drag-handle="subject.id"
+              :aria-label="`调整「${subject.name}」的顺序：可拖动，也可用方向键上下移动`"
+              title="拖动排序（也可用方向键）"
+              @pointerdown="onHandleDown($event, subject)"
+              @pointermove="onHandleMove"
+              @pointerup="onHandleUp"
+              @pointercancel="onHandleUp"
+              @keydown="onHandleKeydown($event, subject)"
+            >
+              <GripVertical :size="16" />
+            </button>
             <span class="subject-swatch" :style="{ background: subject.color }"></span>
             <label>
               名称
@@ -310,7 +379,8 @@ async function remove(subject) {
         </div>
         <p class="form-tip">
           <Palette :size="16" />
-          拖拽可以调整所有科目的显示顺序；隐藏只影响新增和筛选入口，不会删除历史记录。
+          拖动左侧手柄可以调整所有科目的显示顺序（也可以选中手柄后按 ↑ ↓）；
+          隐藏只影响新增和筛选入口，不会删除历史记录。
         </p>
       </DsSection>
     </section>
