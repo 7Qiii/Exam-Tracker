@@ -196,16 +196,28 @@ watch(
 
 async function submit() {
   formError.value = "";
-  if (Number(form.score) > Number(form.fullScore)) {
+  /* ------------------------------------------------------------------ *
+   * 校验口径：留空的字段一律当「没填」，不打扰用户。
+   *
+   * 以前这里有 `required`（浏览器原生气泡「请填写此字段」）和一条
+   * 「习题册名称必填」的硬拦。用户的实际感受是：只想随手记一条，
+   * 却被弹框拦住，关掉之后照样能存 —— 纯粹是摩擦。
+   *
+   * 现在只留两条**说不通**的数据检查，而且都必须「两个字段都真填了」才判：
+   * 满分留空时 Number("") 是 0，以前会直接把「得分 120 > 满分 0」判成越界，
+   * 于是留空反而弹提示 —— 正是要去掉的那种打扰。
+   *
+   * 习题册名称不再拦：store 的 buildExerciseRecordName 本来就会兜底成
+   * 「数一习题」，没必要为了一个标题挡住保存。
+   * ------------------------------------------------------------------ */
+  const score = form.score === "" ? null : Number(form.score);
+  const fullScore = form.fullScore === "" ? null : Number(form.fullScore);
+  if (score !== null && fullScore !== null && fullScore > 0 && score > fullScore) {
     formError.value = "得分不能高于满分。";
     return;
   }
   if (form.durationMinutes !== "" && Number(form.durationMinutes) < 0) {
     formError.value = "用时不能小于 0 分钟。";
-    return;
-  }
-  if (form.recordType === "exercise" && !form.exerciseBookName.trim()) {
-    formError.value = "请填写习题册名称。";
     return;
   }
   ensurePaperVariant();
@@ -265,7 +277,7 @@ function normalizePaperVariant(value, paperName = "") {
     <div v-if="formError" class="inline-alert danger">{{ formError }}</div>
     <label>
       科目
-      <select v-model="form.subjectId" required>
+      <select v-model="form.subjectId">
         <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
       </select>
     </label>
@@ -294,12 +306,12 @@ function normalizePaperVariant(value, paperName = "") {
     </div>
     <label v-if="form.recordType !== 'exercise'">
       {{ isComposite ? "合成成绩名称" : "试卷名称" }}
-      <input v-model.trim="form.paperName" required />
+      <input v-model.trim="form.paperName" />
     </label>
     <template v-else>
       <label>
         习题册名称
-        <input v-model.trim="form.exerciseBookName" list="exercise-book-options" required />
+        <input v-model.trim="form.exerciseBookName" list="exercise-book-options" />
         <datalist id="exercise-book-options">
           <option v-for="book in exerciseBooks" :key="book" :value="book" />
         </datalist>
@@ -318,11 +330,11 @@ function normalizePaperVariant(value, paperName = "") {
     <div class="form-row two">
       <label>
         得分
-        <input v-model="form.score" type="number" min="0" step="0.5" required />
+        <input v-model="form.score" type="number" step="any" inputmode="decimal" />
       </label>
       <label>
         满分
-        <input v-model="form.fullScore" type="number" min="1" step="1" required />
+        <input v-model="form.fullScore" type="number" step="any" inputmode="decimal" />
       </label>
     </div>
     <div class="form-row two">
@@ -330,11 +342,11 @@ function normalizePaperVariant(value, paperName = "") {
         <span :id="durationLabelId" class="ds-field-label">用时</span>
         <div class="duration-inputs" role="group" :aria-labelledby="durationLabelId">
           <span class="duration-part">
-            <input v-model="durationHours" type="number" min="0" max="23" step="1" inputmode="numeric" placeholder="0" aria-label="用时（小时）" />
+            <input v-model="durationHours" type="number" inputmode="numeric" placeholder="0" aria-label="用时（小时）" />
             <span class="duration-unit">小时</span>
           </span>
           <span class="duration-part">
-            <input v-model="durationMinutesPart" type="number" min="0" max="59" step="5" inputmode="numeric" placeholder="0" aria-label="用时（分钟）" />
+            <input v-model="durationMinutesPart" type="number" inputmode="numeric" placeholder="0" aria-label="用时（分钟）" />
             <span class="duration-unit">分钟</span>
           </span>
         </div>
@@ -353,7 +365,7 @@ function normalizePaperVariant(value, paperName = "") {
       </div>
       <label>
         日期
-        <input v-model="form.date" type="date" required />
+        <input v-model="form.date" type="date" />
       </label>
     </div>
     <label>

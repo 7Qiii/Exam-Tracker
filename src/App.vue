@@ -555,11 +555,12 @@ onBeforeUnmount(() => {
             <Cloud :size="17" />
           </RouterLink>
           <button
+            v-if="store.user"
             class="sync-pill"
             :class="{ online: store.user && !store.syncError, danger: store.syncError }"
             type="button"
             :title="syncStateTitle"
-            :disabled="store.isSyncing || !store.user"
+            :disabled="store.isSyncing"
             @click="syncNow"
           >
             <RefreshCw :size="15" :class="{ spinning: store.isSyncing }" />

@@ -20,6 +20,14 @@
  *   反而制造了一次「深蓝 → 浅色」的闪。启动屏的作用是把「还没渲染好」的那段
  *   时间藏起来，不是给人看画面。
  *
+ * 但「什么都不画」也踩了同一个坑的另一个面：
+ *   只铺一层和 body 相同的底色，启动图和 App 自己的背景**像素级一致**，
+ *   用户根本看不出它存在过 —— 反馈就是「没有启动动画」，明明它是生效的。
+ *   HIG 的原话是「和首屏**几乎一样**」，前提是首屏本身有东西。这个 App 的
+ *   首屏有顶栏、宽屏有侧栏、窄屏有底部导航，所以启动图要照着画这几块
+ *   **纯色矩形**（仍然没有文字、没有 logo，仍然不碰渐变），
+ *   这样过渡依然是无缝的，但看得见。
+ *
  * 颜色从哪来 —— 两个踩过的坑，都写在这儿免得再踩：
  *   1. **不能手抄 --bg。** 这个项目里 --bg 被定义了好几次，而 main.css 的
  *      `:root[data-theme="light"]`（特异度 0,2,0）会压过 design-system.css 里的
@@ -38,9 +46,11 @@
  * 用法：node scripts/gen-splash.mjs
  */
 import { createRequire } from "node:module";
-import { deflateSync, crc32 } from "node:zlib";
+import { deflateSync, inflateSync, crc32 } from "node:zlib";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { extname, join, normalize } from "node:path";
+import { listenSafe } from "./lib/safe-listen.mjs";
 
 const WORKSPACE = "C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace";
 const chromium = createRequire(`${WORKSPACE}/package.json`)("playwright-core").chromium;
@@ -161,9 +171,57 @@ function pngChunk(type, data) {
   return Buffer.concat([length, typeBuf, data, crc]);
 }
 
-/** 生成一张 width×height 的纯色 PNG。hex 形如 "#dfe7f0"。 */
-function solidPng(width, height, hex) {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+/**
+ * 一张 RGB 画布，最后编码成 PNG。
+ *
+ * 为什么不直接截图：截图会把抗锯齿、字体、渐变全带进来，单张 505KB，
+ * 而且和首屏永远对不齐（见文件头第 2 条）。这里只画**首屏的几个矩形**，
+ * 颜色全部来自浏览器算出来的真实值，单张仍然只有几 KB。
+ */
+function createCanvas(width, height) {
+  return { width, height, data: Buffer.alloc(width * height * 3) };
+}
+
+function fillAll(canvas, hex) {
+  const [r, g, b] = hexToRgb(hex);
+  for (let i = 0; i < canvas.data.length; i += 3) {
+    canvas.data[i] = r;
+    canvas.data[i + 1] = g;
+    canvas.data[i + 2] = b;
+  }
+}
+
+/** 画一个矩形，radius > 0 时切圆角（逐像素判，够用且不引入依赖）。 */
+function fillRect(canvas, x, y, w, h, hex, radius = 0) {
+  const [r, g, b] = hexToRgb(hex);
+  const x0 = Math.max(0, Math.round(x));
+  const y0 = Math.max(0, Math.round(y));
+  const x1 = Math.min(canvas.width, Math.round(x + w));
+  const y1 = Math.min(canvas.height, Math.round(y + h));
+  const rad = Math.min(radius, Math.floor(Math.min(w, h) / 2));
+  for (let py = y0; py < y1; py += 1) {
+    for (let px = x0; px < x1; px += 1) {
+      if (rad > 0) {
+        // 落在四个角的方框内才判圆角
+        const cx = px < x0 + rad ? x0 + rad : px >= x1 - rad ? x1 - rad - 1 : px;
+        const cy = py < y0 + rad ? y0 + rad : py >= y1 - rad ? y1 - rad - 1 : py;
+        if (cx !== px || cy !== py) {
+          const dx = px - cx;
+          const dy = py - cy;
+          if (dx * dx + dy * dy > rad * rad) continue;
+        }
+      }
+      const i = (py * canvas.width + px) * 3;
+      canvas.data[i] = r;
+      canvas.data[i + 1] = g;
+      canvas.data[i + 2] = b;
+    }
+  }
+}
+
+function encodePng(canvas) {
+  const { width, height, data } = canvas;
+  const stride = width * 3;
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
@@ -171,23 +229,24 @@ function solidPng(width, height, hex) {
   ihdr[9] = 2; // colour type 2 = truecolour RGB
   // 10/11/12 = compression / filter / interlace，全 0
   //
-  // 过滤器用「Up」(2)：每行存的是「本行 - 上一行」。纯色图里除了第一行，
-  // 其余整行都是 0，deflate 几乎全吃掉 —— 单张从 12KB 掉到 1KB 以内。
-  // 第一行没有上一行（按全 0 处理），所以 Up 退化成直接存原值，正好。
-  const firstRow = Buffer.alloc(1 + width * 3);
-  firstRow[0] = 2;
-  for (let x = 0; x < width; x += 1) {
-    firstRow[1 + x * 3] = r;
-    firstRow[2 + x * 3] = g;
-    firstRow[3 + x * 3] = b;
+  // 过滤器用「Up」(2)：每行存的是「本行 - 上一行」。这种图大面积是平的，
+  // 相邻两行完全相同 → 整行都是 0，deflate 几乎全吃掉。第一行没有上一行
+  //（按全 0 处理），Up 退化成直接存原值，正好。
+  const raw = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * (stride + 1);
+    raw[rowStart] = 2;
+    const upStart = (y - 1) * stride;
+    for (let i = 0; i < stride; i += 1) {
+      const cur = data[y * stride + i];
+      const up = y === 0 ? 0 : data[upStart + i];
+      raw[rowStart + 1 + i] = (cur - up + 256) & 0xff;
+    }
   }
-  const emptyRow = Buffer.alloc(1 + width * 3);
-  emptyRow[0] = 2;
-  const raw = Buffer.concat([firstRow, ...Array.from({ length: height - 1 }, () => emptyRow)]);
   return Buffer.concat([
     PNG_MAGIC,
     pngChunk("IHDR", ihdr),
-    pngChunk("IDAT", deflateSync(raw, { level: 9 })),
+    pngChunk("IDAT", deflateSync(raw, { level: 6 })),
     pngChunk("IEND", Buffer.alloc(0))
   ]);
 }
@@ -197,12 +256,46 @@ const rgbToHex = (value) => {
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 };
 
+/** "#dfe7f0" → [223, 231, 240]。带 alpha 的 rgba(...) 先和底色合成。 */
+const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
 const browserPath = BROWSER_CANDIDATES.find((path) => existsSync(path));
 if (!browserPath) throw new Error("没有找到 Chrome / Edge，无法计算真实背景色。");
 
 const appCss = CSS_FILES.map((file) => readFileSync(join(ROOT, "src", "styles", file), "utf8")).join("\n");
 
 if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+
+/* ------------------------------------------------------------------ *
+ * 量外壳几何需要跑真正的 App，所以起一个静态服务器指向 dist。
+ * 因此这个脚本要在 `npm run build` **之后**跑。
+ * ------------------------------------------------------------------ */
+const DIST = join(ROOT, "dist");
+if (!existsSync(join(DIST, "index.html"))) {
+  throw new Error("dist/index.html 不存在 —— 先跑一次 npm run build，再生成启动图。");
+}
+const MIME = {
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json",
+  ".json": "application/json"
+};
+const { server, port } = await listenSafe(async (req, res) => {
+  const url = new URL(req.url, "http://x");
+  let file = join(DIST, normalize(url.pathname).replace(/^(\.\.[/\\])+/, ""));
+  if (!existsSync(file) || url.pathname === "/") file = join(DIST, "index.html");
+  try {
+    const body = await readFile(file);
+    res.writeHead(200, { "Content-Type": MIME[extname(file)] || "application/octet-stream" });
+    res.end(body);
+  } catch {
+    res.writeHead(404).end("nf");
+  }
+});
+const base = `http://127.0.0.1:${port}`;
 
 const browser = await chromium.launch({ executablePath: browserPath, headless: true });
 
@@ -219,7 +312,114 @@ for (const mode of ["light", "dark"]) {
   COLORS[mode] = rgbToHex(computed);
   await page.close();
 }
-await browser.close();
+
+/* ------------------------------------------------------------------ *
+ * 首屏外壳：顶栏 / 侧栏 / 底部导航 的位置与颜色
+ *
+ * 为什么要画它们：HIG 要求启动图「和首屏几乎一样」。这个 App 的首屏
+ * **不是**一整块纯色 —— 它有顶栏、宽屏有侧栏、窄屏有底部导航。
+ * 只铺一层和 body 相同的底色，结果是启动图和 App 自己的背景**像素级一致**：
+ * 用户看到的是一次「什么都没发生」，反馈就成了「没有启动动画」。
+ * 启动图得让人**看得出来**它在，才有意义。
+ *
+ * 颜色一律**从真实渲染里采样**（截 1×1 像素），不读 backgroundColor ——
+ * 侧栏和 body 用的都是 linear-gradient，backgroundColor 是透明的，
+ * 读出来会拿到祖先元素的颜色，那又对不上了。
+ * ------------------------------------------------------------------ */
+function decodeFirstPixel(png) {
+  let pos = 8;
+  let colorType = 2;
+  const idat = [];
+  while (pos + 8 <= png.length) {
+    const len = png.readUInt32BE(pos);
+    const type = png.toString("ascii", pos + 4, pos + 8);
+    const data = png.subarray(pos + 8, pos + 8 + len);
+    if (type === "IHDR") colorType = data[9];
+    else if (type === "IDAT") idat.push(data);
+    else if (type === "IEND") break;
+    pos += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const channels = colorType === 6 ? 4 : 3;
+  const o = 1; // 第一行：1 字节 filter
+  const px = raw.subarray(o, o + channels);
+  return `#${[px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** 截 1×1 像素解出真实颜色，渐变背景也能拿到。 */
+async function sampleColor(page, x, y) {
+  const buf = await page.screenshot({ clip: { x: Math.round(x), y: Math.round(y), width: 1, height: 1 } });
+  return decodeFirstPixel(buf);
+}
+
+/** 启动图的 CSS 视口尺寸。横屏只是把宽高换过来，media 查询仍用竖屏读数。 */
+const cssViewport = (screen) =>
+  screen.orientation === "landscape" ? { w: screen.height, h: screen.width } : { w: screen.width, h: screen.height };
+
+const shellCache = new Map();
+
+async function measureShell(mode, screen) {
+  const key = `${mode}:${screen.width}x${screen.height}:${screen.orientation || "portrait"}`;
+  if (shellCache.has(key)) return shellCache.get(key);
+  const { w, h } = cssViewport(screen);
+  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1, hasTouch: true });
+  await page.goto(`${base}/#/`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(400);
+
+  const geo = await page.evaluate(() => {
+    const rect = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") return null;
+      const b = el.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1) return null;
+      return {
+        x: b.x, y: b.y, w: b.width, h: b.height,
+        radius: parseFloat(cs.borderTopLeftRadius) || 0,
+        borderW: parseFloat(cs.borderTopWidth) || 0
+      };
+    };
+    return { topbar: rect(".topbar"), sidebar: rect(".sidebar"), bottomNav: rect(".bottom-nav") };
+  });
+
+  const shell = { topbar: null, sidebar: null, bottomNav: null };
+  for (const key2 of ["topbar", "sidebar", "bottomNav"]) {
+    const r = geo[key2];
+    if (!r) continue;
+    const fill = await sampleColor(page, r.x + r.w / 2, r.y + r.h / 2);
+    const entry = { ...r, bg: fill };
+    if (r.borderW > 0) entry.border = await sampleColor(page, r.x + r.w / 2, r.y + r.borderW / 2);
+    shell[key2] = entry;
+  }
+  await page.close();
+  shellCache.set(key, shell);
+  return shell;
+}
+
+/** 把外壳画成矩形。像素坐标 = CSS 坐标 × ratio。 */
+function drawShell(width, height, ratio, shell, baseColor) {
+  const canvas = createCanvas(width, height);
+  fillAll(canvas, baseColor);
+  const P = (v) => v * ratio;
+  for (const key of ["sidebar", "topbar", "bottomNav"]) {
+    const r = shell[key];
+    if (!r) continue;
+    const bw = r.border ? P(r.borderW) : 0;
+    const rad = P(r.radius);
+    if (bw > 0) fillRect(canvas, P(r.x), P(r.y), P(r.w), P(r.h), r.border, rad);
+    fillRect(
+      canvas,
+      P(r.x) + bw,
+      P(r.y) + bw,
+      P(r.w) - bw * 2,
+      P(r.h) - bw * 2,
+      r.bg,
+      Math.max(0, rad - bw)
+    );
+  }
+  return canvas;
+}
 
 let total = 0;
 const expected = new Set();
@@ -227,16 +427,21 @@ for (const mode of ["light", "dark"]) {
   const color = COLORS[mode];
   const dir = join(OUT_DIR, mode);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  console.log(`\n${mode}  ${color}`);
+  console.log(`\n${mode}  底色 ${color}`);
   for (const screen of ALL_SCREENS) {
     const { w, h } = screenPixels(screen);
     const name = `${w}x${h}.png`;
     expected.add(name);
-    writeFileSync(join(dir, name), solidPng(w, h, color));
+    const shell = await measureShell(mode, screen);
+    const canvas = drawShell(w, h, screen.ratio, shell, color);
+    writeFileSync(join(dir, name), encodePng(canvas));
     total += 1;
-    console.log(`  ${name.padEnd(14)} ${String(w).padStart(4)}×${String(h).padEnd(4)}  ${screen.note}`);
+    const parts = ["topbar", "sidebar", "bottomNav"].filter((k) => shell[k]);
+    console.log(`  ${name.padEnd(14)} ${String(w).padStart(4)}×${String(h).padEnd(4)}  ${screen.note}  [${parts.join("+") || "纯色"}]`);
   }
 }
+await browser.close();
+server.close();
 
 // 清掉上一版留下的、这版不再需要的图 —— 否则机型列表一变，旧图会一直躺在
 // 产物里，index.html 不引用它、check 也看不见它，但 dist 会一直带着它发出去。

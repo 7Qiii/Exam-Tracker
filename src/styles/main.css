@@ -67,7 +67,7 @@ p {
 }
 
 .app-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: block;
 }
 
@@ -283,7 +283,7 @@ p {
 .workspace {
   min-width: 0;
   width: calc(100% - 274px);
-  min-height: 100vh;
+  min-height: 100dvh;
   margin-left: 274px;
   padding: 22px 26px 38px;
 }
@@ -553,7 +553,7 @@ p.topbar-heading {
   right: 0;
   z-index: 80;
   width: min(440px, calc(100vw - 28px));
-  max-height: min(650px, calc(100vh - 110px));
+  max-height: min(650px, calc(100dvh - 110px));
   border: 1px solid var(--line);
   border-radius: 18px;
   display: grid;
@@ -2227,7 +2227,7 @@ td a,
 .lightbox-card {
   position: relative;
   width: min(980px, 100%);
-  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   border-radius: 8px;
   background: #ffffff;
   overflow: hidden;
@@ -2277,7 +2277,7 @@ td a,
 
 .lightbox-card > img {
   width: 100%;
-  max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px);
   object-fit: contain;
   background: #0b1220;
 }

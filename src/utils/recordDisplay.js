@@ -8,7 +8,9 @@
 
 /** 列表和预览里显示的那一行名字：习题会带上书名 / 页码 / 题号 */
 export function recordTitle(record) {
-  if (record.recordType !== "exercise") return record.paperName;
+  // 卷名现在是选填的（以前被 required 拦着），留空时列表会渲染成一行空白，
+  // 看起来像坏了。给一个兜底文案，让「不填名字」也能正常用。
+  if (record.recordType !== "exercise") return record.paperName || "未命名成绩";
   return [
     record.exerciseBookName || record.paperName,
     record.exercisePage ? `P${record.exercisePage}` : "",
