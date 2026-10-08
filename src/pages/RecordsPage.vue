@@ -357,9 +357,6 @@ function startEdit(record) {
 
 /**
  * 关闭录入面板。以前直接关，填过的内容静默丢弃。
- *
- * 保存成功时 onFormSaved 也会走到这里 —— 那时表单已经 resetDirty() 过了，
- * confirmDiscardChanges() 会立刻放行，不会「刚存完反而问一句」。
  */
 async function closeForm() {
   if (!(await confirmDiscardChanges())) return;
@@ -367,8 +364,22 @@ async function closeForm() {
   editingRecordId.value = "";
 }
 
+/**
+ * 保存成功 —— 直接收起，**不再问**。
+ *
+ * 以前这里走的是 closeForm()，而 closeForm 会 confirmDiscardChanges()。
+ * 当时的设想是「表单已经 resetDirty() 过了，会立刻放行」，但实测不成立：
+ * 在成绩页保存一条成绩，那一刻脏标记还没被清掉，于是弹出
+ * 「放弃未保存的内容？」—— 用户看到的是「明明已经存好了，还问我放不放弃」，
+ * 关掉之后成绩又确实在，纯粹是惊吓。
+ *
+ * 首页（showRecordForm = false）、错题页、错题详情、成绩详情四个入口
+ * 本来就是直接关、不经过确认，所以只有成绩页会弹。
+ * 保存成功这个动作本身已经表达了「不要这些内容了」，没有问的必要。
+ */
 function onFormSaved() {
-  closeForm();
+  showForm.value = false;
+  editingRecordId.value = "";
 }
 
 function createMistakeFromRecord(record) {

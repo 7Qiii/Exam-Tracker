@@ -257,6 +257,54 @@ console.log("\n最近删除面板的折叠");
   await context.close();
 }
 
+// ---------------------------------------------------------------------------
+console.log("\n保存成绩后不该再问「放弃未保存的内容」");
+
+{
+  // 成绩页的录入面板以前把「保存成功」和「关闭面板」走了同一个函数，
+  // 而那个函数会 confirmDiscardChanges()。实测保存一条成绩就会弹出
+  // 「放弃未保存的内容？」—— 用户看到的是「明明存好了还问我要不要放弃」，
+  // 关掉之后成绩又确实在。这里把它钉住。
+  const { context, page } = await open("/#/records");
+
+  const askedDiscard = () => page.evaluate(() => /放弃未保存的内容/.test(document.body.innerText));
+
+  await page.locator('button:has-text("新增成绩")').first().click();
+  await page.waitForTimeout(600);
+  await page.locator("form.record-form input").first().fill("回归测试卷");
+  await page.locator('form.record-form input[type="number"]').first().fill("120");
+  await page.waitForTimeout(250);
+  await page.locator('form.record-form button[type="submit"]').first().click();
+  await page.waitForTimeout(1200);
+
+  check(
+    !(await askedDiscard()),
+    "成绩页保存成功后不再弹「放弃未保存的内容？」",
+    "保存成功后仍然弹了放弃确认 —— 刚存完却问要不要放弃"
+  );
+  check(
+    !(await page.evaluate(() => Boolean(document.querySelector("form.record-form")))),
+    "保存成功后录入面板正常收起",
+    "保存成功后表单还开着"
+  );
+
+  // 反向：填了一半不保存就关闭，**必须**仍然问一句。
+  // 少了这条，把确认整个删掉也能让上面通过。
+  await page.locator('button:has-text("新增成绩")').first().click();
+  await page.waitForTimeout(600);
+  await page.locator("form.record-form input").first().fill("填了一半就关");
+  await page.waitForTimeout(250);
+  await page.locator('button:has-text("关闭")').first().click();
+  await page.waitForTimeout(800);
+  check(
+    await askedDiscard(),
+    "填了一半直接关闭时仍然会问一句（保护没被一起删掉）",
+    "填了一半关闭却不再问了 —— 未保存内容会被静默丢掉"
+  );
+
+  await context.close();
+}
+
 await browser.close();
 server.close();
 
