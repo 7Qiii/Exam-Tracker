@@ -305,6 +305,137 @@ console.log("\n保存成绩后不该再问「放弃未保存的内容」");
   await context.close();
 }
 
+// ---------------------------------------------------------------------------
+console.log("\n英语阅读的分篇对错");
+
+{
+  // 用户原来把「5545」手打进复盘备注里 —— 纯文本，不能统计也看不出哪篇弱。
+  // 现在拆成 4 个格子。这里钉住三件事：
+  //   1. 连续敲 5 5 4 5 要能自动跳格（不然 4 个格子比打字还慢）；
+  //   2. 结构化数据不能漏进备注和导出（它是挂在备注里的隐藏块）；
+  //   3. 只对英语出现，别的科目不能被带上。
+  const { context, page } = await open("/#/records");
+
+  const boxes = () =>
+    page.evaluate(() => [...document.querySelectorAll(".reading-part input")].map((el) => el.value));
+  const summary = () => page.evaluate(() => document.querySelector(".reading-summary")?.textContent?.trim() || "");
+
+  await page.locator('button:has-text("新增成绩")').first().click();
+  await page.waitForTimeout(600);
+
+  await page.locator("form.record-form select").first().selectOption("math1");
+  await page.waitForTimeout(300);
+  check(
+    (await page.locator(".reading-parts").count()) === 0,
+    "数学科目不显示阅读分篇",
+    "数学科目也显示了阅读分篇 —— 阅读结果会跟着存进数学成绩"
+  );
+
+  await page.locator("form.record-form select").first().selectOption("english1");
+  await page.waitForTimeout(300);
+  check(
+    (await page.locator(".reading-part input").count()) === 4,
+    "英一显示 4 个阅读格子",
+    `英一只显示了 ${await page.locator(".reading-part input").count()} 个格子`
+  );
+
+  // 连续输入，靠的是「填完一格自动跳下一格」
+  await page.locator(".reading-part input").first().click();
+  await page.keyboard.type("5545", { delay: 60 });
+  await page.waitForTimeout(300);
+  check(
+    JSON.stringify(await boxes()) === JSON.stringify(["5", "5", "4", "5"]),
+    "连着敲 5545 能填满 4 个格子（自动跳格）",
+    `连续输入后是 ${JSON.stringify(await boxes())} —— 没有自动跳格，用户还是得逐个点`
+  );
+  check(
+    (await summary()).includes("19/20"),
+    `摘要算对了：${await summary()}`,
+    `摘要不对：${await summary()}`
+  );
+
+  // 越界的数字要丢掉，不能悄悄改成 5
+  await page.locator(".reading-part input").nth(3).fill("");
+  await page.locator(".reading-part input").nth(3).click();
+  await page.keyboard.type("9", { delay: 60 });
+  await page.waitForTimeout(250);
+  check(
+    (await boxes())[3] === "",
+    "填 9 这种越界值不会被悄悄存成别的数",
+    `填 9 之后第 4 格变成了 ${(await boxes())[3]} —— 越界值被篡改了`
+  );
+  await page.locator(".reading-part input").nth(3).click();
+  await page.keyboard.type("5", { delay: 60 });
+  await page.waitForTimeout(200);
+
+  await page.locator("form.record-form input").first().fill("阅读回归卷");
+  await page.locator('form.record-form input[type="number"]').first().fill("82");
+  await page.waitForTimeout(200);
+  await page.locator('form.record-form button[type="submit"]').first().click();
+  await page.waitForTimeout(1300);
+
+  check(
+    (await page.locator(".reading-pill").first().innerText().catch(() => "")).includes("5545"),
+    "保存后列表里能看到「阅读 5545」",
+    "保存后列表里没有阅读结果 —— 填了等于没填"
+  );
+
+  const href = await page.locator("tbody tr a").first().getAttribute("href");
+  await page.goto(`${base}/${href}`, { waitUntil: "load" });
+  await page.waitForTimeout(1000);
+
+  check(
+    (await page.locator(".reading-detail-item").count()) === 4,
+    "详情页展示 4 篇的结果",
+    "详情页没有阅读分篇 —— 结果只存了看不见"
+  );
+  check(
+    !(await page.evaluate(() => document.body.innerText.includes("exam-tracker"))),
+    "备注和页面上看不到隐藏的元数据块",
+    "页面上露出了 exam-tracker 元数据 —— 备注里那坨编码跑到界面上了"
+  );
+
+  await page.locator('button:has-text("编辑")').first().click();
+  await page.waitForTimeout(700);
+  check(
+    JSON.stringify(await boxes()) === JSON.stringify(["5", "5", "4", "5"]),
+    "重新编辑时阅读结果能读回来",
+    `编辑时读回的是 ${JSON.stringify(await boxes())} —— 存进去没读出来`
+  );
+
+  // 判脏：阅读格也是用户填的内容，改了就该拦一下
+  const askedDiscard = () => page.evaluate(() => /放弃未保存的内容/.test(document.body.innerText));
+  await page.locator(".reading-part input").first().click();
+  await page.keyboard.type("3", { delay: 60 });
+  await page.waitForTimeout(250);
+  await page.locator('button:has-text("关闭")').first().click();
+  await page.waitForTimeout(900);
+  check(
+    await askedDiscard(),
+    "只改了阅读格子，关闭时也会问一句（算未保存内容）",
+    "改了阅读格子却被静默丢弃 —— 判脏没覆盖这个字段"
+  );
+
+  // 反向：问过之后选择继续编辑并保存，保存成功就**不该**再问。
+  // 成绩列表页上一轮就是在这里翻的车（保存和关闭走了同一个函数）。
+  await page.getByRole("button", { name: "继续编辑" }).click();
+  await page.waitForTimeout(400);
+  await page.locator('form.record-form button[type="submit"]').first().click();
+  await page.waitForTimeout(1300);
+  check(
+    !(await askedDiscard()),
+    "详情页保存成功后不再问「放弃未保存的内容」",
+    "详情页刚保存完又弹了放弃确认 —— 保存成功走了「用户取消」那条路径"
+  );
+  check(
+    !(await page.evaluate(() => Boolean(document.querySelector("form.record-form")))),
+    "详情页保存成功后退出编辑态",
+    "详情页保存成功后表单还开着"
+  );
+
+  await context.close();
+}
+
 await browser.close();
 server.close();
 

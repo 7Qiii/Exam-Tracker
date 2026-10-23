@@ -30,10 +30,12 @@ import {
   formatScoreValue,
   normalizePaperVariant,
   normalizeScoreValue,
+  readingCellText,
   recordTitle,
   recordTypeLabel,
   recordVariantLabel,
-  recordYear
+  recordYear,
+  stripNoteMeta
 } from "../utils/recordDisplay";
 
 const props = defineProps({
@@ -51,7 +53,10 @@ const emit = defineEmits(["update:modelValue"]);
 const store = useTrackerStore();
 
 const isExporting = ref(false);
-const recommendedExportColumns = ["subject", "record", "scoreText", "note"];
+// 「阅读」默认就带上：它在非英语科目里是空列，但英语成绩的分篇结果
+// 只存在这条结构化数据里（备注里那块会被剥掉），不默认勾上就等于
+// 用户填了、导出却没有。
+const recommendedExportColumns = ["subject", "record", "scoreText", "reading", "note"];
 const exportLayoutStorageKey = "exam-tracker-export-layout";
 const exportMatrixFieldsStorageKey = "exam-tracker-export-matrix-fields";
 const exportMatrixExcludedStorageKey = "exam-tracker-export-matrix-excluded";
@@ -395,8 +400,11 @@ function buildExportPreviewRow(record) {
     exercisePage: record.exercisePage || "",
     exerciseQuestion: record.exerciseQuestion || "",
     duration: formatDuration(record.durationMinutes),
+    reading: readingCellText(record),
     sync: record.pendingSync ? "待同步" : "已同步",
-    note: record.note || "",
+    // 备注里挂着合成来源、阅读分篇等结构化块，预览和导出文件都必须先剥掉，
+    // 否则预览里会露出一串百分号编码。
+    note: stripNoteMeta(record.note),
     subjectColor: store.subjectColor(record.subjectId),
     isSummary: false
   };
@@ -426,6 +434,7 @@ function buildExportAverageRow(records) {
     exercisePage: "",
     exerciseQuestion: "",
     duration: "",
+    reading: "",
     sync: "",
     note: `共 ${records.length} 条`,
     subjectColor: "#2563eb",

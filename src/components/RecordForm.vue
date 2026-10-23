@@ -1,7 +1,16 @@
 <script setup>
-import { computed, reactive, ref, useId, watch } from "vue";
+import { computed, nextTick, reactive, ref, useId, watch } from "vue";
 import { Save } from "@lucide/vue";
-import { composeDuration, normalizeDurationMinutes, splitDurationMinutes } from "../utils/recordDisplay";
+import {
+  READING_PART_COUNT,
+  READING_PART_FULL,
+  composeDuration,
+  normalizeDurationMinutes,
+  normalizeReadingParts,
+  readingCorrectTotal,
+  readingFilledCount,
+  splitDurationMinutes
+} from "../utils/recordDisplay";
 import { useUnsavedFields } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 
@@ -30,7 +39,9 @@ const form = reactive({
   fullScore: "",
   durationMinutes: "",
   date: new Date().toISOString().slice(0, 10),
-  note: ""
+  note: "",
+  // 英语阅读 4 篇的答对数，每格 "" 或 "0".."5"。空数组项 = 这篇还没做。
+  readingParts: Array.from({ length: READING_PART_COUNT }, () => "")
 });
 
 /* ------------------------------------------------------------------ *
@@ -51,7 +62,12 @@ const { resetDirty } = useUnsavedFields(form, [
   "exerciseQuestion",
   "score",
   "durationMinutes",
-  "note"
+  "note",
+  // 阅读分篇是数组，useUnsavedFields 比较时会把两边都 String() 成 "5,5,4,5"，
+  // 但基线存的是**数组引用**。所以下面所有改法都必须整个换新数组
+  // （form.readingParts = [...]），就地 form.readingParts[i] = x 会让基线
+  // 跟着一起变，永远判不出「脏」。见 setReadingPart。
+  "readingParts"
 ]);
 
 /* ------------------------------------------------------------------ *
@@ -119,6 +135,109 @@ const exerciseBooks = computed(() => {
   return [...new Set(books)].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 });
 
+/* ------------------------------------------------------------------ *
+ * 英语阅读：4 篇 × 每篇 5 题
+ *
+ * 用户原来把「5545」手打进复盘备注里 —— 那只是文字，不能统计、看不出
+ * 哪一篇弱，也没法排序。这里拆成 4 个格子：连着敲 5 5 4 5 就行
+ * （填完一格自动跳下一格），也能点某一格单独改。
+ *
+ * 只对英语显示。英一和英二都是 Part A 四篇、每篇 5 题，口径一致，
+ * 所以按「id 是 english1 或名字里带英语/英一/英二」判断，
+ * 这样自建的「英二」科目也能用上。
+ * ------------------------------------------------------------------ */
+const isEnglishSubject = computed(() => {
+  const subject = selectedSubject.value;
+  if (!subject) return false;
+  return subject.id === "english1" || /英语|英[一二]/.test(subject.name || "");
+});
+
+const showReadingParts = computed(() => isEnglishSubject.value && !isComposite.value && form.recordType !== "exercise");
+
+const readingInputs = ref([]);
+
+const readingFilled = computed(() => readingFilledCount(form.readingParts));
+const readingTotal = computed(() => readingCorrectTotal(form.readingParts));
+const readingFullTotal = READING_PART_COUNT * READING_PART_FULL;
+const readingAllFull = computed(() => form.readingParts.every((part) => part === String(READING_PART_FULL)));
+
+const readingSummaryText = computed(() => {
+  if (!readingFilled.value) return `按篇填答对数（每篇 0-${READING_PART_FULL}），比如 5 5 4 5`;
+  if (readingFilled.value < READING_PART_COUNT) return `已填 ${readingFilled.value}/${READING_PART_COUNT} 篇`;
+  return `共 ${readingTotal.value}/${readingFullTotal} · 错 ${readingFullTotal - readingTotal.value} 题`;
+});
+
+/** 记录里的 4 个数 → 4 个输入框的值（没填的篇是 ""） */
+function toReadingBoxes(parts) {
+  const list = normalizeReadingParts(parts);
+  return Array.from({ length: READING_PART_COUNT }, (_, index) => {
+    const value = list?.[index];
+    return value === null || value === undefined ? "" : String(value);
+  });
+}
+
+function focusReadingPart(index) {
+  nextTick(() => readingInputs.value[index]?.focus());
+}
+
+/**
+ * 写一格。**必须整个换新数组** —— 判脏的基线存的是数组引用（见上面
+ * useUnsavedFields 那段注释），就地改下标会让基线跟着一起变，永远不脏。
+ *
+ * 只取最后一位数字：格子里已有值时接着敲，应该替换而不是拼接。
+ * 超出 0-5 的当没填 —— 宁可留空，也不要把 9 悄悄存成 5。
+ */
+function setReadingPart(index, raw) {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  const next = [...form.readingParts];
+  if (!digits) {
+    next[index] = "";
+  } else {
+    const last = digits.slice(-1);
+    next[index] = Number(last) <= READING_PART_FULL ? last : "";
+  }
+  form.readingParts = next;
+  return next[index];
+}
+
+function onReadingInput(event, index) {
+  const value = setReadingPart(index, event.target.value);
+  // 输入框里可能还留着被我们丢掉的字符（比如打了 9），显式同步回去，
+  // 否则要等下一次渲染，中间会闪一下。
+  event.target.value = value;
+  if (value && index < READING_PART_COUNT - 1) focusReadingPart(index + 1);
+}
+
+/** 空格子按退格 = 删掉上一篇并退回去，和逐格删除的手感一致 */
+function onReadingKeydown(event, index) {
+  if (event.key !== "Backspace" || form.readingParts[index] || index === 0) return;
+  event.preventDefault();
+  const next = [...form.readingParts];
+  next[index - 1] = "";
+  form.readingParts = next;
+  focusReadingPart(index - 1);
+}
+
+/** 整串粘贴「5545」时，从当前格往后铺开 */
+function onReadingPaste(event, index) {
+  const digits = String(event.clipboardData?.getData("text") || "").replace(/\D/g, "").slice(0, READING_PART_COUNT);
+  if (!digits) return;
+  event.preventDefault();
+  const next = [...form.readingParts];
+  [...digits].forEach((digit, offset) => {
+    const target = index + offset;
+    if (target < READING_PART_COUNT) next[target] = Number(digit) <= READING_PART_FULL ? digit : "";
+  });
+  form.readingParts = next;
+  focusReadingPart(Math.min(index + digits.length, READING_PART_COUNT - 1));
+}
+
+/** 「全对」一键填 5；已经是全对时再点一次清空 */
+function fillAllReading() {
+  const value = readingAllFull.value ? "" : String(READING_PART_FULL);
+  form.readingParts = Array.from({ length: READING_PART_COUNT }, () => value);
+}
+
 /** 已经灌进表单的「源」。只有它变了才重新灌，见下面。 */
 let appliedSourceKey = null;
 
@@ -150,6 +269,7 @@ watch(
       form.durationMinutes = props.record.durationMinutes ?? "";
       form.date = props.record.date || new Date().toISOString().slice(0, 10);
       form.note = store.displayRecordNote(props.record) || "";
+      form.readingParts = toReadingBoxes(store.readingPartsForRecord(props.record));
       ensurePaperVariant();
     } else {
       if ((!form.subjectId || !selectedSubject.value) && store.visibleSubjects.length) {
@@ -176,6 +296,11 @@ watch(
       form.exerciseBookName = "";
       form.exercisePage = "";
       form.exerciseQuestion = "";
+    }
+    // 从英语切到别的科目时，别把阅读分篇带过去 ——
+    // 不然数学成绩的备注里也会挂一份 5545。
+    if (!showReadingParts.value) {
+      form.readingParts = Array.from({ length: READING_PART_COUNT }, () => "");
     }
     ensurePaperVariant();
   },
@@ -221,16 +346,22 @@ async function submit() {
     return;
   }
   ensurePaperVariant();
+  // 非英语科目不带阅读分篇：从英语切到别的科目时表单里还留着旧值，
+  // 不显式清掉的话会跟着存进数学成绩。
+  const payload = {
+    ...form,
+    readingParts: showReadingParts.value ? form.readingParts : []
+  };
   isSaving.value = true;
   try {
     if (props.record) {
       await store.updateRecord(props.record.id, {
-        ...form,
+        ...payload,
         compositeSourceIds: props.record.compositeSourceIds || [],
         compositeSources: props.record.compositeSources || []
       });
     } else {
-      await store.addRecord({ ...form });
+      await store.addRecord(payload);
       form.recordType = isMathSubject.value ? form.recordType : "paper";
       form.paperName = "";
       form.exercisePage = "";
@@ -238,6 +369,7 @@ async function submit() {
       form.score = "";
       form.durationMinutes = "";
       form.note = "";
+      form.readingParts = toReadingBoxes(null);
       form.date = new Date().toISOString().slice(0, 10);
       form.fullScore = selectedSubject.value?.fullScore || "";
       ensurePaperVariant();
@@ -327,6 +459,32 @@ function normalizePaperVariant(value, paperName = "") {
         </label>
       </div>
     </template>
+    <div v-if="showReadingParts" class="ds-field reading-field">
+      <div class="reading-head">
+        <span class="ds-field-label">英语阅读（4 篇）</span>
+        <button type="button" class="text-link reading-fill-all" @click="fillAllReading">
+          {{ readingAllFull ? "清空" : "全对" }}
+        </button>
+      </div>
+      <div class="reading-parts" role="group" aria-label="英语阅读每篇答对数">
+        <label v-for="(part, index) in form.readingParts" :key="index" class="reading-part">
+          <span>第 {{ index + 1 }} 篇</span>
+          <input
+            :ref="(el) => (readingInputs[index] = el)"
+            :value="part"
+            type="text"
+            inputmode="numeric"
+            maxlength="1"
+            autocomplete="off"
+            :aria-label="`阅读第 ${index + 1} 篇答对数（0-${READING_PART_FULL}）`"
+            @input="onReadingInput($event, index)"
+            @keydown="onReadingKeydown($event, index)"
+            @paste="onReadingPaste($event, index)"
+          />
+        </label>
+      </div>
+      <p class="reading-summary">{{ readingSummaryText }}</p>
+    </div>
     <div class="form-row two">
       <label>
         得分

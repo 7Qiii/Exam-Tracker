@@ -13,6 +13,7 @@ import {
 } from "../services/storage";
 import { compressImage } from "../services/imageTools";
 import { compareByTimeThenId } from "../utils/sorting";
+import { appendNoteMeta, normalizeReadingParts, readingPartsFromRecord, stripNoteMeta } from "../utils/recordDisplay";
 import { uploadMistakeImage } from "../services/r2";
 import {
   deleteMistakeCloud,
@@ -533,13 +534,21 @@ export const useTrackerStore = defineStore("tracker", () => {
       recordType === "exercise"
         ? buildExerciseRecordName(exerciseBookName, exercisePage, exerciseQuestion)
         : cleanText(payload.paperName);
-    const note = recordType === "composite" ? attachCompositeMeta(cleanText(payload.note), compositeSources) : payload.note;
+    const readingParts = recordType === "paper" ? normalizeReadingParts(payload.readingParts) : null;
+    // 先把所有元数据块剥掉再按当前状态重挂。不这么做的话，「清空阅读结果」
+    // 或「合成来源被清掉」之后旧块还留在备注里 —— 界面显示是空的，存的是旧的。
+    const cleanNote = stripNoteMeta(payload.note);
+    let note = recordType === "composite" ? attachCompositeMeta(cleanNote, compositeSources) : cleanNote;
+    // 英语阅读的分篇对错没有自己的数据库列（云端按显式列同步），
+    // 和合成来源一样挂在备注里，同步才不会丢。
+    if (readingParts) note = appendNoteMeta(note, "reading", { parts: readingParts });
 
     return {
       ...payload,
       recordType,
       paperName,
       note,
+      readingParts,
       paperVariant,
       exerciseBookName: recordType === "exercise" ? exerciseBookName : "",
       exercisePage: recordType === "exercise" ? exercisePage : "",
@@ -623,7 +632,16 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function displayRecordNote(record) {
-    return stripCompositeMeta(record?.note || "");
+    // 备注里可能挂着合成来源、阅读分篇等结构化块，显示前统统剥掉。
+    return stripNoteMeta(record?.note || "");
+  }
+
+  /**
+   * 这条成绩的英语阅读分篇对错（4 个 0-5，没填的篇是 null），没有则 null。
+   * 实现在 utils/recordDisplay.js —— 导出也要用，那边拿不到 store。
+   */
+  function readingPartsForRecord(record) {
+    return readingPartsFromRecord(record);
   }
 
   function compositeSourcesForRecord(record) {
@@ -1415,6 +1433,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     subjectName,
     subjectColor,
     displayRecordNote,
+    readingPartsForRecord,
     compositeSourcesForRecord,
     notify,
     removeNotification,

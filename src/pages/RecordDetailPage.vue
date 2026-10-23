@@ -7,8 +7,9 @@ import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import DsSection from "../components/ds/DsSection.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
 import { useConfirm } from "../composables/useConfirm";
+import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
-import { formatDuration, normalizeDurationMinutes } from "../utils/recordDisplay";
+import { READING_PART_FULL, formatDuration, normalizeDurationMinutes, readingCorrectTotal } from "../utils/recordDisplay";
 
 const route = useRoute();
 const router = useRouter();
@@ -36,6 +37,10 @@ const recordMetaLine = computed(() =>
   record.value ? [record.value.date, recordTypeText.value, record.value.pendingSync ? "待同步" : "已同步"].filter(Boolean).join(" · ") : ""
 );
 const compositeSources = computed(() => store.compositeSourcesForRecord(record.value));
+/** 英语阅读的 4 篇答对数；没填过就是 null，整块不渲染 */
+const readingParts = computed(() => store.readingPartsForRecord(record.value));
+const readingTotal = computed(() => readingCorrectTotal(readingParts.value));
+const readingFullTotal = computed(() => (readingParts.value?.length || 0) * READING_PART_FULL);
 const scoreRate = computed(() => {
   if (!record.value || !Number(record.value.fullScore)) return 0;
   return Math.round((Number(record.value.score || 0) / Number(record.value.fullScore)) * 100);
@@ -93,12 +98,19 @@ function startEdit() {
   isEditing.value = true;
 }
 
-function closeEdit() {
+function onSaved() {
+  // 保存成功 = 用户已经表达了「这些内容我要了」，直接关，别再问。
   isEditing.value = false;
 }
 
-function onSaved() {
-  closeEdit();
+/**
+ * 取消编辑。表单是 v-if 的，一关就被拆掉，改过但没保存的内容一起没
+ * —— 以前这里是静默丢弃（错题详情页早就分成了「保存直接关 / 取消要问」，
+ * 成绩详情页漏了这一步）。
+ */
+async function closeEdit() {
+  if (!(await confirmDiscardChanges())) return;
+  isEditing.value = false;
 }
 
 function normalizeScoreValue(value) {
@@ -173,6 +185,28 @@ function sourceChanged(source) {
             :icon="item.icon"
           />
         </section>
+
+        <DsSection
+          v-if="readingParts"
+          title="英语阅读"
+          :description="`4 篇 · 每篇 ${READING_PART_FULL} 题`"
+        >
+          <template #meta>
+            <strong class="ds-section-total">{{ readingTotal }} / {{ readingFullTotal }}</strong>
+          </template>
+          <div class="reading-detail-grid">
+            <article
+              v-for="(part, index) in readingParts"
+              :key="index"
+              class="reading-detail-item"
+              :class="{ weak: part !== null && part < READING_PART_FULL }"
+            >
+              <span>第 {{ index + 1 }} 篇</span>
+              <strong>{{ part === null ? "—" : part }}</strong>
+              <small>{{ part === null ? "未填" : `错 ${READING_PART_FULL - part}` }}</small>
+            </article>
+          </div>
+        </DsSection>
 
         <DsSection
           v-if="record.recordType === 'composite'"

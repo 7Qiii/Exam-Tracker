@@ -125,8 +125,124 @@ export function formatDuration(minutes, { emptyLabel = "未记录" } = {}) {
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
 
-export function normalizeScoreValue(value) {
-  const number = Number(value);
+/* ------------------------------------------------------------------ *
+ * 备注里夹带的结构化数据
+ *
+ * 合成成绩的「来源明细」和英语阅读的「分篇对错」都不是用户手打的文字，
+ * 但也没有自己的数据库列 —— 云端 records 表是按**显式列**同步的
+ * （services/supabase.js 的 toRecordRow），加字段就得改表结构，
+ * 而旧列缺失时同步会走一串降级重试。备注是唯一一条
+ * 「本地怎么写、云端就怎么存」的通路，所以结构化数据挂在备注里，
+ * 格式用 HTML 注释，正常显示时整段剥掉。
+ *
+ * 这套逻辑放在这里而不是 store 里，是因为导出（excelExport.js）也要用：
+ * 它直接读 record.note，不剥的话 Excel 的备注列会变成一坨百分号编码。
+ * ------------------------------------------------------------------ */
+
+const NOTE_META_PATTERN = /\n*<!-- exam-tracker-[a-z-]+:[\s\S]*?-->/g;
+
+/** 剥掉备注里所有结构化块，返回用户真正写的那些字 */
+export function stripNoteMeta(note) {
+  return String(note ?? "").replace(NOTE_META_PATTERN, "").trim();
+}
+
+/** 在备注末尾追加一个结构化块（调用方负责先 stripNoteMeta） */
+export function appendNoteMeta(note, key, payload) {
+  return `${note || ""}\n\n<!-- exam-tracker-${key}:${encodeURIComponent(JSON.stringify(payload))} -->`;
+}
+
+/** 读回某个结构化块，没有或解析失败返回 null */
+export function readNoteMeta(note, key) {
+  const match = new RegExp(`<!-- exam-tracker-${key}:([\\s\\S]*?)-->`).exec(String(note ?? ""));
+  if (!match) return null;
+  try {
+    return JSON.parse(decodeURIComponent(match[1]));
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 英语阅读：4 篇，每篇 5 题
+ *
+ * 以前只能在「复盘备注」里手打「5545」，是纯文本 —— 不能统计、不能排序、
+ * 也不能看出哪一篇弱。现在单独存成 4 个 0-5 的整数。
+ * 英一和英二都是 Part A 四篇、每篇 5 题，所以两科共用同一套口径。
+ * ------------------------------------------------------------------ */
+
+export const READING_PART_COUNT = 4;
+export const READING_PART_FULL = 5;
+
+/**
+ * 归一到长度 4 的数组，没填的位置是 null。
+ * 空值、非数字、越界的格子一律当「没填」，而不是 0 ——
+ * 「这篇全错」和「这篇还没做」是两回事，混起来总分会算错。
+ */
+export function normalizeReadingParts(value) {
+  if (!Array.isArray(value) || !value.length) return null;
+  const parts = Array.from({ length: READING_PART_COUNT }, (_, index) => {
+    const raw = value[index];
+    if (raw === "" || raw === null || raw === undefined) return null;
+    const number = Number(raw);
+    return Number.isFinite(number) && number >= 0 && number <= READING_PART_FULL ? Math.round(number) : null;
+  });
+  return parts.some((part) => part !== null) ? parts : null;
+}
+
+/** 已填篇数 */
+export function readingFilledCount(parts) {
+  const list = normalizeReadingParts(parts);
+  return list ? list.filter((part) => part !== null).length : 0;
+}
+
+/** 已填部分的答对总数 */
+export function readingCorrectTotal(parts) {
+  const list = normalizeReadingParts(parts);
+  if (!list) return 0;
+  return list.reduce((sum, part) => sum + (part ?? 0), 0);
+}
+
+/** 紧凑写法：「5545」，没填的篇写成 - */
+export function formatReadingParts(parts) {
+  const list = normalizeReadingParts(parts);
+  if (!list) return "";
+  return list.map((part) => (part === null ? "-" : String(part))).join("");
+}
+
+/** 一句话摘要，列表和详情共用 */
+export function readingPartsSummary(parts) {
+  const list = normalizeReadingParts(parts);
+  if (!list) return "";
+  const filled = readingFilledCount(list);
+  if (filled < list.length) return `阅读 ${formatReadingParts(list)} · 已填 ${filled}/${list.length} 篇`;
+  const total = readingCorrectTotal(list);
+  const full = list.length * READING_PART_FULL;
+  return `阅读 ${formatReadingParts(list)} · ${total}/${full}`;
+}
+
+/**
+ * 从一条记录里取出阅读分篇结果，没有则 null。
+ *
+ * 先读字段、再退回备注：本地新增的记录两个地方都有，但云端拉回来的只有备注
+ * （records 表没有 reading_parts 这一列）。导出（excelExport.js）也用这个，
+ * 所以它必须是纯函数，不能依赖 store。
+ */
+export function readingPartsFromRecord(record) {
+  if (!record) return null;
+  return normalizeReadingParts(record.readingParts) || normalizeReadingParts(readNoteMeta(record.note, "reading")?.parts);
+}
+
+/**
+ * 表格里那一格显示的文本：「5545（19/20）」，没填过返回空串。
+ * 导出文件和导出预览共用 —— 两边各写一份迟早会走岔。
+ */
+export function readingCellText(record) {
+  const parts = readingPartsFromRecord(record);
+  if (!parts) return "";
+  return `${formatReadingParts(parts)}（${readingCorrectTotal(parts)}/${parts.length * READING_PART_FULL}）`;
+}
+
+export function normalizeScoreValue(value) {  const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 

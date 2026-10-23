@@ -1095,6 +1095,91 @@ textarea:focus {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 英语阅读：4 篇 × 每篇 5 题
+ *
+ * 用户原来的做法是在「复盘备注」里手打「5545」。拆成 4 个格子之后可以
+ * 连着输入（填完一格自动跳下一格），也能点某一格单独改。
+ *
+ * 格子撑到 44px 高：它在 iPad 上是要用手指点的，而输入框的默认高度
+ * 只有三十几，密集排 4 个很容易点错隔壁。
+ * ------------------------------------------------------------------ */
+.reading-field {
+  min-width: 0;
+}
+
+.reading-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 和「用时」同样的坑：design-system.css 最后加载，
+   .ds-field > .ds-field-label 是 (0,2,0)，这里必须凑到 (0,3,0) 才压得住。 */
+.record-form .reading-head .ds-field-label {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* 上面两条把颜色写死成了浅色主题的 #344054，在深色底上对比度只有 2:1 左右
+   （实测「用时」这个标签一直是灰的）。深色主题必须单独提亮，
+   否则和旁边「科目」「试卷名称」明显不是一个亮度。 */
+:root[data-theme="dark"] .form-row .duration-field > .ds-field-label,
+:root[data-theme="dark"] .record-form .reading-head .ds-field-label {
+  color: var(--ink);
+}
+
+.reading-fill-all {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.reading-fill-all:hover {
+  background: rgba(36, 120, 232, 0.08);
+}
+
+.reading-parts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.reading-part {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.reading-part input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.reading-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -5714,6 +5799,68 @@ textarea:focus {
   border-color: rgba(90, 167, 255, 0.28);
   background: rgba(90, 167, 255, 0.13);
   color: #8fc3ff;
+}
+
+/* 英语阅读结果沿用卷型标签的外观，换个绿色区分。
+   深色主题必须单独写：上面那条是 (0,2,0)，只写 .reading-pill 压不住它。 */
+.record-variant-pill.reading-pill {
+  border-color: rgba(18, 183, 106, 0.22);
+  background: rgba(18, 183, 106, 0.1);
+  color: #0b8a52;
+}
+
+:root[data-theme="dark"] .record-variant-pill.reading-pill {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+}
+
+/* 详情页的阅读分篇：4 个等宽小卡，答错过的篇标红。 */
+.reading-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reading-detail-item {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 12px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.reading-detail-item span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.reading-detail-item strong {
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.reading-detail-item small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.reading-detail-item.weak strong,
+.reading-detail-item.weak small {
+  color: var(--red);
+}
+
+@media (max-width: 420px) {
+  .reading-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 :root[data-theme="dark"] .subject-chip {

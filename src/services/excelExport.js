@@ -1,3 +1,7 @@
+// 带 .js 后缀：scripts/test-paper-group.mjs 直接用 node 加载这个文件，
+// 裸模块路径在 Node 的 ESM 里解析不了（Vite 能，Node 不能）。
+import { readingCellText, stripNoteMeta } from "../utils/recordDisplay.js";
+
 export const exportColumnGroups = [
   {
     id: "basic",
@@ -35,6 +39,7 @@ export const exportColumnGroups = [
     label: "复盘信息",
     columns: [
       { id: "duration", label: "用时", width: 14 },
+      { id: "reading", label: "阅读", width: 16 },
       { id: "sync", label: "同步状态", width: 14 },
       { id: "note", label: "备注", width: 38 }
     ]
@@ -286,8 +291,10 @@ function matrixCellText(fieldId, record) {
       return record.date || "";
     case "duration":
       return formatDurationValue(record.durationMinutes);
+    case "reading":
+      return readingCellText(record);
     case "note":
-      return record.note || "";
+      return stripNoteMeta(record.note);
     default:
       return "";
   }
@@ -670,10 +677,12 @@ function getCellValue(key, record, subjectMap) {
       return record.exerciseQuestion || "";
     case "duration":
       return formatDuration(record.durationMinutes);
+    case "reading":
+      return readingCellText(record);
     case "sync":
       return record.pendingSync ? "待同步" : "已同步";
     case "note":
-      return record.note || "";
+      return stripNoteMeta(record.note);
     default:
       return "";
   }

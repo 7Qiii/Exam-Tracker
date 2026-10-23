@@ -39,6 +39,7 @@ import { useTrackerStore } from "../stores/tracker";
 import { byId } from "../utils/sorting";
 import {
   formatDuration,
+  formatReadingParts,
   formatScoreValue,
   normalizeDurationMinutes,
   normalizePaperVariant,
@@ -450,6 +451,12 @@ function selectLabel(record) {
   const title = recordTitle(record);
   if (record.recordType === "composite") return `${title} 是合成成绩，不能再次作为来源`;
   return `选择 ${title} 作为合成来源`;
+}
+
+/** 英语阅读的分篇结果，没填过返回空串（不渲染标签） */
+function readingLabel(record) {
+  const parts = store.readingPartsForRecord(record);
+  return parts ? `阅读 ${formatReadingParts(parts)}` : "";
 }
 
 function clearSelection() {
@@ -1242,6 +1249,7 @@ function scoreBarStyle(record) {
                 <td>
                   <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
                   <span v-if="recordVariantLabel(record)" class="record-variant-pill">{{ recordVariantLabel(record) }}</span>
+                  <span v-if="readingLabel(record)" class="record-variant-pill reading-pill">{{ readingLabel(record) }}</span>
                 </td>
                 <td>
                   <span class="subject-chip">
@@ -1315,6 +1323,7 @@ function scoreBarStyle(record) {
                   <RouterLink :to="`/records/${record.id}`">{{ recordTitle(record) }}</RouterLink>
                   <span class="record-type-pill">{{ recordTypeLabel(record) }}</span>
                   <span v-if="recordVariantLabel(record)" class="record-variant-pill">{{ recordVariantLabel(record) }}</span>
+                  <span v-if="readingLabel(record)" class="record-variant-pill reading-pill">{{ readingLabel(record) }}</span>
                 </div>
                 <div class="record-card-meta-line">
                   <span class="subject-chip compact">
