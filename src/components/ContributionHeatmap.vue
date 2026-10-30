@@ -10,6 +10,7 @@
  */
 import { computed, onMounted, ref } from "vue";
 import { formatDuration } from "../utils/recordDisplay";
+import { localDateKey as dateKey } from "../utils/dateRange";
 
 const props = defineProps({
   records: { type: Array, default: () => [] },
@@ -24,14 +25,6 @@ const tipPos = ref({ x: 0, y: 0 });
 
 const today = new Date();
 today.setHours(0, 0, 0, 0);
-
-function dateKey(date) {
-  const value = new Date(date);
-  if (Number.isNaN(value.getTime())) return "";
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${value.getFullYear()}-${month}-${day}`;
-}
 
 const todayKey = dateKey(today);
 

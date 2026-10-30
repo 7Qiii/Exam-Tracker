@@ -42,6 +42,7 @@ import DsStatCard from "../components/ds/DsStatCard.vue";
 import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 import { formatDuration } from "../utils/recordDisplay";
+import { isInDateRange, localDateKey } from "../utils/dateRange";
 
 const store = useTrackerStore();
 
@@ -108,30 +109,10 @@ function clearFilter() {
  * 时间口径
  * ------------------------------------------------------------------ */
 
-/** 本地时区的 YYYY-MM-DD，避免 toISOString 把凌晨的记录算到前一天 */
-function localDateKey(date) {
-  const value = date instanceof Date ? date : new Date(date);
-  if (Number.isNaN(value.getTime())) return "";
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${value.getFullYear()}-${month}-${day}`;
-}
-
 const todayKey = localDateKey(new Date());
 
-function rangeStart(days) {
-  if (!days) return null;
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - days + 1);
-  return start;
-}
-
 function inRange(dateString) {
-  const start = rangeStart(rangeDays.value);
-  if (!start) return true;
-  const value = new Date(dateString);
-  return !Number.isNaN(value.getTime()) && value >= start;
+  return isInDateRange(dateString, rangeDays.value);
 }
 
 /** 只看时间范围，不看科目 */
@@ -155,27 +136,21 @@ const totalFullScore = computed(() => scopedRecords.value.reduce((sum, record) =
 const averageRate = computed(() => (totalFullScore.value ? Math.round((totalScore.value / totalFullScore.value) * 100) : 0));
 
 const weekCount = computed(() => {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - 6);
-  return scopedRecords.value.filter((record) => {
-    const date = new Date(record.date);
-    return !Number.isNaN(date.getTime()) && date >= start;
-  }).length;
+  return scopedRecords.value.filter((record) => isInDateRange(record.date, 7)).length;
 });
 
-const activeDays = computed(() => new Set(scopedRecords.value.map((record) => record.date).filter(Boolean)).size);
+const activeDays = computed(() => studyDays.value.size);
 
 const pendingMistakes = computed(() => scopedMistakes.value.filter((mistake) => (mistake.status || "待复盘") !== "已掌握"));
 
 /** 连续学习天数：把成绩和错题都算作「学习过」 */
 const studyDays = computed(() => {
   const days = new Set();
-  store.records.forEach((record) => {
+  scopedRecords.value.forEach((record) => {
     const key = localDateKey(record.date);
     if (key) days.add(key);
   });
-  store.mistakes.forEach((mistake) => {
+  scopedMistakes.value.forEach((mistake) => {
     const key = localDateKey(mistake.createdAt);
     if (key) days.add(key);
   });
@@ -215,7 +190,7 @@ const metrics = computed(() => [
     icon: BookOpenCheck,
     value: pendingMistakes.value.length,
     unit: "道",
-    hint: pendingMistakes.value.length ? `错题共 ${scopedMistakes.value.length} 道` : "错题都复习完了"
+    hint: scopedMistakes.value.length ? (pendingMistakes.value.length ? `错题共 ${scopedMistakes.value.length} 道` : "错题都复习完了") : "当前范围内暂无错题"
   },
   {
     label: "连续学习",
@@ -254,9 +229,10 @@ const greeting = computed(() => {
 
 const welcomeHint = computed(() => {
   if (!store.records.length && !store.mistakes.length) return "还没有任何数据。先记一次成绩或一道错题，这里就会长出趋势和掌握度。";
+  if (!scopedRecords.value.length && !scopedMistakes.value.length) return "当前范围还没有学习记录，切换筛选看看，或从一次新练习开始。";
   const pending = pendingMistakes.value.length;
   if (pending) return `当前有 ${pending} 道错题待复盘，处理完这一批，掌握度会明显好看。`;
-  return "错题都清完了，可以多刷几套新卷子扩一下样本。";
+  return scopedMistakes.value.length ? "当前范围的错题已全部掌握，继续保持练习节奏。" : "记录练习中的难点，让下一次复盘更有方向。";
 });
 
 const rangeLabel = computed(() => rangeOptions.find((item) => item.value === rangeDays.value)?.label || "全部");
@@ -334,7 +310,7 @@ const reminders = computed(() => {
 
 // 成绩记录是主要用途，首页给足条数（8 条），不够再去列表页
 const latestRecords = computed(() =>
-  [...store.records]
+  [...scopedRecords.value]
     .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, 8)
 );
@@ -423,11 +399,12 @@ async function onImport(event) {
       <div class="ds-welcome">
         <div>
           <p class="eyebrow">{{ todayLabel }}</p>
-          <h1>{{ greeting }}</h1>
+          <h1>把每次练习，变成进步。</h1>
+          <p class="dashboard-greeting">{{ greeting }}</p>
           <p>{{ welcomeHint }}</p>
         </div>
         <div class="ds-welcome-actions">
-          <button class="primary-button" type="button" @click="toggleRecordForm">
+          <button class="primary-button" type="button" :aria-expanded="showRecordForm" aria-controls="dashboard-record-form" @click="toggleRecordForm">
             <ClipboardPlus :size="17" />
             {{ showRecordForm ? "收起录入" : "记录成绩" }}
           </button>
@@ -449,15 +426,18 @@ async function onImport(event) {
             <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
           </select>
         </label>
-        <label class="ds-field">
-          <span class="ds-field-label">时间范围</span>
-          <select v-model.number="rangeDays">
-            <option v-for="option in rangeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </label>
+        <div class="dashboard-range-field">
+          <span class="ds-field-label" id="dashboard-range-label">时间范围</span>
+          <div class="dashboard-range-options" role="group" aria-labelledby="dashboard-range-label">
+            <button v-for="option in rangeOptions" :key="option.value" type="button"
+              :aria-pressed="rangeDays === option.value" @click="rangeDays = option.value">
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
         <button v-if="hasFilter" class="ghost-button" type="button" @click="clearFilter">重置</button>
       </div>
-      <p class="dashboard-filter-note">
+      <p class="dashboard-filter-note" role="status">
         以下数据范围：{{ selectedSubject ? store.subjectName(selectedSubject) : "全部科目" }} · {{ rangeLabel }}
       </p>
     </section>
@@ -477,6 +457,7 @@ async function onImport(event) {
     <!-- 3. 快速录入：点「记录成绩」才展开 -->
     <DsSection
       v-if="showRecordForm"
+      id="dashboard-record-form"
       title="快速记录成绩"
       description="保存后会立即更新趋势与统计"
       closable
@@ -486,7 +467,7 @@ async function onImport(event) {
     </DsSection>
 
     <!-- 4. 最近成绩：成绩记录是主线，放在趋势图前面 -->
-    <DsSection title="最近成绩" :description="`共 ${store.records.length} 条记录 · 点击进入详情`" flush>
+    <DsSection title="最近成绩" :description="`当前范围共 ${scopedRecords.length} 条 · 展示最近 ${latestRecords.length} 条`" flush>
       <template #actions>
         <RouterLink class="text-link" to="/records">查看全部 <ArrowUpRight :size="15" /></RouterLink>
       </template>
@@ -507,10 +488,11 @@ async function onImport(event) {
       <DsEmptyState
         v-else
         :icon="ChartLine"
-        title="还没有成绩记录"
-        description="记录第一场练习之后，趋势和统计都会出现在这里。"
+        :title="store.records.length ? '当前筛选范围内没有成绩' : '还没有成绩记录'"
+        :description="store.records.length ? '可以切换科目或时间范围，查看其他练习。' : '记录第一场练习之后，趋势和统计都会出现在这里。'"
       >
         <template #action>
+          <button v-if="hasFilter" class="secondary-button" type="button" @click="clearFilter">重置筛选</button>
           <button class="primary-button" type="button" @click="showRecordForm = true">
             <ClipboardPlus :size="16" />记录成绩
           </button>
@@ -571,7 +553,7 @@ async function onImport(event) {
       :collapsed="!isHeatmapOpen"
       @update:collapsed="isHeatmapOpen = !$event"
     >
-      <ContributionHeatmap :records="store.records" :mistakes="store.mistakes" :days="rangeDays || 365" />
+      <ContributionHeatmap :records="scopedRecords" :mistakes="scopedMistakes" :days="rangeDays || 365" />
     </DsSection>
 
     <p class="dashboard-footnote">
@@ -584,3 +566,130 @@ async function onImport(event) {
     </p>
   </div>
 </template>
+
+<style scoped>
+.ds-welcome-block {
+  position: relative;
+  overflow: hidden;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: radial-gradient(ellipse at 100% 0%, var(--blue-soft), transparent 65%), var(--surface);
+}
+
+.ds-welcome {
+  position: relative;
+  gap: 24px;
+  align-items: center;
+}
+
+.ds-welcome h1 {
+  margin: 10px 0;
+  font-size: clamp(23px, 2.4vw, 32px);
+  line-height: 1.4;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.ds-welcome .dashboard-greeting {
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ds-welcome-actions {
+  flex-shrink: 0;
+}
+
+.dashboard-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.dashboard-filter {
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.dashboard-range-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dashboard-range-options {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-soft);
+}
+
+.dashboard-range-options button {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dashboard-range-options button:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.dashboard-range-options button[aria-pressed="true"] {
+  color: var(--blue);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  font-weight: 650;
+}
+
+.dashboard-filter-note {
+  margin: 0;
+  padding-bottom: 10px;
+  font-size: 12px;
+}
+
+.ds-stats :deep(.ds-stat) {
+  border-top: 3px solid var(--line-strong);
+}
+
+.ds-stats :deep(.ds-stat:first-child) { border-top-color: var(--blue); }
+.ds-stats :deep(.ds-stat:nth-child(2)) { border-top-color: var(--green); }
+.ds-stats :deep(.ds-stat:nth-child(3)) { border-top-color: var(--orange); }
+.ds-stats :deep(.ds-stat-value) { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1100px) {
+  .ds-welcome { align-items: flex-start; flex-direction: column; }
+  .dashboard-filter-row { align-items: stretch; flex-direction: column; }
+}
+
+@media (max-width: 600px) {
+  .ds-welcome-block { padding: 20px; }
+  .ds-welcome { gap: 16px; }
+  .ds-welcome-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .ds-welcome-actions > * { width: 100%; }
+  .dashboard-filter-row { padding: 14px; }
+  .dashboard-filter { gap: 12px; }
+  .dashboard-filter .ds-field, .dashboard-range-field { width: 100%; flex: 1 1 100%; }
+  .dashboard-range-options button { flex: 1; min-height: 40px; padding: 6px; }
+  .dashboard-filter-note { padding-bottom: 0; }
+}
+</style>

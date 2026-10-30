@@ -510,6 +510,7 @@ onBeforeUnmount(() => {
               v-model="globalSearch"
               type="search"
               aria-label="搜索成绩和错题"
+              placeholder="搜索成绩、错题或知识点"
               @focus="isGlobalSearchOpen = true"
               @input="isGlobalSearchOpen = true"
               @blur="onSearchBlur"

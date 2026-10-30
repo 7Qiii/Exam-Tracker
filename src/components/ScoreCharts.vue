@@ -13,6 +13,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { ChartLine } from "@lucide/vue";
 import DsEmptyState from "./ds/DsEmptyState.vue";
 import { useTrackerStore } from "../stores/tracker";
+import { isInDateRange } from "../utils/dateRange";
 
 const props = defineProps({
   subjectId: { type: String, default: "" },
@@ -34,6 +35,7 @@ let observer = null;
 let resizeObserver = null;
 let themeObserver = null;
 let systemThemeQuery = null;
+let isUnmounted = false;
 
 function normalizePaperVariant(record) {
   const raw = String(record?.paperVariant || "").trim().toLowerCase();
@@ -44,32 +46,23 @@ function normalizePaperVariant(record) {
   return "";
 }
 
-function rangeStart(days) {
-  if (!days) return null;
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - days + 1);
-  return start;
-}
-
 /** 当前筛选条件下的成绩，按日期升序 */
 const scopedRecords = computed(() => {
-  const start = rangeStart(props.rangeDays);
   let list = store.records;
   if (props.subjectId) list = list.filter((record) => record.subjectId === props.subjectId);
   if (props.subjectId === "math1" && props.paperVariant !== "all") {
     list = list.filter((record) => (record.recordType || "paper") === "paper" && normalizePaperVariant(record) === props.paperVariant);
   }
-  if (start) {
-    list = list.filter((record) => {
-      const date = new Date(record.date);
-      return !Number.isNaN(date.getTime()) && date >= start;
-    });
-  }
-  return [...list].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  list = list.filter((record) => isInDateRange(record.date, props.rangeDays));
+  return [...list].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || String(a.id).localeCompare(String(b.id)));
 });
 
 const hasTrendData = computed(() => scopedRecords.value.length > 0);
+const useRate = computed(() => new Set(scopedRecords.value.map((record) => Number(record.fullScore))).size > 1);
+function chartValue(record) {
+  if (!useRate.value) return Number(record.score) || 0;
+  return Number(record.fullScore) > 0 ? Math.round(Number(record.score) / Number(record.fullScore) * 1000) / 10 : null;
+}
 
 /** 柱状图：选了科目就看该科目最近几次，没选就横向比各科最新一次 */
 const comparison = computed(() => {
@@ -79,14 +72,14 @@ const comparison = computed(() => {
       label: record.date.slice(5),
       title: record.paperName,
       detail: `${record.score}/${record.fullScore}`,
-      value: Number(record.score) || 0,
+      value: chartValue(record),
       color: subject?.color || ""
     }));
   }
 
   return store.visibleSubjects
     .map((subject) => {
-      const latest = [...store.records]
+      const latest = [...scopedRecords.value]
         .filter((record) => record.subjectId === subject.id)
         .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)))[0];
       if (!latest) return null;
@@ -94,7 +87,7 @@ const comparison = computed(() => {
         label: subject.name,
         title: latest.paperName,
         detail: `${latest.score}/${latest.fullScore}`,
-        value: Number(latest.score) || 0,
+        value: chartValue(latest),
         color: subject.color || ""
       };
     })
@@ -178,25 +171,25 @@ function drawTrend(theme) {
           const record = records[params[0]?.dataIndex];
           if (!record) return "";
           const rate = record.fullScore ? Math.round((Number(record.score) / Number(record.fullScore)) * 100) : 0;
-          return `${record.paperName}<br/>${store.subjectName(record.subjectId)} · ${record.date}<br/>得分 ${record.score}/${record.fullScore}（${rate}%）`;
+          return `${echarts.format.encodeHTML(record.paperName || "")}<br/>${echarts.format.encodeHTML(store.subjectName(record.subjectId))} · ${echarts.format.encodeHTML(record.date)}<br/>得分 ${Number(record.score)}/${Number(record.fullScore)}（${rate}%）`;
         }
       },
       xAxis: { type: "category", data: records.map((item) => item.date), axisLine, axisTick: { show: false }, axisLabel },
       yAxis: {
         type: "value",
-        axisLabel: { color: theme.muted, fontSize: 11 },
+        axisLabel: { color: theme.muted, fontSize: 11, formatter: useRate.value ? '{value}%' : '{value}' },
         splitLine: { lineStyle: { color: theme.grid } }
       },
       series: [
         {
-          name: "得分",
+          name: useRate.value ? "得分率" : "得分",
           type: "line",
           smooth: true,
           symbolSize: compact ? 6 : 8,
           lineStyle: { width: 2.5, color: theme.blue },
           itemStyle: { color: theme.blue, borderColor: theme.surface, borderWidth: 2 },
           areaStyle: { color: theme.area },
-          data: records.map((item) => Number(item.score) || 0)
+          data: records.map(chartValue)
         }
       ]
     },
@@ -223,18 +216,18 @@ function drawComparison(theme) {
         formatter(params) {
           const item = bars[params[0]?.dataIndex];
           if (!item) return "";
-          return `${item.title}<br/>得分 ${item.detail}`;
+          return `${echarts.format.encodeHTML(item.title || "")}<br/>得分 ${echarts.format.encodeHTML(item.detail)}`;
         }
       },
       xAxis: { type: "category", data: bars.map((item) => item.label), axisLine, axisTick: { show: false }, axisLabel },
       yAxis: {
         type: "value",
         splitLine: { lineStyle: { color: theme.grid } },
-        axisLabel: { color: theme.muted, fontSize: 11 }
+        axisLabel: { color: theme.muted, fontSize: 11, formatter: useRate.value ? '{value}%' : '{value}' }
       },
       series: [
         {
-          name: "得分",
+          name: useRate.value ? "得分率" : "得分",
           type: "bar",
           barMaxWidth: 34,
           data: bars.map((item) => ({
@@ -249,8 +242,10 @@ function drawComparison(theme) {
 }
 
 async function draw() {
+  if (isUnmounted) return;
   if (!trendRef.value && !comparisonRef.value) return;
   echarts ||= await import("echarts");
+  if (isUnmounted) return;
   const theme = getChartTheme();
   drawTrend(theme);
   drawComparison(theme);
@@ -327,16 +322,18 @@ function disposeOrphanCharts() {
 }
 
 watch(
-  () => [store.records.length, props.subjectId, props.paperVariant, props.rangeDays],
+  [scopedRecords, comparison],
   async () => {
     disposeOrphanCharts();
     await nextTick();
     if (!hasTrendData.value && !hasComparisonData.value) return;
     await activateCharts();
-  }
+  },
+  { deep: true }
 );
 
 onBeforeUnmount(() => {
+  isUnmounted = true;
   window.removeEventListener("resize", resize);
   observer?.disconnect();
   resizeObserver?.disconnect();
@@ -357,6 +354,7 @@ onBeforeUnmount(() => {
           <h2>分数趋势</h2>
           <span class="ds-section-meta">
             {{ rangeDays ? `最近 ${rangeDays} 天` : "全部记录" }} · {{ scopedRecords.length }} 次成绩
+            <span v-if="useRate"> · 按得分率对比</span>
           </span>
         </div>
       </div>
@@ -373,7 +371,7 @@ onBeforeUnmount(() => {
       <div class="ds-section-head">
         <div>
           <h2>{{ subjectId ? "该科目最近成绩" : "各科最近成绩" }}</h2>
-          <span class="ds-section-meta">{{ subjectId ? "最近 6 次" : "按最新一次得分对比" }}</span>
+          <span class="ds-section-meta">{{ subjectId ? "范围内最近 6 次" : "范围内各科最新一次" }} · {{ useRate ? '得分率 %' : '得分' }}</span>
         </div>
       </div>
       <div v-if="hasComparisonData" ref="comparisonRef" class="chart-box" />
