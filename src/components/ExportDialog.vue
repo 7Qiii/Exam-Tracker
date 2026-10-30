@@ -60,6 +60,7 @@ const recommendedExportColumns = ["subject", "record", "scoreText", "reading", "
 const exportLayoutStorageKey = "exam-tracker-export-layout";
 const exportMatrixFieldsStorageKey = "exam-tracker-export-matrix-fields";
 const exportMatrixExcludedStorageKey = "exam-tracker-export-matrix-excluded";
+const exportYearModeStorageKey = "exam-tracker-export-year-mode";
 const exportLayoutOptions = [
   { value: "rows", label: "明细行", hint: "一行一条成绩，字段做列" },
   { value: "matrix", label: "按卷子分列", hint: "一套卷子占一列，竖着对比" }
@@ -102,6 +103,7 @@ const exportForm = reactive({
   scope: "filtered",
   sheetMode: "single",
   layout: readExportLayout(),
+  mergeYears: localStorage.getItem(exportYearModeStorageKey) === "merge",
   matrixFields: readExportMatrixFields(),
   matrixExcluded: readExportMatrixExcluded(),
   theme: "ocean",
@@ -187,14 +189,16 @@ const exportMatrixAll = computed(() =>
   buildExportMatrix({
     records: exportPreviewRecords.value,
     subjects: store.subjects,
-    fields: exportForm.matrixFields
+    fields: exportForm.matrixFields,
+    mergeYears: exportForm.mergeYears
   })
 );
 const exportMatrix = computed(() =>
   buildExportMatrix({
     records: exportMatrixRecords.value,
     subjects: store.subjects,
-    fields: exportForm.matrixFields
+    fields: exportForm.matrixFields,
+    mergeYears: exportForm.mergeYears
   })
 );
 const exportMatrixGroupCount = computed(() => exportMatrix.value.groups.length);
@@ -209,6 +213,10 @@ const exportMatrixColumns = computed(() =>
 const exportPreviewCount = computed(() => {
   if (isMatrixExport.value) return exportMatrix.value.rows.length + (exportMatrix.value.average ? 1 : 0);
   return exportPreviewRows.value.length + (exportPreviewAverageRow.value ? 1 : 0);
+});
+const exportActualCount = computed(() => isMatrixExport.value ? exportMatrixRecords.value.length : exportSourceRecords.value.length);
+watch(() => exportForm.mergeYears, (merge) => {
+  localStorage.setItem(exportYearModeStorageKey, merge ? "merge" : "separate");
 });
 const exportReady = computed(() => {
   if (!exportPreviewRecords.value.length) return false;
@@ -462,6 +470,7 @@ async function exportExcel() {
       sheetMode: exportForm.sheetMode,
       layout: exportForm.layout,
       matrixFields: exportForm.matrixFields,
+      mergeYears: exportForm.mergeYears,
       theme: exportForm.theme,
       filename: exportForm.filename,
       includeSummary: exportForm.includeSummary
@@ -497,7 +506,7 @@ async function exportExcel() {
           <div class="export-summary-strip">
             <article>
               <span>预览明细</span>
-              <strong>{{ exportSourceRecords.length }}</strong>
+              <strong>{{ exportActualCount }}</strong>
               <small>{{ exportSubjectLabel }} · {{ exportTypeLabel }}</small>
             </article>
             <article>
@@ -634,6 +643,22 @@ async function exportExcel() {
             </div>
           </div>
 
+          <div v-if="isMatrixExport" class="export-option-section">
+            <div class="export-option-title">
+              <strong>年份识别</strong>
+              <span>自动识别简称、全称与套号；没有年份的名称单独归组，不用练习日期猜年份。</span>
+            </div>
+            <div class="export-segmented two" role="group" aria-label="年份分组方式">
+              <button type="button" :class="{ active: !exportForm.mergeYears }" :aria-pressed="!exportForm.mergeYears" @click="exportForm.mergeYears = false">
+                按年份分开（推荐）<small>26张八与27张八各占一组</small>
+              </button>
+              <button type="button" :class="{ active: exportForm.mergeYears }" :aria-pressed="exportForm.mergeYears" @click="exportForm.mergeYears = true">
+                跨年份合并<small>适合把历年真题放在同一组</small>
+              </button>
+            </div>
+            <p class="export-recognition-example">{{ exportForm.mergeYears ? '26张八1、27张宇八套卷第2套 → 张宇八套卷' : '26张八1、2026张宇八套卷第2套 → 2026 张宇八套卷；27张八 → 2027 张宇八套卷' }}</p>
+          </div>
+
           <div v-if="!isMatrixExport" class="export-option-section">
             <div class="export-option-title">
               <strong>导出字段</strong>
@@ -736,7 +761,7 @@ async function exportExcel() {
           <div class="export-option-section export-preview-section">
             <div class="export-option-title">
               <strong>在线表格预览</strong>
-              <span v-if="isMatrixExport">每一套卷子占一列，同一套卷子的多份成绩竖着排，最后一行是平均分。分组按卷子名自动推导 —— 年份（09真题 / 11真题）和序号（第1套 / (1) / 一 / 02）都算同一套卷子，并到一列按行排开。</span>
+              <span v-if="isMatrixExport">{{ exportForm.mergeYears ? '同科目、同系列跨年份合并。' : '同科目、同年份、同系列合并，不同年份分开。' }}组内按套号排列，最后一行是平均分；下方预览与导出文件一致。</span>
               <span v-else>字体已加粗，科目和分数会更清楚，最后一行是平均分</span>
             </div>
 
@@ -874,7 +899,7 @@ async function exportExcel() {
           </label>
           <div class="export-preview-card">
             <FileSpreadsheet :size="20" />
-            <strong>{{ exportSourceRecords.length }} 条成绩</strong>
+            <strong>{{ exportActualCount }} 条成绩</strong>
             <span>{{ exportSubjectLabel }} · {{ isMatrixExport ? `${exportMatrixColumnCount} 列` : `${exportForm.columns.length} 个字段` }}</span>
             <span>{{ exportForm.sheetMode === "subject" ? `${exportSubjectCount} 个科目分表` : "1 个明细表" }}</span>
             <span>{{ isMatrixExport ? `按卷子分列 · ${exportMatrixGroupCount} 套` : "明细行" }}</span>
@@ -892,3 +917,17 @@ async function exportExcel() {
     </section>
   </div>
 </template>
+
+<style scoped>
+.export-recognition-example {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--blue);
+  border-radius: var(--r-sm);
+  background: var(--blue-soft);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+</style>

@@ -10,7 +10,7 @@
 import { paperGroupName, buildExportMatrix } from "../src/services/excelExport.js";
 
 const cases = [
-  // ---- 年份不进分组：不同年份要并成一列（用户明确要求）----
+  // Explicit cross-year mode retains the previous grouping behavior.
   [["09真题", "11真题", "12真题"], "真题", "2 位年份 + 名称，开头年份剥掉"],
   [["07年真题", "08年真题", "09年真题"], "真题", "2 位年份 + 年 + 名称"],
   [["2015 合成成绩", "2016 合成成绩"], "合成成绩", "4 位年份 + 空格 + 名称"],
@@ -20,7 +20,7 @@ const cases = [
   [["真题2015年", "真题2016年"], "真题", "结尾年份带「年」"],
 
   // ---- 尾部序号写法 ----
-  [["26张八1", "26张八2", "26张八10"], "张八", "年份 + 裸数字序号"],
+  [["26张八1", "26张八2", "26张八10"], "张宇八套卷", "年份 + 裸数字序号"],
   [["张宇八套卷 第1套", "张宇八套卷 第2套"], "张宇八套卷", "第N套（带空格）"],
   [["张宇八套卷第1套", "张宇八套卷第3套"], "张宇八套卷", "第N套（不带空格）"],
   [["模拟卷第一套", "模拟卷第二套"], "模拟卷", "第 + 汉字数字 + 单位"],
@@ -46,7 +46,7 @@ const cases = [
   ["数学第二轮复习", "数学第二轮复习", "序号不在末尾"],
   ["第三次模拟", "第三次模拟", "序号不在末尾"],
   ["真题", "真题", "没有年份也没有序号"],
-  ["张八", "张八", "已经没有年份了"],
+  ["张八", "张宇八套卷", "已经没有年份了"],
   ["", "未命名", "空名兜底"]
 ];
 
@@ -62,7 +62,7 @@ function check(label, actual, expected) {
 for (const [input, expected, note] of cases) {
   const names = Array.isArray(input) ? input : [input];
   for (const name of names) {
-    check(`${JSON.stringify(name).padEnd(26)} -> ${JSON.stringify(paperGroupName(name)).padEnd(14)} (${note})`, paperGroupName(name), expected);
+    check(`${JSON.stringify(name).padEnd(26)} -> ${JSON.stringify(paperGroupName(name, { mergeYears: true })).padEnd(14)} (${note})`, paperGroupName(name, { mergeYears: true }), expected);
   }
 }
 
@@ -74,7 +74,7 @@ const convergence = [
   [["2015 合成成绩", "2016合成成绩"], "合成成绩"]
 ];
 for (const [names, expected] of convergence) {
-  const actual = new Set(names.map((name) => paperGroupName(name)));
+  const actual = new Set(names.map((name) => paperGroupName(name, { mergeYears: true })));
   check(`收敛 ${JSON.stringify(names)} -> ${JSON.stringify([...actual])}`, actual.size === 1 && actual.has(expected) ? "ok" : "no", "ok");
 }
 
@@ -136,10 +136,36 @@ const matrixScenarios = [
 ];
 
 for (const scenario of matrixScenarios) {
-  const { groups } = buildExportMatrix({ records: scenario.records, subjects, fields: ["record", "scoreText"] });
+  const { groups } = buildExportMatrix({ records: scenario.records, subjects, fields: ["record", "scoreText"], mergeYears: true });
   const actual = groups.map((group) => [group.label, group.records.length]);
   check(`${scenario.note}\n      实际 ${JSON.stringify(actual)}`, JSON.stringify(actual), JSON.stringify(scenario.expect));
 }
+
+
+// Default mode preserves editions; aliases and sequence spelling still converge.
+const editionCases = [
+  ["26张八1", "2026 张宇八套卷"],
+  ["27张八2", "2027 张宇八套卷"],
+  ["２０２６年 张宇８套卷（２）", "2026 张宇八套卷"],
+  ["张八(2026)第2套", "2026 张宇八套卷"],
+  ["张宇八套卷2026版", "2026 张宇八套卷"],
+  ["张八27年版", "2027 张宇八套卷"],
+  ["26肖四第1套", "2026 肖秀荣四套卷"],
+  ["09真题", "2009 真题"], ["真题2015年", "2015 真题"],
+  ["26题专项", "26题专项"], ["2000题强化", "2000题强化"],
+  ["英语一", "英语一"], ["660题", "660题"], ["408", "408"]
+];
+for (const [input, expected] of editionCases) check(input, paperGroupName(input), expected);
+const editionRecords = ["26张八10", "2026张宇8套卷第2套", "26张八1", "27张八1", "张八1"].map((paperName, i) => ({
+  id: String(i), subjectId: "math1", recordType: "paper", paperName, score: 100, fullScore: 150, date: "2026-10-30"
+}));
+const editions = buildExportMatrix({ records: editionRecords, subjects });
+check("Different editions and unknown year stay separate", editions.groups.length, 3);
+const edition26 = editions.groups.find(group => group.label === "2026 张宇八套卷");
+check("Same edition aliases converge", edition26?.records.length, 3);
+check("Sequence order across aliases", edition26?.records.map(record => record.id).join(","), "2,1,0");
+check("Explicit merge remains available", buildExportMatrix({ records: editionRecords, subjects, mergeYears: true }).groups.length, 1);
+check("Exercise and paper are separate", buildExportMatrix({ records: [editionRecords[0], { ...editionRecords[0], id: "exercise", recordType: "exercise" }], subjects }).groups.length, 2);
 
 console.log(failed ? `\n${failed} 条不符合预期` : "\n全部通过");
 process.exit(failed ? 1 : 0);

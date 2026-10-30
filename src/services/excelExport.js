@@ -1,3 +1,5 @@
+import { paperGroupName, parsePaperIdentity } from "../utils/paperIdentity.js";
+export { paperGroupName } from "../utils/paperIdentity.js";
 // 带 .js 后缀：scripts/test-paper-group.mjs 直接用 node 加载这个文件，
 // 裸模块路径在 Node 的 ESM 里解析不了（Vite 能，Node 不能）。
 import { readingCellText, stripNoteMeta } from "../utils/recordDisplay.js";
@@ -66,113 +68,6 @@ export const exportMatrixFieldOptions = [
 
 export const defaultMatrixFields = ["record", "scoreText"];
 
-/** 汉字数字，一到九十九够用 */
-const CN_NUMERAL = "[一二三四五六七八九十百零〇两]+";
-
-/** 「第N__」里的单位字：只有跟在序号后面、且位于名字末尾，才算序号 */
-const SEQUENCE_UNIT = "套讲份次轮章册辑回";
-
-/**
- * 尾部序号的几种写法，从上往下依次尝试，命中即用第 1 个捕获组做分组名。
- *
- * 1) 第N 形式：「张宇八套卷 第1套」「2026年真题第二套」「真题 第 12 讲」
- * 2) 分隔符/括号 + 汉字数字：「模拟卷（一）」「模拟卷-三」「模拟卷_四」
- * 3) 1–2 位数字：「26张八1」「模拟卷(2)」「模拟卷-12」
- */
-const SEQUENCE_RULES = [
-  {
-    pattern: new RegExp(`^(.*?)[\\s\\-_·#（(]*第\\s*([0-9]+|${CN_NUMERAL})\\s*[${SEQUENCE_UNIT}]?\\s*[)）]?\\s*$`),
-    shortDigitsOnly: true
-  },
-  {
-    pattern: new RegExp(`^(.*?)[\\s\\-_·#（(]+(${CN_NUMERAL})\\s*[)）]?\\s*$`),
-    shortDigitsOnly: false
-  },
-  {
-    pattern: /^(.*?)[\s\-_·#（(]*(\d+)[)）]?\s*$/,
-    shortDigitsOnly: true
-  }
-];
-
-/**
- * 去掉开头的年份。
- *
- *   09真题      -> 真题
- *   07年真题    -> 真题
- *   26张八      -> 张八
- *   2015 合成成绩 -> 合成成绩
- *
- * 年份不参与分组：用户要的是「不同年份的真题并成一列、年份当行」，
- * 所以这里不做年份保护，反而要把年份剥掉。
- *
- * 两个防误伤的护栏（都是真会踩到的）：
- * - 4 位年份要求开头是 19xx / 20xx，否则「1800题」「1000题」这类习题册名会被啃掉。
- * - 剥完剩下不足 2 个字就放弃，否则「2000题」「50题」会只剩一个「题」。
- */
-function stripLeadingYear(text) {
-  const four = text.match(/^((?:19|20)\d{2})\s*年?\s*[-_·]?\s*/);
-  if (four) {
-    const rest = text.slice(four[0].length).trim();
-    if (rest.length >= 2) return rest;
-  }
-  const two = text.match(/^(\d{2})(?!\d)\s*年?\s*/);
-  if (two) {
-    const rest = text.slice(two[0].length).replace(/^[\s\-_·]+/, "").trim();
-    if (rest.length >= 2) return rest;
-  }
-  return text;
-}
-
-/**
- * 去掉结尾的 4 位年份：「英语一2010」->「英语一」，「真题2015年」->「真题」。
- * 和开头年份同理，年份只影响行的顺序，不该把同一套卷子拆成两列。
- */
-function stripTrailingYear(text) {
-  const match = text.match(/[\s\-_·]*((?:19|20)\d{2})\s*年?\s*$/);
-  if (!match) return text;
-  const base = text.slice(0, match.index).replace(/[\s\-_·]+$/, "").trim();
-  return base.length >= 2 ? base : text;
-}
-
-/**
- * 从卷子名里推出「同一套卷子」的分组名 —— 分组完全由名字自动推导，
- * 用户不需要额外填字段，只要名字里带得上年份或序号就能并到一起。
- *
- * 处理顺序：剥开头年份 → 剥结尾年份 → 剥结尾序号。
- *
- * 会并到一起的写法：
- *   09真题 / 11真题 / 12真题            -> 真题
- *   07年真题 / 08年真题 / 09年真题       -> 真题
- *   2015 合成成绩 / 2016 合成成绩        -> 合成成绩
- *   英语一2010 / 英语一2011             -> 英语一
- *   26张八1 / 26张八2 / 26张八10        -> 张八
- *   张宇八套卷 第1套 / 第2套            -> 张宇八套卷
- *   模拟卷(1) / 模拟卷（二） / 模拟卷-3  -> 模拟卷
- *
- * 故意不动的写法：
- *   英语一 / 数学一 / 数一               -> 汉字数字是名字本身的一部分，不是序号
- *   第一套真题                           -> 序号不在末尾
- *   1800题 / 1000题 / 660题              -> 习题册名，数字不能被当年份啃掉
- */
-export function paperGroupName(value) {
-  let text = String(value ?? "").trim();
-  if (!text) return "未命名";
-
-  text = stripTrailingYear(stripLeadingYear(text));
-
-  for (const rule of SEQUENCE_RULES) {
-    const match = text.match(rule.pattern);
-    if (!match) continue;
-    const marker = match[2];
-    // 4 位数字（年份）不能在这里被当序号，交给上面的年份规则处理
-    if (rule.shortDigitsOnly && /^\d+$/.test(marker) && marker.length > 2) continue;
-    const base = match[1].replace(/[\s\-_·#（(]+$/, "").trim();
-    if (base) return base;
-  }
-
-  return text;
-}
-
 function paperGroupSource(record) {
   if (record?.recordType === "exercise") return record.exerciseBookName || record.paperName || "";
   return record.paperName || "";
@@ -192,7 +87,7 @@ function naturalCompare(a, b) {
  *   rows    [{ index, cells: [{ fieldId, groupKey, text, value }] }]，cells 顺序与 groups 展开一致
  *   average 平均行，结构与 rows 相同（无数据时为 null）
  */
-export function buildExportMatrix({ records = [], subjects = [], fields = defaultMatrixFields } = {}) {
+export function buildExportMatrix({ records = [], subjects = [], fields = defaultMatrixFields, mergeYears = false } = {}) {
   const subjectMap = new Map(subjects.map((subject) => [subject.id, subject]));
   const picked = exportMatrixFieldOptions.filter((field) => fields.includes(field.id));
   const usedFields = picked.length ? picked : exportMatrixFieldOptions.filter((field) => defaultMatrixFields.includes(field.id));
@@ -200,8 +95,8 @@ export function buildExportMatrix({ records = [], subjects = [], fields = defaul
   const groupMap = new Map();
   records.forEach((record) => {
     const subject = subjectMap.get(record.subjectId);
-    const label = paperGroupName(paperGroupSource(record));
-    const key = `${record.subjectId || "unknown"}::${label}`;
+    const label = paperGroupName(paperGroupSource(record), { mergeYears });
+    const key = `${record.subjectId || "unknown"}::${record.recordType || "paper"}::${label}`;
     if (!groupMap.has(key)) {
       groupMap.set(key, {
         key,
@@ -219,6 +114,8 @@ export function buildExportMatrix({ records = [], subjects = [], fields = defaul
     .map((group) => {
       group.records.sort(
         (a, b) =>
+          naturalCompare(parsePaperIdentity(paperGroupSource(a)).year, parsePaperIdentity(paperGroupSource(b)).year) ||
+          (parsePaperIdentity(paperGroupSource(a)).sequence ?? -1) - (parsePaperIdentity(paperGroupSource(b)).sequence ?? -1) ||
           naturalCompare(recordTitle(a), recordTitle(b)) ||
           String(a.date || "").localeCompare(String(b.date || "")) ||
           String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
@@ -332,6 +229,7 @@ export async function exportRecordsToExcel({
   sheetMode = "single",
   layout = "rows",
   matrixFields = defaultMatrixFields,
+  mergeYears = false,
   theme = "ocean",
   filename = "成绩导出",
   includeSummary = false
@@ -359,7 +257,7 @@ export async function exportRecordsToExcel({
 
   groups.forEach((group) => {
     if (isMatrix) {
-      addMatrixSheet(workbook, group.name, group.records, subjectMap, matrixFields, themeConfig);
+      addMatrixSheet(workbook, group.name, group.records, subjectMap, matrixFields, themeConfig, mergeYears);
     } else {
       addRecordSheet(workbook, group.name, group.records, subjectMap, selectedColumns, themeConfig);
     }
@@ -436,9 +334,9 @@ function addRecordSheet(workbook, name, records, subjectMap, selectedColumns, th
  * 「按卷子分列」工作表：序号列 + 每个卷子组一列块。
  * 表头两行：第一行是组名（跨该组所有子列合并），第二行是子字段名。
  */
-function addMatrixSheet(workbook, name, records, subjectMap, matrixFields, theme) {
+function addMatrixSheet(workbook, name, records, subjectMap, matrixFields, theme, mergeYears) {
   const sheet = workbook.addWorksheet(normalizeSheetName(name, workbook));
-  const matrix = buildExportMatrix({ records, subjects: [...subjectMap.values()], fields: matrixFields });
+  const matrix = buildExportMatrix({ records, subjects: [...subjectMap.values()], fields: matrixFields, mergeYears });
   const { groups, fields } = matrix;
 
   if (!groups.length) {

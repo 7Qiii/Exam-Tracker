@@ -7,7 +7,7 @@
  * 恰恰是「喂给 Excel 的是哪批成绩」这一层 —— 抽错了，按钮照样有反应，
  * 预览照样好看，但文件里的内容是错的。所以这里直接解析 xlsx 断言。
  *
- * 验证两件事：
+ * 验证默认按年份分开、简称合并，以及可选的跨年模式：
  *   1. 不同年份的真题并成一列（09/11/12 真题 → 一列「真题」）
  *   2. 「每列包含哪些成绩」真的能把某一条从文件里去掉
  *
@@ -80,6 +80,7 @@ async function startServer() {
  * 期望结果：序号列 + 5 组 × 2 字段 = 11 列。
  */
 const SEED = [
+  ...["26张八1", "2026张宇8套卷第2套", "27张八1"].map((paperName, index) => ({ id: `edition-${index}`, subjectId: "math1", recordType: "paper", paperName, score: 100 + index, fullScore: 150, date: "2026-10-30", createdAt: "2026-10-30T10:00:00.000Z" })),
   { id: "e2e-en-09", subjectId: "english1", recordType: "paper", paperName: "09真题", score: 61, fullScore: 100, durationMinutes: 70, date: "2025-03-01", createdAt: "2025-03-01T10:00:00.000Z", note: "" },
   { id: "e2e-en-11", subjectId: "english1", recordType: "paper", paperName: "11真题", score: 66, fullScore: 100, durationMinutes: 72, date: "2025-04-01", createdAt: "2025-04-01T10:00:00.000Z", note: "" },
   { id: "e2e-en-12", subjectId: "english1", recordType: "paper", paperName: "12真题", score: 71, fullScore: 100, durationMinutes: 74, date: "2025-05-01", createdAt: "2025-05-01T10:00:00.000Z", note: "" },
@@ -177,6 +178,21 @@ async function main() {
     await page.locator('.export-dialog button:has-text("按卷子分列")').first().click({ timeout: 8000 });
     await page.waitForTimeout(800);
 
+    // Default mode must preserve editions in both the preview and downloaded file.
+    const edition26 = page.locator(".matrix-picker-group").filter({ hasText: "2026 张宇八套卷" });
+    const edition27 = page.locator(".matrix-picker-group").filter({ hasText: "2027 张宇八套卷" });
+    if (await edition26.locator(".matrix-picker-chip").count() !== 2) problems.push("2026 aliases did not converge");
+    if (await edition27.locator(".matrix-picker-chip").count() !== 1) problems.push("2027 edition was not separated");
+    const downloadDefault = page.waitForEvent("download");
+    await page.locator('.export-dialog-footer .primary-button').click();
+    const defaultResult = await readWorkbook(await (await downloadDefault).path());
+    for (const label of ["2026 张宇八套卷", "2027 张宇八套卷", "2009 真题", "2011 真题", "2012 真题"]) {
+      if (!defaultResult.labels.includes(label)) problems.push("Missing edition header: " + label);
+    }
+    console.log("  Default export preserves edition years and merges aliases");
+    await page.locator('button:has-text("导出 Excel")').first().click();
+    await page.getByRole("button", { name: /跨年份合并/ }).click();
+
     // 1. 选择器里「真题」应该是一个分组，里面 3 条
     const group = page.locator(".matrix-picker-group").filter({ hasText: "真题" });
     const groupCount = await group.count();
@@ -215,8 +231,8 @@ async function main() {
       problems.push(`年份真题不该单独占列，却出现了：${yearLabels.join(" / ")}`);
     }
     // 序号列 + 5 套卷子 × 每套 2 个字段（记录 / 分数）
-    if (result.columnCount !== 11) {
-      problems.push(`应为 1 + 5 套 × 2 字段 = 11 列，实际 ${result.columnCount} 列（分组：${result.labels.join(" | ")}）`);
+    if (result.columnCount !== 13) {
+      problems.push(`应为 1 + 6 套 × 2 字段 = 13 列，实际 ${result.columnCount} 列（分组：${result.labels.join(" | ")}）`);
     }
 
     if (!result.allText.includes("09真题")) problems.push("文件里找不到 09真题 —— 被排除的那条之外的成绩不该丢");
@@ -232,6 +248,7 @@ async function main() {
     if (consoleErrors.length) problems.push(`控制台报错：${consoleErrors[0]}`);
   } catch (error) {
     problems.push(`执行出错：${error.message}`);
+    if (consoleErrors.length) problems.push(`控制台：${consoleErrors.join("; ")}`);
   } finally {
     await page.close();
     await browser.close();
@@ -243,7 +260,7 @@ async function main() {
     problems.forEach((problem) => console.log(`    · ${problem}`));
     process.exit(1);
   }
-  console.log("\n✓ 导出检查通过 —— 年份真题并成一列，被排除的成绩没有写进文件。");
+  console.log("\n✓ 导出检查通过 —— 默认按年份分开，跨年合并可选，被排除的成绩没有写进文件。");
 }
 
 main().catch((error) => {

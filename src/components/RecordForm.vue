@@ -13,6 +13,8 @@ import {
 } from "../utils/recordDisplay";
 import { useUnsavedFields } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
+import { parsePaperIdentity } from "../utils/paperIdentity";
+import { localDateKey } from "../utils/dateRange";
 
 const props = defineProps({
   record: { type: Object, default: null }
@@ -21,6 +23,11 @@ const emit = defineEmits(["saved"]);
 const store = useTrackerStore();
 const isSaving = ref(false);
 const formError = ref("");
+const recordFormRef = ref(null);
+const paperNameInput = ref(null);
+const variantManuallySelected = ref(Boolean(props.record));
+const paperNamesId = useId();
+const exerciseBooksId = useId();
 
 const paperVariantOptions = [
   { value: "true", label: "真题", hint: "历年真题、成套回顾" },
@@ -38,7 +45,7 @@ const form = reactive({
   score: "",
   fullScore: "",
   durationMinutes: "",
-  date: new Date().toISOString().slice(0, 10),
+  date: localDateKey(new Date()),
   note: "",
   // 英语阅读 4 篇的答对数，每格 "" 或 "0".."5"。空数组项 = 这篇还没做。
   readingParts: Array.from({ length: READING_PART_COUNT }, () => "")
@@ -127,6 +134,31 @@ const isEditing = computed(() => Boolean(props.record));
 const isComposite = computed(() => form.recordType === "composite");
 const isMathSubject = computed(() => selectedSubject.value?.id === "math1");
 const isMathPaper = computed(() => isMathSubject.value && form.recordType === "paper" && !isComposite.value);
+const paperIdentity = computed(() => parsePaperIdentity(form.paperName));
+const recentPaperNames = computed(() => [...new Set(store.records
+  .filter((record) => record.subjectId === form.subjectId && (record.recordType || "paper") === "paper")
+  .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)))
+  .map((record) => record.paperName).filter(Boolean))].slice(0, 20));
+const scoreSummary = computed(() => {
+  const score = Number(form.score);
+  const full = Number(form.fullScore);
+  if (form.score === "" || !Number.isFinite(score) || !Number.isFinite(full) || full <= 0 || score < 0 || score > full) return "填写得分后预览得分率";
+  return `得分率 ${Math.round(score / full * 1000) / 10}% · 失分 ${Math.round((full - score) * 100) / 100}`;
+});
+const possibleDuplicate = computed(() => !isEditing.value && form.recordType === "paper" && form.paperName && form.score !== "" && store.records.some((record) =>
+  record.subjectId === form.subjectId && record.date === form.date && record.paperName === form.paperName && Number(record.score) === Number(form.score)
+));
+
+function choosePaperVariant(value) {
+  variantManuallySelected.value = true;
+  form.paperVariant = value;
+}
+
+watch(() => form.paperName, () => {
+  if (isMathPaper.value && !variantManuallySelected.value && !isEditing.value) {
+    form.paperVariant = paperIdentity.value.variant || "true";
+  }
+});
 const exerciseBooks = computed(() => {
   const books = store.records
     .filter((record) => record.subjectId === "math1" && record.recordType === "exercise" && record.exerciseBookName)
@@ -267,7 +299,7 @@ watch(
       form.score = props.record.score ?? "";
       form.fullScore = props.record.fullScore ?? "";
       form.durationMinutes = props.record.durationMinutes ?? "";
-      form.date = props.record.date || new Date().toISOString().slice(0, 10);
+      form.date = props.record.date || localDateKey(new Date());
       form.note = store.displayRecordNote(props.record) || "";
       form.readingParts = toReadingBoxes(store.readingPartsForRecord(props.record));
       ensurePaperVariant();
@@ -288,6 +320,7 @@ watch(
 watch(
   () => form.subjectId,
   () => {
+    variantManuallySelected.value = Boolean(props.record);
     if (selectedSubject.value && !props.record) {
       form.fullScore = selectedSubject.value.fullScore;
     }
@@ -319,7 +352,9 @@ watch(
   }
 );
 
-async function submit() {
+async function submit(continueAdding = false) {
+  if (isSaving.value) return;
+  if (continueAdding && !recordFormRef.value?.reportValidity()) return;
   formError.value = "";
   /* ------------------------------------------------------------------ *
    * 校验口径：留空的字段一律当「没填」，不打扰用户。
@@ -337,6 +372,14 @@ async function submit() {
    * ------------------------------------------------------------------ */
   const score = form.score === "" ? null : Number(form.score);
   const fullScore = form.fullScore === "" ? null : Number(form.fullScore);
+  if (score !== null && (!Number.isFinite(score) || score < 0)) {
+    formError.value = "得分需要是大于或等于 0 的数字。";
+    return;
+  }
+  if (fullScore !== null && (!Number.isFinite(fullScore) || fullScore <= 0)) {
+    formError.value = "满分需要大于 0。";
+    return;
+  }
   if (score !== null && fullScore !== null && fullScore > 0 && score > fullScore) {
     formError.value = "得分不能高于满分。";
     return;
@@ -370,15 +413,22 @@ async function submit() {
       form.durationMinutes = "";
       form.note = "";
       form.readingParts = toReadingBoxes(null);
-      form.date = new Date().toISOString().slice(0, 10);
-      form.fullScore = selectedSubject.value?.fullScore || "";
+      if (!continueAdding) {
+        form.date = localDateKey(new Date());
+        form.fullScore = selectedSubject.value?.fullScore || "";
+      }
       ensurePaperVariant();
     }
     // 存完了就不算「未保存」了。父组件接下来会同步地把表单关掉并问一句
     // confirmDiscardChanges()，所以必须在 emit 之前重置（见 useUnsavedForm 里
     // flush: "sync" 那段说明）。
+    await nextTick();
     resetDirty();
-    emit("saved");
+    if (continueAdding && !isEditing.value) {
+      nextTick(() => paperNameInput.value?.focus());
+    } else {
+      emit("saved");
+    }
   } catch (error) {
     store.notify(error.message || "成绩保存失败。", "error", 6000);
   } finally {
@@ -405,134 +455,223 @@ function normalizePaperVariant(value, paperName = "") {
 </script>
 
 <template>
-  <form class="form-grid record-form" @submit.prevent="submit">
-    <div v-if="formError" class="inline-alert danger">{{ formError }}</div>
-    <label>
-      科目
-      <select v-model="form.subjectId">
-        <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
-      </select>
-    </label>
-    <div v-if="isMathSubject && !isComposite" class="field-group">
-      <span>记录类型</span>
-      <div class="segmented">
-        <button type="button" :class="{ active: form.recordType === 'paper' }" @click="form.recordType = 'paper'">试卷</button>
-        <button type="button" :class="{ active: form.recordType === 'exercise' }" @click="form.recordType = 'exercise'">习题</button>
-      </div>
-    </div>
-    <div v-if="isMathPaper" class="field-group paper-kind-field">
-      <span>数一卷型</span>
-      <div class="segmented paper-kind-segmented">
-        <button
-          v-for="option in paperVariantOptions"
-          :key="option.value"
-          type="button"
-          :class="{ active: form.paperVariant === option.value }"
-          :title="option.hint"
-          @click="form.paperVariant = option.value"
-        >
-          {{ option.label }}
-          <small>{{ option.hint }}</small>
-        </button>
-      </div>
-    </div>
-    <label v-if="form.recordType !== 'exercise'">
-      {{ isComposite ? "合成成绩名称" : "试卷名称" }}
-      <input v-model.trim="form.paperName" />
-    </label>
-    <template v-else>
+  <form ref="recordFormRef" class="form-grid record-form" @submit.prevent="submit(false)" :aria-busy="isSaving">
+    <div v-if="formError" class="inline-alert danger" role="alert">{{ formError }}</div>
+    <fieldset class="record-form-section" :disabled="isSaving">
+      <legend><span>01</span> 练习信息</legend>
+      <p class="record-section-hint">名称保留年份和套号，导出时会自动识别分组。</p>
       <label>
-        习题册名称
-        <input v-model.trim="form.exerciseBookName" list="exercise-book-options" />
-        <datalist id="exercise-book-options">
-          <option v-for="book in exerciseBooks" :key="book" :value="book" />
-        </datalist>
+        科目
+        <select v-model="form.subjectId">
+          <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+        </select>
       </label>
-      <div class="form-row two">
-        <label>
-          页码
-          <input v-model.trim="form.exercisePage" inputmode="numeric" />
-        </label>
-        <label>
-          题号
-          <input v-model.trim="form.exerciseQuestion" />
-        </label>
-      </div>
-    </template>
-    <div v-if="showReadingParts" class="ds-field reading-field">
-      <div class="reading-head">
-        <span class="ds-field-label">英语阅读（4 篇）</span>
-        <button type="button" class="text-link reading-fill-all" @click="fillAllReading">
-          {{ readingAllFull ? "清空" : "全对" }}
-        </button>
-      </div>
-      <div class="reading-parts" role="group" aria-label="英语阅读每篇答对数">
-        <label v-for="(part, index) in form.readingParts" :key="index" class="reading-part">
-          <span>第 {{ index + 1 }} 篇</span>
-          <input
-            :ref="(el) => (readingInputs[index] = el)"
-            :value="part"
-            type="text"
-            inputmode="numeric"
-            maxlength="1"
-            autocomplete="off"
-            :aria-label="`阅读第 ${index + 1} 篇答对数（0-${READING_PART_FULL}）`"
-            @input="onReadingInput($event, index)"
-            @keydown="onReadingKeydown($event, index)"
-            @paste="onReadingPaste($event, index)"
-          />
-        </label>
-      </div>
-      <p class="reading-summary">{{ readingSummaryText }}</p>
-    </div>
-    <div class="form-row two">
-      <label>
-        得分
-        <input v-model="form.score" type="number" step="any" inputmode="decimal" />
-      </label>
-      <label>
-        满分
-        <input v-model="form.fullScore" type="number" step="any" inputmode="decimal" />
-      </label>
-    </div>
-    <div class="form-row two">
-      <div class="ds-field duration-field">
-        <span :id="durationLabelId" class="ds-field-label">用时</span>
-        <div class="duration-inputs" role="group" :aria-labelledby="durationLabelId">
-          <span class="duration-part">
-            <input v-model="durationHours" type="number" inputmode="numeric" placeholder="0" aria-label="用时（小时）" />
-            <span class="duration-unit">小时</span>
-          </span>
-          <span class="duration-part">
-            <input v-model="durationMinutesPart" type="number" inputmode="numeric" placeholder="0" aria-label="用时（分钟）" />
-            <span class="duration-unit">分钟</span>
-          </span>
+      <div v-if="isMathSubject && !isComposite" class="field-group">
+        <span>记录类型</span>
+        <div class="segmented">
+          <button type="button" :class="{ active: form.recordType === 'paper' }" @click="form.recordType = 'paper'">试卷</button>
+          <button type="button" :class="{ active: form.recordType === 'exercise' }" @click="form.recordType = 'exercise'">习题</button>
         </div>
-        <div class="segmented duration-presets" role="group" :aria-labelledby="durationLabelId">
+      </div>
+      <div v-if="isMathPaper" class="field-group paper-kind-field">
+        <span>数一卷型</span>
+        <div class="segmented paper-kind-segmented">
           <button
-            v-for="preset in durationPresets"
-            :key="preset.minutes"
+            v-for="option in paperVariantOptions"
+            :key="option.value"
             type="button"
-            :class="{ active: isDurationPresetActive(preset.minutes) }"
-            :aria-pressed="isDurationPresetActive(preset.minutes)"
-            @click="applyDurationPreset(preset.minutes)"
+            :class="{ active: form.paperVariant === option.value }"
+            :title="option.hint"
+            :aria-pressed="form.paperVariant === option.value"
+            @click="choosePaperVariant(option.value)"
           >
-            {{ preset.label }}
+            {{ option.label }}
+            <small>{{ option.hint }}</small>
           </button>
         </div>
       </div>
-      <label>
-        日期
-        <input v-model="form.date" type="date" />
+      <label v-if="form.recordType !== 'exercise'">
+        {{ isComposite ? "合成成绩名称" : "试卷名称" }}
+        <input ref="paperNameInput" v-model.trim="form.paperName" :list="paperNamesId" placeholder="例如：26张八1、27张八第2套" autocomplete="off" />
+        <datalist :id="paperNamesId"><option v-for="name in recentPaperNames" :key="name" :value="name" /></datalist>
       </label>
-    </div>
-    <label>
-      复盘备注
-      <textarea v-model.trim="form.note" rows="3"></textarea>
-    </label>
+      <template v-else>
+        <label>
+          习题册名称
+          <input v-model.trim="form.exerciseBookName" :list="exerciseBooksId" />
+          <datalist :id="exerciseBooksId">
+            <option v-for="book in exerciseBooks" :key="book" :value="book" />
+          </datalist>
+        </label>
+        <div class="form-row two">
+          <label>
+            页码
+            <input v-model.trim="form.exercisePage" inputmode="numeric" />
+          </label>
+          <label>
+            题号
+            <input v-model.trim="form.exerciseQuestion" />
+          </label>
+        </div>
+      </template>
+      <div v-if="form.recordType === 'paper' && form.paperName" class="record-recognition" role="status">
+        <span>识别分组</span><strong>{{ paperIdentity.label }}</strong>
+        <small>{{ paperIdentity.year ? paperIdentity.year + ' 年版' : '未识别到年份，导出时单独归组' }}{{ paperIdentity.variant ? ' · ' + (paperIdentity.variant === 'mock' ? '模拟卷' : '真题') : '' }}</small>
+      </div>
+      <div v-if="!isEditing && form.recordType === 'paper' && recentPaperNames.length" class="record-recent-names">
+        <span>最近使用</span>
+        <button v-for="name in recentPaperNames.slice(0, 3)" :key="name" type="button" @click="form.paperName = name">{{ name }}</button>
+      </div>
+    </fieldset>
+    <fieldset class="record-form-section" :disabled="isSaving">
+      <legend><span>02</span> 成绩与用时</legend>
+      <div v-if="showReadingParts" class="ds-field reading-field">
+        <div class="reading-head">
+          <span class="ds-field-label">英语阅读（4 篇）</span>
+          <button type="button" class="text-link reading-fill-all" @click="fillAllReading">
+            {{ readingAllFull ? "清空" : "全对" }}
+          </button>
+        </div>
+        <div class="reading-parts" role="group" aria-label="英语阅读每篇答对数">
+          <label v-for="(part, index) in form.readingParts" :key="index" class="reading-part">
+            <span>第 {{ index + 1 }} 篇</span>
+            <input
+              :ref="(el) => (readingInputs[index] = el)"
+              :value="part"
+              type="text"
+              inputmode="numeric"
+              maxlength="1"
+              autocomplete="off"
+              :aria-label="`阅读第 ${index + 1} 篇答对数（0-${READING_PART_FULL}）`"
+              @input="onReadingInput($event, index)"
+              @keydown="onReadingKeydown($event, index)"
+              @paste="onReadingPaste($event, index)"
+            />
+          </label>
+        </div>
+        <p class="reading-summary">{{ readingSummaryText }}</p>
+      </div>
+      <div class="form-row two record-score-row">
+        <label>
+          得分
+          <input v-model="form.score" type="number" step="any" inputmode="decimal" placeholder="本次得分" />
+        </label>
+        <label>
+          满分
+          <input v-model="form.fullScore" type="number" step="any" inputmode="decimal" />
+        </label>
+      </div>
+      <div class="form-row two">
+        <div class="ds-field duration-field">
+          <span :id="durationLabelId" class="ds-field-label">用时</span>
+          <div class="duration-inputs" role="group" :aria-labelledby="durationLabelId">
+            <span class="duration-part">
+              <input v-model="durationHours" type="number" inputmode="numeric" placeholder="0" aria-label="用时（小时）" />
+              <span class="duration-unit">小时</span>
+            </span>
+            <span class="duration-part">
+              <input v-model="durationMinutesPart" type="number" inputmode="numeric" placeholder="0" aria-label="用时（分钟）" />
+              <span class="duration-unit">分钟</span>
+            </span>
+          </div>
+          <div class="segmented duration-presets" role="group" :aria-labelledby="durationLabelId">
+            <button
+              v-for="preset in durationPresets"
+              :key="preset.minutes"
+              type="button"
+              :class="{ active: isDurationPresetActive(preset.minutes) }"
+              :aria-pressed="isDurationPresetActive(preset.minutes)"
+              @click="applyDurationPreset(preset.minutes)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+        </div>
+        <label>
+          日期
+          <input v-model="form.date" type="date" />
+        </label>
+      </div>
+      <p class="record-score-summary" role="status">{{ scoreSummary }}</p>
+    </fieldset>
+    <fieldset class="record-form-section" :disabled="isSaving">
+      <legend><span>03</span> 复盘备注 <small>选填</small></legend>
+      <label>
+        复盘备注
+        <textarea v-model.trim="form.note" rows="3" placeholder="记下主要失分点、时间分配或下次要注意的地方"></textarea>
+      </label>
+    </fieldset>
+    <p v-if="possibleDuplicate" class="record-duplicate-hint" role="status">已有同一天、同名称、同得分的记录，请确认是否需要再次保存。</p>
+    <div class="record-form-footer">
+      <button v-if="!isEditing" class="secondary-button" type="button" :disabled="isSaving" @click="submit(true)">保存并继续</button>
     <button class="primary-button" type="submit" :disabled="isSaving">
       <Save :size="17" />
       {{ isSaving ? "保存中..." : isEditing ? "保存修改" : "保存成绩" }}
     </button>
+    </div>
   </form>
 </template>
+
+<style scoped>
+.record-form { gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+.record-form > .record-form-section:nth-of-type(3),
+.record-form > .inline-alert,
+.record-form > .record-duplicate-hint,
+.record-form > .record-form-footer { grid-column: 1 / -1; }
+.record-form-section {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.record-form-section legend { padding: 0 8px; font-size: 14px; font-weight: 650; color: var(--ink); }
+.record-form-section legend > span { margin-right: 8px; color: var(--blue); font-variant-numeric: tabular-nums; }
+.record-form-section legend small { color: var(--muted); font-size: 11px; font-weight: 400; margin-left: 8px; }
+.record-section-hint { margin: -4px 0 0; color: var(--muted); font-size: 12px; }
+.record-recognition {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--blue-soft);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.record-recognition > span, .record-recognition small { color: var(--muted); font-size: 12px; }
+.record-recent-names { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.record-recent-names > span { font-size: 12px; color: var(--muted); }
+.record-recent-names button {
+  max-width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.record-recent-names button:hover { border-color: var(--blue); color: var(--blue); }
+.record-score-summary { margin: 0; padding: 10px 14px; background: var(--surface-soft); border-radius: var(--r-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.record-duplicate-hint { margin: 0; padding: 12px; border-left: 3px solid var(--orange); color: var(--ink); background: var(--orange-soft); }
+.record-form-footer { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
+.record-form-footer button { min-height: 42px; }
+.record-form-section .form-row.two { align-items: start; }
+@media (max-width: 600px) {
+  .record-form-section { padding: 14px; gap: 14px; }
+  .record-form-footer > button { flex: 1; justify-content: center; }
+  .record-form-section .form-row.two { grid-template-columns: minmax(0, 1fr); }
+  .record-form-section .record-score-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .record-recognition { align-items: flex-start; flex-direction: column; }
+}
+</style>
