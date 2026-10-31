@@ -98,6 +98,9 @@ const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
   return [...store.records]
     .filter((record) => {
+      if (filters.subjectId && record.subjectId !== filters.subjectId) return false;
+      if (!matchesPaperVariantFilter(record)) return false;
+      if (!keyword) return true;
       const subject = store.subjectName(record.subjectId);
       const haystack = normalizeSearch([
         record.paperName,
@@ -116,11 +119,7 @@ const filteredRecords = computed(() => {
         `${record.score}/${record.fullScore}`,
         `${record.score} / ${record.fullScore}`
       ].join(" "));
-      return (
-        (!keyword || haystack.includes(keyword)) &&
-        (!filters.subjectId || record.subjectId === filters.subjectId) &&
-        matchesPaperVariantFilter(record)
-      );
+      return haystack.includes(keyword);
     })
     .sort(compareRecords);
 });
@@ -390,7 +389,7 @@ function createMistakeFromRecord(record) {
 
 async function revealRecordForm() {
   await nextTick();
-  formPanelRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  formPanelRef.value?.scrollIntoView({ behavior: "instant", block: "start" });
 }
 
 async function deleteRecord(record) {
@@ -811,7 +810,7 @@ function scoreBarStyle(record) {
 
 <template>
   <div class="page-stack">
-    <DsPageHeader title="成绩工作台" description="记录、计时、合成和同步放在同一处，保留关键操作，减少界面干扰。">
+    <DsPageHeader title="成绩工作台">
       <template #actions>
         <button class="secondary-button" type="button" @click="openExportDialog">
           <FileSpreadsheet :size="16" />
@@ -827,6 +826,17 @@ function scoreBarStyle(record) {
         </button>
       </template>
     </DsPageHeader>
+
+    <section v-if="showForm" ref="formPanelRef" class="panel">
+      <div class="section-head">
+        <h2>{{ editingRecord ? "编辑成绩" : "新增成绩" }}</h2>
+        <button class="secondary-button compact" type="button" @click="closeForm">
+          <X :size="15" />
+          关闭
+        </button>
+      </div>
+      <RecordForm :key="editingRecordId || 'new-record'" :record="editingRecord" @saved="onFormSaved" />
+    </section>
 
     <section class="ds-stats">
       <DsStatCard
@@ -936,17 +946,6 @@ function scoreBarStyle(record) {
           </button>
         </div>
       </div>
-    </section>
-
-    <section v-if="showForm" ref="formPanelRef" class="panel">
-      <div class="section-head">
-        <h2>{{ editingRecord ? "编辑成绩" : "新增成绩" }}</h2>
-        <button class="secondary-button compact" type="button" @click="closeForm">
-          <X :size="15" />
-          关闭
-        </button>
-      </div>
-      <RecordForm :key="editingRecordId || 'new-record'" :record="editingRecord" @saved="onFormSaved" />
     </section>
 
     <ExportDialog

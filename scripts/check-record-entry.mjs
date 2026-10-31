@@ -30,11 +30,11 @@ try {
   });
   await page.getByRole("button", { name: "记录成绩", exact: true }).first().click();
   const form = page.locator(".record-form");
-  const name = form.locator('input[list]').first();
+  const name = form.getByPlaceholder('例如：27张八1');
   await form.locator("select").first().selectOption("math1");
   await name.fill("26张八1");
-  await page.waitForFunction(() => document.querySelector(".record-recognition")?.textContent.includes("2026 张宇八套卷"));
-  assert.equal(await form.locator('.paper-kind-segmented button.active').innerText(), "模拟卷\n模考、套卷训练");
+  await name.blur();
+  assert.equal(await form.locator('.paper-kind-segmented button.active').innerText(), "模拟卷");
   await form.getByRole("button", { name: /真题/ }).click();
   await name.fill("27张八2");
   assert.ok((await form.locator('.paper-kind-segmented button.active').innerText()).startsWith("真题"));
@@ -42,7 +42,7 @@ try {
   await form.getByLabel("得分", { exact: true }).fill("121.5");
   await form.getByLabel("满分", { exact: true }).fill("150");
   await form.getByLabel("日期", { exact: true }).fill("2026-10-29");
-  assert.match(await form.locator(".record-score-summary").innerText(), /81%/);
+  assert.doesNotMatch(await form.innerText(), /得分率|失分|识别分组|练习信息|成绩与用时/);
 
   await mkdir(".verify", { recursive: true });
   for (const width of [1440, 768, 390]) {
@@ -51,14 +51,28 @@ try {
     await form.screenshot({ path: `.verify/record-entry-${width}.png` });
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.evaluate(async () => {
+    const { useTrackerStore } = await import("/src/stores/tracker.js");
+    const store = useTrackerStore(document.querySelector("#app").__vue_app__.config.globalProperties.$pinia);
+    window.originalAddRecord = store.addRecord;
+    store.addRecord = async () => { throw new Error("Test storage failure"); };
+  });
+  await form.getByRole("button", { name: "保存成绩", exact: true }).click();
+  await page.getByText("Test storage failure", { exact: true }).waitFor();
+  assert.equal(await name.inputValue(), "27张八2");
+  assert.equal(await form.getByLabel("得分", { exact: true }).inputValue(), "121.5");
+  await page.evaluate(async () => {
+    const { useTrackerStore } = await import("/src/stores/tracker.js");
+    useTrackerStore(document.querySelector("#app").__vue_app__.config.globalProperties.$pinia).addRecord = window.originalAddRecord;
+  });
   await form.getByRole("button", { name: "保存并继续", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('.record-form input[list]')?.value === "");
+  await page.waitForFunction(() => document.querySelector('.record-form input[placeholder="例如：27张八1"]')?.value === "");
   assert.ok(await form.isVisible());
   assert.equal(await form.getByLabel("日期", { exact: true }).inputValue(), "2026-10-29");
   assert.equal(await form.getByLabel("满分", { exact: true }).inputValue(), "150");
   await name.fill("27张八2");
   await form.getByLabel("得分", { exact: true }).fill("121.5");
-  assert.ok(await form.locator(".record-duplicate-hint").isVisible());
+  assert.equal(await form.locator(".record-duplicate-hint").count(), 0);
   await name.fill("27张八3");
   await form.getByLabel("得分", { exact: true }).fill("151");
   await form.getByRole("button", { name: "保存成绩", exact: true }).click();
@@ -74,7 +88,7 @@ try {
   assert.equal(records.length, initialCount + 2);
   assert.equal(records.find((record) => record.paperName === "27张八2").paperVariant, "mock");
   assert.deepEqual(errors, []);
-  console.log("PASS recognition, manual override, score validation, duplicate hint, save-and-continue, double-submit guard and three screen sizes");
+  console.log("PASS recognition, manual override, score validation, minimal layout, save-and-continue, double-submit guard and three screen sizes");
 } finally {
   await browser?.close();
   await server.close();

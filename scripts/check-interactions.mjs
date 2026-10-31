@@ -271,7 +271,7 @@ console.log("\n保存成绩后不该再问「放弃未保存的内容」");
 
   await page.locator('button:has-text("新增成绩")').first().click();
   await page.waitForTimeout(600);
-  await page.locator("form.record-form input").first().fill("回归测试卷");
+  await page.locator("form.record-form").getByLabel("试卷名称", { exact: true }).fill("回归测试卷");
   await page.locator('form.record-form input[type="number"]').first().fill("120");
   await page.waitForTimeout(250);
   await page.locator('form.record-form button[type="submit"]').first().click();
@@ -292,7 +292,7 @@ console.log("\n保存成绩后不该再问「放弃未保存的内容」");
   // 少了这条，把确认整个删掉也能让上面通过。
   await page.locator('button:has-text("新增成绩")').first().click();
   await page.waitForTimeout(600);
-  await page.locator("form.record-form input").first().fill("填了一半就关");
+  await page.locator("form.record-form").getByLabel("试卷名称", { exact: true }).fill("填了一半就关");
   await page.waitForTimeout(250);
   await page.locator('button:has-text("关闭")').first().click();
   await page.waitForTimeout(800);
@@ -368,7 +368,7 @@ console.log("\n英语阅读的分篇对错");
   await page.keyboard.type("5", { delay: 60 });
   await page.waitForTimeout(200);
 
-  await page.locator("form.record-form input").first().fill("阅读回归卷");
+  await page.locator("form.record-form").getByLabel("试卷名称", { exact: true }).fill("阅读回归卷");
   await page.locator('form.record-form input[type="number"]').first().fill("82");
   await page.waitForTimeout(200);
   await page.locator('form.record-form button[type="submit"]').first().click();

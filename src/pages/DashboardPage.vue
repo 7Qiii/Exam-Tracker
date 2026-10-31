@@ -459,7 +459,6 @@ async function onImport(event) {
       v-if="showRecordForm"
       id="dashboard-record-form"
       title="快速记录成绩"
-      description="保存后会立即更新趋势与统计"
       closable
       @close="closeRecordForm"
     >

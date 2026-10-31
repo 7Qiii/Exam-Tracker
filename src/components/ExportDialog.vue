@@ -128,6 +128,8 @@ const exportPaperVariantOptions = [
 ];
 
 const exportBaseRecords = computed(() => {
+  // Keep dialog choices, but do not process records while the dialog is closed.
+  if (!props.modelValue) return [];
   if (exportForm.scope === "selected") return props.selectedRecords;
   if (exportForm.scope === "all") return store.records;
   return props.filteredRecords;
@@ -240,6 +242,7 @@ useDialogA11y(
 
 // 科目筛选里残留的 id（比如切了导出范围之后）要跟着可用科目一起收掉
 watch(exportAvailableSubjects, () => {
+  if (!props.modelValue) return;
   const availableIds = new Set(exportAvailableSubjects.value.map((subject) => subject.id));
   const nextIds = exportForm.subjectIds.filter((id) => availableIds.has(id));
   if (nextIds.length !== exportForm.subjectIds.length) {
