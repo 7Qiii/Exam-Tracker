@@ -180,12 +180,14 @@ export function installBrowserEnv({ viteEnv = {} } = {}) {
  * store 是看得见的（ESM 的 import 绑定不可重新赋值，但对象内容可以改）。
  */
 export function stubDatabase(db, { seed = {} } = {}) {
-  const tables = ["subjects", "records", "mistakes", "images"];
+  const tables = ["subjects", "records", "mistakes", "images", "deletedRecords"];
   const rows = new Map(tables.map((name) => [name, [...(seed[name] || [])]]));
 
   for (const name of tables) {
     const table = rows.get(name);
     db[name] = {
+      get: async (id) => table.find((row) => row.id === id),
+      bulkGet: async (ids) => ids.map((id) => table.find((row) => row.id === id)),
       put: async (value) => {
         const index = table.findIndex((row) => row.id === value.id);
         if (index >= 0) table[index] = value;
@@ -207,6 +209,12 @@ export function stubDatabase(db, { seed = {} } = {}) {
       delete: async (id) => {
         const index = table.findIndex((row) => row.id === id);
         if (index >= 0) table.splice(index, 1);
+      },
+      bulkDelete: async (ids) => {
+        const remove = new Set(ids);
+        for (let index = table.length - 1; index >= 0; index -= 1) {
+          if (remove.has(table[index].id)) table.splice(index, 1);
+        }
       },
       toArray: async () => table.map((row) => ({ ...row })),
       count: async () => table.length,

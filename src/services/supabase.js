@@ -99,61 +99,36 @@ export async function upsertSubject(subject) {
   throw error;
 }
 
-export async function upsertRecord(record) {
-  if (!supabase) return;
-  const { error } = await supabase.from("records").upsert(toRecordRow(record));
-  if (!error) return;
-  if (isMissingRecordUpdatedAtColumn(error)) {
-    const { error: withoutUpdatedAtError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAt(record));
-    if (!withoutUpdatedAtError) return;
-    if (isMissingRecordCompositeColumn(withoutUpdatedAtError)) {
-      const { error: withoutBothError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAtAndComposite(record));
-      if (!withoutBothError) return;
-      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError) || isMissingRecordVariantColumn(withoutBothError)) {
-        const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
-        if (legacyError) throw legacyError;
-        return;
-      }
-      throw withoutBothError;
-    }
-    if (isMissingRecordDurationColumn(withoutUpdatedAtError) || isMissingRecordSourceColumn(withoutUpdatedAtError) || isMissingRecordVariantColumn(withoutUpdatedAtError)) {
-      const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
-      if (legacyError) throw legacyError;
-      return;
-    }
-    throw withoutUpdatedAtError;
+export async function upsertRecords(records, userId) {
+  if (!supabase || !records.length) return;
+  const write = async (toRow) => {
+    const rows = records.map((record) => ({ ...toRow(record), user_id: userId }));
+    const { error } = await supabase.from("records").upsert(rows, { defaultToNull: false });
+    return error;
+  };
+  let error = await write(toRecordRow);
+  if (error && isMissingRecordUpdatedAtColumn(error)) {
+    error = await write(toRecordRowWithoutUpdatedAt);
+    if (error && isMissingRecordCompositeColumn(error)) error = await write(toRecordRowWithoutUpdatedAtAndComposite);
+  } else if (error && isMissingRecordCompositeColumn(error)) {
+    error = await write(toRecordRowWithoutComposite);
+    if (error && isMissingRecordUpdatedAtColumn(error)) error = await write(toRecordRowWithoutUpdatedAtAndComposite);
   }
-  if (isMissingRecordCompositeColumn(error)) {
-    const { error: withoutCompositeError } = await supabase.from("records").upsert(toRecordRowWithoutComposite(record));
-    if (!withoutCompositeError) return;
-    if (isMissingRecordUpdatedAtColumn(withoutCompositeError)) {
-      const { error: withoutBothError } = await supabase.from("records").upsert(toRecordRowWithoutUpdatedAtAndComposite(record));
-      if (!withoutBothError) return;
-      if (isMissingRecordDurationColumn(withoutBothError) || isMissingRecordSourceColumn(withoutBothError) || isMissingRecordVariantColumn(withoutBothError)) {
-        const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
-        if (legacyError) throw legacyError;
-        return;
-      }
-      throw withoutBothError;
-    }
-    if (isMissingRecordDurationColumn(withoutCompositeError) || isMissingRecordSourceColumn(withoutCompositeError) || isMissingRecordVariantColumn(withoutCompositeError)) {
-      const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
-      if (legacyError) throw legacyError;
-      return;
-    }
-    throw withoutCompositeError;
+  if (error && (isMissingRecordDurationColumn(error) || isMissingRecordSourceColumn(error) || isMissingRecordVariantColumn(error))) {
+    error = await write(toLegacyRecordRow);
   }
-  if (isMissingRecordDurationColumn(error) || isMissingRecordSourceColumn(error) || isMissingRecordVariantColumn(error)) {
-    const { error: legacyError } = await supabase.from("records").upsert(toLegacyRecordRow(record));
-    if (legacyError) throw legacyError;
-    return;
-  }
-  throw error;
+  if (error) throw error;
 }
 
 export async function deleteRecordCloud(id) {
   if (!supabase) return;
   const { error } = await supabase.from("records").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteRecordsCloud(ids, userId) {
+  if (!supabase || !ids.length) return;
+  const { error } = await supabase.from("records").delete().eq("user_id", userId).in("id", ids);
   if (error) throw error;
 }
 

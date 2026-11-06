@@ -36,6 +36,9 @@ assert.ok(executablePath, "Chrome or Edge is required for UI checks");
 // Use a separate origin and in-memory Pinia fixtures; never touch the user's database.
 const server = await createServer({
   configFile: false,
+  optimizeDeps: {
+    include: ["echarts/core", "echarts/charts", "echarts/components", "echarts/renderers"]
+  },
   plugins: [vue()],
   server: { host: "127.0.0.1", port: 0 },
   define: {
@@ -47,7 +50,7 @@ let browser;
 try {
   await server.listen();
   browser = await chromium.launch({ executablePath, headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 480 } });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}`);
@@ -70,12 +73,12 @@ try {
   });
   await page.waitForFunction(() => document.querySelectorAll(".ds-record-card").length === 2);
   assert.equal(await page.locator(".ds-stat-value").nth(3).innerText(), "3天");
+  await page.locator(".chart-status").first().waitFor();
+  assert.equal(await page.locator(".chart-box canvas").count(), 0, "Charts stay deferred below the viewport");
   await page.locator(".chart-grid").scrollIntoViewIfNeeded();
   await page.waitForSelector(".chart-box canvas");
   await page.evaluate(async () => {
-    const moduleUrl = performance.getEntriesByType("resource").find((entry) => entry.name.includes("/echarts.js?v="))?.name;
-    if (!moduleUrl) throw new Error("Chart module was not loaded");
-    window.dashboardCharts = await import(moduleUrl);
+    window.dashboardCharts = await import("/src/services/scoreChartRuntime.js");
     window.chartOptions = () => [...document.querySelectorAll(".chart-box")].map((element) => window.dashboardCharts.getInstanceByDom(element)?.getOption());
   });
   await page.waitForFunction(() => window.chartOptions().every((option) => option?.series[0].data.length === 2));

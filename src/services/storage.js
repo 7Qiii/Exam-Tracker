@@ -9,6 +9,8 @@ db.version(1).stores({
   images: "id, ownerType, ownerId, createdAt"
 });
 
+db.version(2).stores({ deletedRecords: "id" });
+
 export const defaultSubjects = [
   { id: "math1", name: "数一", fullScore: 150, color: "#177ddc", sortOrder: 0, hidden: false },
   { id: "cs408", name: "408", fullScore: 150, color: "#7a5af8", sortOrder: 1, hidden: false },
@@ -213,16 +215,25 @@ export async function importPortableData(payload, merge = true) {
     images: toPlainEntries(images)
   };
 
-  if (!merge) {
-    await replaceAllData(normalized);
-    return;
-  }
-
-  await db.transaction("rw", db.subjects, db.records, db.mistakes, db.images, async () => {
-    await db.subjects.bulkPut(normalized.subjects);
-    await db.records.bulkPut(normalized.records);
-    await db.mistakes.bulkPut(normalized.mistakes);
-    await db.images.bulkPut(normalized.images);
+  await db.transaction("rw", db.subjects, db.records, db.mistakes, db.images, db.deletedRecords, async () => {
+    // 恢复备份中的同一条成绩，也会撤销它尚未发出的删除。
+    const ids = normalized.records.map((record) => record.id);
+    const trash = await db.deletedRecords.bulkGet(ids);
+    if (trash.some(Boolean)) {
+      const now = new Date().toISOString();
+      normalized.records = normalized.records.map((record, index) =>
+        trash[index] ? { ...record, pendingSync: true, updatedAt: now } : record
+      );
+      await db.deletedRecords.bulkDelete(trash.filter(Boolean).map((entry) => entry.id));
+    }
+    if (merge) {
+      await db.subjects.bulkPut(normalized.subjects);
+      await db.records.bulkPut(normalized.records);
+      await db.mistakes.bulkPut(normalized.mistakes);
+      await db.images.bulkPut(normalized.images);
+    } else {
+      await replaceAllData(normalized);
+    }
   });
 }
 

@@ -39,6 +39,23 @@ const env = installBrowserEnv({
 
 const calls = [];
 let cloudTables = { subjects: [], records: [], mistakes: [], mistake_images: [] };
+let failRecordDeletes = false;
+let holdRecordDelete = null;
+let holdRecordRead = null;
+
+function recordDeleteIds(search) {
+  const id = new URLSearchParams(search).get("id") || "";
+  if (id.startsWith("eq.")) return [id.slice(3)];
+  return id.slice(4, -1).split(",").filter(Boolean);
+}
+
+function holdRequest() {
+  let signal;
+  let release;
+  const started = new Promise((resolve) => { signal = resolve; });
+  const paused = new Promise((resolve) => { release = resolve; });
+  return { started, release, hold: () => { signal(); return paused; } };
+}
 
 function jsonResponse(body, status = 200) {
   return {
@@ -55,12 +72,40 @@ globalThis.fetch = async (input, init = {}) => {
   const url = typeof input === "string" ? input : input.url;
   const { pathname, search } = new URL(url);
   const method = String(init.method || "GET").toUpperCase();
-  calls.push({ method, pathname, search, body: init.body ? JSON.parse(init.body) : null });
+  const body = init.body ? JSON.parse(init.body) : null;
+  calls.push({ method, pathname, search, body });
 
   // 会话是从 localStorage 里读出来的，正常不会走网络；真走了也别炸。
   if (pathname.startsWith("/auth/v1/")) return jsonResponse({});
-  if (method === "DELETE") return jsonResponse([]);
   const table = pathname.replace("/rest/v1/", "");
+  if (method === "DELETE") {
+    if (table === "records") {
+      const hold = holdRecordDelete;
+      holdRecordDelete = null;
+      if (hold) await hold();
+      if (failRecordDeletes) return jsonResponse({ message: "Network unavailable" }, 503);
+      const ids = new Set(recordDeleteIds(search));
+      cloudTables.records = cloudTables.records.filter((row) => !ids.has(row.id));
+    }
+    return jsonResponse([]);
+  }
+  if (method === "POST" && table === "records") {
+    const rows = Array.isArray(body) ? body : [body];
+    if (rows.some((row) => row.paper_name === "无效记录")) {
+      return jsonResponse({ code: "23514", message: "Record constraint failed" }, 400);
+    }
+    const byId = new Map(cloudTables.records.map((row) => [row.id, row]));
+    rows.forEach((row) => byId.set(row.id, row));
+    cloudTables.records = [...byId.values()];
+    return jsonResponse([]);
+  }
+  if (method === "GET" && table === "records" && holdRecordRead) {
+    const snapshot = cloudTables.records;
+    const hold = holdRecordRead;
+    holdRecordRead = null;
+    await hold();
+    return jsonResponse(snapshot);
+  }
   return jsonResponse(cloudTables[table] ?? []);
 };
 
@@ -242,9 +287,7 @@ check("改过分数的那条演示成绩被当成真实数据保留", recordIds.
 check("真实成绩保留", recordIds.includes(realRow.id), true);
 
 const deletedRecordIds = deletesFor("records")
-  .map((call) => new URLSearchParams(call.search).get("id"))
-  .map((value) => String(value || "").replace(/^eq\./, ""))
-  .filter(Boolean);
+  .flatMap((call) => recordDeleteIds(call.search));
 checkDeep(
   "云端那 4 条演示成绩被真的删掉（否则下次同步还会拉回来）",
   deletedRecordIds.sort(),
@@ -276,16 +319,94 @@ section("场景三：上传闸门 —— 本地标了 pendingSync 的演示数�
 // retryUnsyncedData 里的闸门本身。
 
 const flaggedDemo = { ...demoRecords[0], pendingSync: true };
-const flaggedReal = { ...realRow, pendingSync: true };
+const flaggedReal = { ...store.records.find((record) => record.id === realRow.id), pendingSync: true };
+await db.records.put(flaggedReal);
 store.records = [flaggedDemo, flaggedReal];
 calls.length = 0;
 
 await store.syncNow();
 
-const uploadedIds = writesFor("records").map((call) => call.body?.id);
+const uploadedIds = writesFor("records").flatMap((call) => call.body.map((row) => row.id));
 check("真实成绩正常上传", uploadedIds.includes(realRow.id), true);
 check("被标成待同步的演示成绩没有上传", uploadedIds.includes(flaggedDemo.id), false);
 checkDeep("这次只上传了真实成绩这一条", uploadedIds, [realRow.id]);
+
+section("批量改科目与云端分批写入");
+const rows = Array.from({ length: 53 }, (_, index) =>
+  recordRow({ ...demoRecords[0], paperName: `批量样本 ${index}`, note: "保留备注" })
+);
+cloudTables.records = rows;
+dbStub.write("records", []);
+dbStub.write("deletedRecords", []);
+const batchStore = useTrackerStore(createPinia());
+await batchStore.loadFromCloud();
+const ids = rows.map((row) => row.id);
+calls.length = 0;
+check("只统计实际改科的记录", await batchStore.moveRecordsToSubject([...ids, ids[0], "missing"], "math1"), ids.length);
+check("一次操作改完所有记录并保留备注", batchStore.records.every((row) => row.subjectId === "math1" && row.note === "保留备注"), true);
+await batchStore.syncNow();
+checkDeep("上传按 50 条分批", writesFor("records").map((call) => call.body.length), [50, 3]);
+check("同步回执清除对应的本地待同步状态", dbStub.read("records").every((row) => !row.pendingSync), true);
+
+section("断网删除、重启和重试");
+calls.length = 0;
+failRecordDeletes = true;
+check("删除立即完成本地移动", await batchStore.removeRecords(ids), ids.length);
+check("本地删除完成时还没有发云端请求", deletesFor("records").length, 0);
+check("记录已从活跃表移出", dbStub.read("records").length, 0);
+check("每条删除都有持久化待同步记录", dbStub.read("deletedRecords").filter((row) => row.pendingSync).length, ids.length);
+const restarted = useTrackerStore(createPinia());
+await restarted.load();
+await restarted.loadFromCloud();
+check("旧云端数据不会拉回待同步删除", restarted.records.length, 0);
+check("同步失败可见", restarted.syncError.includes("Network unavailable"), true);
+calls.length = 0;
+restarted.user = { id: "other-user" };
+await restarted.syncNow();
+check("切换账号不会发送原账号的删除", deletesFor("records").length, 0);
+restarted.user = { id: "user-1" };
+failRecordDeletes = false;
+await restarted.syncNow();
+checkDeep("重连后删除按 50 条分批且归属原账号", deletesFor("records").map((call) => [
+  recordDeleteIds(call.search).length, new URLSearchParams(call.search).get("user_id")
+]), [[50, "eq.user-1"], [3, "eq.user-1"]]);
+check("云端也已删除全部记录", cloudTables.records.length, 0);
+check("同步成功后仍保留可恢复快照", restarted.deletedRecords.length, ids.length);
+check("同步成功后清除待同步状态", dbStub.read("deletedRecords").some((row) => row.pendingSync), false);
+
+section("恢复与未完成的删除交错");
+const target = await restarted.addRecord({ subjectId: "math1", paperName: "并发恢复", score: 92, fullScore: 150, date: "2026-10-01" });
+await restarted.syncNow();
+await restarted.removeRecords([target.id]);
+const deleting = holdRequest();
+holdRecordDelete = deleting.hold;
+const deletingSync = restarted.syncNow();
+await deleting.started;
+await restarted.restoreDeletedRecord(target.id);
+const restoringSync = restarted.syncNow();
+deleting.release();
+await Promise.all([deletingSync, restoringSync]);
+check("最终以用户最后一次恢复为准", cloudTables.records.some((row) => row.id === target.id), true);
+check("旧删除回执不会清掉恢复后的成绩", dbStub.read("records").some((row) => row.id === target.id && !row.pendingSync), true);
+
+section("云端校准收到删除前的快照");
+const reading = holdRequest();
+holdRecordRead = reading.hold;
+const calibration = restarted.loadFromCloud();
+await reading.started;
+await restarted.removeRecords([target.id]);
+await restarted.syncNow();
+reading.release();
+await calibration;
+check("晚到的云端读取不会让已删除记录复活", restarted.records.some((row) => row.id === target.id), false);
+check("旧快照也不会重写进 IndexedDB", dbStub.read("records").some((row) => row.id === target.id), false);
+
+section("单条无效记录不会卡住正常成绩");
+const invalid = await restarted.addRecord({ subjectId: "math1", paperName: "无效记录", score: 90, fullScore: 150, date: "2026-10-02" });
+const valid = await restarted.addRecord({ subjectId: "math1", paperName: "有效记录", score: 90, fullScore: 150, date: "2026-10-03" });
+await restarted.syncNow();
+check("合法成绩正常上传", cloudTables.records.some((row) => row.id === valid.id), true);
+check("失败的成绩单独留在待同步队列", dbStub.read("records").find((row) => row.id === invalid.id)?.pendingSync, true);
 
 // ---------------------------------------------------------------------------
 

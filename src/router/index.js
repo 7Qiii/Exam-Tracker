@@ -60,6 +60,7 @@ const router = createRouter({
   scrollBehavior(to, from, savedPosition) {
     if (to.fullPath === from.fullPath) return false;
     if (savedPosition) return savedPosition;
+    if (to.path === from.path) return false;
     return { top: 0, left: 0 };
   },
   routes: [

@@ -26,6 +26,7 @@ import DsConfirmHost from "./components/ds/DsConfirmHost.vue";
 import { useDialogA11y } from "./composables/useDialogA11y";
 import { useDismissable } from "./composables/useDismissable";
 import { useTrackerStore } from "./stores/tracker";
+import { normalizeSearch, recordTitle } from "./utils/recordDisplay";
 
 const store = useTrackerStore();
 const route = useRoute();
@@ -98,9 +99,16 @@ const pageTitle = computed(() => {
   return nested?.title || "详情";
 });
 
-const latestRecord = computed(() =>
-  [...store.records].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0]
-);
+const latestRecord = computed(() => {
+  let latest;
+  for (const record of store.records) {
+    if (!latest || (String(record.date || "").localeCompare(String(latest.date || "")) ||
+      String(record.createdAt || "").localeCompare(String(latest.createdAt || ""))) > 0) {
+      latest = record;
+    }
+  }
+  return latest;
+});
 const sidebarScore = computed(() => (latestRecord.value ? `${latestRecord.value.score}/${latestRecord.value.fullScore}` : "--"));
 const sidebarHint = computed(() => (latestRecord.value ? latestRecord.value.paperName : "还没有成绩记录"));
 const userInitial = computed(() => (store.user?.email || "未").slice(0, 1).toUpperCase());
@@ -118,33 +126,36 @@ const syncStateTitle = computed(() => {
 const globalSearchResults = computed(() => {
   const keyword = normalizeSearch(globalSearch.value);
   if (!keyword) return [];
-  const recordResults = store.records
-    .filter((record) => {
-      const haystack = normalizeSearch([record.paperName, record.note, store.subjectName(record.subjectId), record.score, record.fullScore, record.date].join(" "));
-      return haystack.includes(keyword);
-    })
-    .slice(0, 4)
-    .map((record) => ({
+  const results = [];
+  for (const record of store.records) {
+    const subject = store.subjectName(record.subjectId);
+    const title = recordTitle(record);
+    const haystack = normalizeSearch([title, record.paperName, record.note, subject, record.score, record.fullScore, record.date].join(" "));
+    if (!haystack.includes(keyword)) continue;
+    results.push({
       id: `record-${record.id}`,
       type: "成绩",
-      title: record.paperName,
-      meta: `${store.subjectName(record.subjectId)} · ${record.score}/${record.fullScore}`,
+      title,
+      meta: `${subject} · ${record.score}/${record.fullScore}`,
       to: `/records/${record.id}`
-    }));
-  const mistakeResults = store.mistakes
-    .filter((mistake) => {
-      const haystack = normalizeSearch([mistake.title, mistake.knowledgePoint, mistake.analysis, store.subjectName(mistake.subjectId)].join(" "));
-      return haystack.includes(keyword);
-    })
-    .slice(0, 4)
-    .map((mistake) => ({
+    });
+    if (results.length === 4) break;
+  }
+  const limit = Math.min(results.length + 4, 6);
+  for (const mistake of store.mistakes) {
+    const subject = store.subjectName(mistake.subjectId);
+    const haystack = normalizeSearch([mistake.title, mistake.knowledgePoint, mistake.analysis, subject].join(" "));
+    if (!haystack.includes(keyword)) continue;
+    results.push({
       id: `mistake-${mistake.id}`,
       type: "错题",
       title: mistake.title,
-      meta: `${store.subjectName(mistake.subjectId)} · ${mistake.knowledgePoint || "未分类"}`,
+      meta: `${subject} · ${mistake.knowledgePoint || "未分类"}`,
       to: `/mistakes/${mistake.id}`
-    }));
-  return [...recordResults, ...mistakeResults].slice(0, 6);
+    });
+    if (results.length === limit) break;
+  }
+  return results;
 });
 
 async function syncNow() {
@@ -164,15 +175,11 @@ function closeSidebar() {
   isSidebarOpen.value = false;
 }
 
-function normalizeSearch(value) {
-  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
-}
-
-function openGlobalResult(item = globalSearchResults.value[0]) {
+async function openGlobalResult(item = globalSearchResults.value[0]) {
   if (!item) return;
-  router.push(item.to);
+  if (route.path !== item.to && await router.push(item.to)) return;
   globalSearch.value = "";
-  isGlobalSearchOpen.value = false;
+  closeGlobalSearch();
 }
 
 /**
@@ -186,14 +193,14 @@ function closeGlobalSearch() {
 }
 
 /**
- * 输入框失焦时要不要收起浮层。
+ * 搜索区内切换焦点时保留结果，离开搜索区后收起浮层。
  *
  * 不能直接 closeGlobalSearch：结果项就在这个浮层里，键盘用户按 Tab 从输入框
  * 移到结果上时，输入框同样会失焦 —— 之前一失焦就收起，浮层先没了，结果项
  * 对键盘来说等于不存在。所以只在焦点真的离开整个搜索框时才收。
  * relatedTarget 为空（点到页面空白、或浮层被移除）也算离开。
  */
-function onSearchBlur(event) {
+function onSearchFocusOut(event) {
   const next = event.relatedTarget;
   if (next && searchBoxRef.value?.contains(next)) return;
   closeGlobalSearch();
@@ -208,11 +215,12 @@ function onSearchBlur(event) {
  */
 function onSearchKeydown(event) {
   const root = searchBoxRef.value;
-  if (!root) return;
+  if (!root || event.isComposing || event.keyCode === 229) return;
 
   if (event.key === "Escape") {
     if (!isGlobalSearchOpen.value) return;
     event.preventDefault();
+    root.querySelector("input")?.focus();
     closeGlobalSearch();
     return;
   }
@@ -235,7 +243,7 @@ function onSearchKeydown(event) {
   items[next].focus();
 }
 
-useDismissable(isGlobalSearchOpen, searchBoxRef, { onClose: closeGlobalSearch });
+useDismissable(isGlobalSearchOpen, searchBoxRef, { onClose: closeGlobalSearch, closeOnEscape: false });
 
 /* ------------------------------------------------------------------ *
  * iOS「添加到主屏幕」引导
@@ -365,7 +373,7 @@ function saveSignature() {
 }
 
 watch(
-  () => route.fullPath,
+  () => route.path,
   () => {
     closeSidebar();
     isGlobalSearchOpen.value = false;
@@ -504,6 +512,7 @@ onBeforeUnmount(() => {
             class="search-box global-search"
             @submit.prevent="openGlobalResult()"
             @keydown="onSearchKeydown"
+            @focusout="onSearchFocusOut"
           >
             <Search :size="17" />
             <input
@@ -513,7 +522,6 @@ onBeforeUnmount(() => {
               placeholder="搜索成绩、错题或知识点"
               @focus="isGlobalSearchOpen = true"
               @input="isGlobalSearchOpen = true"
-              @blur="onSearchBlur"
             />
             <div v-if="isGlobalSearchOpen && globalSearch" class="global-search-popover">
               <!-- @mousedown.prevent 保住输入框的焦点（鼠标路径），
@@ -523,7 +531,7 @@ onBeforeUnmount(() => {
                 :key="item.id"
                 type="button"
                 class="global-search-result"
-                @mousedown.prevent="openGlobalResult(item)"
+                @mousedown.prevent
                 @click="openGlobalResult(item)"
               >
                 <strong>{{ item.title }}</strong>

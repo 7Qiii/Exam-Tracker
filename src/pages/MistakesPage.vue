@@ -8,7 +8,7 @@
  * - 每行可以直接切掌握状态，不用进详情页；主按钮是「复习」而不是「详情」。
  * - 排序默认按创建时间，符合「一题一题往下过」的习惯。
  */
-import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { BookOpenCheck, ChevronLeft, ChevronRight, Image, Inbox, Plus, Trash2 } from "@lucide/vue";
 import ImageSyncQueue from "../components/ImageSyncQueue.vue";
@@ -28,6 +28,7 @@ import {
   filterAndSortMistakes,
   hasActiveMistakeFilters,
   readMistakeFilters,
+  readMistakePage,
   toMistakeQuery
 } from "../utils/mistakeQueue";
 
@@ -40,7 +41,11 @@ const STATUS_OPTIONS = MISTAKE_STATUS_OPTIONS;
 const DIFFICULTY_OPTIONS = MISTAKE_DIFFICULTY_OPTIONS;
 const SORT_OPTIONS = MISTAKE_SORT_OPTIONS;
 
-const filters = reactive(readMistakeFilters(route.query));
+const filters = computed((previous) => {
+  const next = readMistakeFilters(route.query);
+  // 翻页只改 page，沿用现有筛选以复用已排序的结果。
+  return previous && Object.keys(next).every((key) => previous[key] === next[key]) ? previous : next;
+});
 const showForm = ref(false);
 const savingId = ref("");
 
@@ -51,8 +56,8 @@ const savingId = ref("");
  * 节点 / 148ms，1000 条是 24,251 个 / 278ms（还只是桌面端，手机上要再乘几倍）。
  * 成绩页一直是 8 条一页，这里对齐它。
  */
-const page = ref(1);
 const pageSize = 8;
+const resultsRef = ref(null);
 
 /**
  * 收起 / 展开新增错题表单。收起时表单会被 v-if 拆掉，填过（甚至跑过 AI 解析）
@@ -75,7 +80,7 @@ async function toggleForm() {
  */
 const sourceRecordId = ref("");
 watch(
-  () => route.query.recordId,
+  () => typeof route.query.recordId === "string" ? route.query.recordId : "",
   (id) => {
     if (!id) return;
     sourceRecordId.value = id;
@@ -112,16 +117,23 @@ const statusCounts = computed(() => {
   return counts;
 });
 
-const filteredMistakes = computed(() => filterAndSortMistakes(store.mistakes, filters, store.subjectName));
+const filteredMistakes = computed(() => filterAndSortMistakes(store.mistakes, filters.value, store.subjectName));
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredMistakes.value.length / pageSize)));
+const page = computed(() => Math.min(readMistakePage(route.query), pageCount.value));
 const pagedMistakes = computed(() => filteredMistakes.value.slice((page.value - 1) * pageSize, page.value * pageSize));
+const imageCounts = computed(() => {
+  const counts = new Map();
+  for (const image of store.images) {
+    if (image.ownerType !== "mistake") continue;
+    counts.set(image.ownerId, (counts.get(image.ownerId) || 0) + 1);
+  }
+  return counts;
+});
 
-const activeFilterCount = computed(
-  () =>
-    [filters.keyword, filters.subjectId, filters.knowledgePoint, filters.status, filters.difficulty].filter(Boolean).length
-);
-
-const hasFilter = computed(() => hasActiveMistakeFilters(filters));
+const activeFilterCount = computed(() => {
+  const { keyword, subjectId, knowledgePoint, status, difficulty } = filters.value;
+  return [keyword, subjectId, knowledgePoint, status, difficulty].filter(Boolean).length;
+});
 
 /**
  * 搜索框做 260ms 防抖（和成绩页同一套做法）。
@@ -130,64 +142,64 @@ const hasFilter = computed(() => hasActiveMistakeFilters(filters));
  * 再把所有卡片重渲染一次 —— 500 条错题实测 148ms/键，手机上会明显卡。
  * 现在输入框绑草稿，停手 260ms 之后才写进 filters。
  */
-const keywordDraft = ref(filters.keyword);
+const keywordDraft = ref(filters.value.keyword);
+const hasFilter = computed(() => hasActiveMistakeFilters(filters.value) || Boolean(keywordDraft.value));
 let keywordTimer = null;
 watch(keywordDraft, (value) => {
-  if (keywordTimer) window.clearTimeout(keywordTimer);
+  window.clearTimeout(keywordTimer);
+  if (value === filters.value.keyword) return;
   keywordTimer = window.setTimeout(() => {
-    if (filters.keyword !== value) filters.keyword = value;
+    applyFilters({ keyword: value });
   }, 260);
 });
 
 // 外部改 filters.keyword 时（清空筛选、前进后退恢复）要把草稿跟上，
 // 否则输入框显示的和实际生效的筛选会不一致。
 watch(
-  () => filters.keyword,
+  () => filters.value.keyword,
   (value) => {
-    if (value !== keywordDraft.value) keywordDraft.value = value;
+    window.clearTimeout(keywordTimer);
+    keywordDraft.value = value;
   }
 );
 
-onBeforeUnmount(() => {
-  if (keywordTimer) window.clearTimeout(keywordTimer);
-});
+onBeforeUnmount(() => window.clearTimeout(keywordTimer));
 
-// 筛选条件同步到地址栏：刷新、分享、前进后退都不会丢。
-// 换筛选一定要回到第 1 页，否则会停在一个「结果变了但页码没变」的空页上。
-watch(
-  () => ({ ...filters }),
-  (value) => {
-    page.value = 1;
-    router.replace({ path: "/mistakes", query: toMistakeQuery(value) });
-  },
-  { deep: true }
-);
+function applyFilters(patch) {
+  window.clearTimeout(keywordTimer);
+  return router.replace({
+    name: "mistakes",
+    query: toMistakeQuery({ ...filters.value, keyword: keywordDraft.value, ...patch })
+  });
+}
 
-// 结果变少（删错题、改状态后被筛掉）时把页码夹回有效范围
-watch(pageCount, (count) => {
-  if (page.value > count) page.value = count;
-});
+function applySearch(event) {
+  if (event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  if (keywordDraft.value !== filters.value.keyword) applyFilters({ keyword: keywordDraft.value });
+}
+
+async function goToPage(nextPage) {
+  const failure = await router.replace({ name: "mistakes", query: toMistakeQuery(filters.value, nextPage) });
+  if (failure) return;
+  await nextTick();
+  resultsRef.value?.focus({ preventScroll: true });
+  resultsRef.value?.scrollIntoView({ block: "start" });
+}
 
 /** 详情页带着同一套筛选条件打开，上一题/下一题才不会跑出当前队列 */
 function reviewLink(id) {
-  return { path: `/mistakes/${id}`, query: toMistakeQuery(filters) };
+  return { path: `/mistakes/${id}`, query: toMistakeQuery(filters.value, page.value) };
 }
 
 function clearFilters() {
-  filters.keyword = "";
-  filters.subjectId = "";
-  filters.knowledgePoint = "";
-  filters.status = "";
-  filters.difficulty = "";
-  filters.sort = "created-desc";
+  window.clearTimeout(keywordTimer);
+  keywordDraft.value = "";
+  router.replace({ name: "mistakes" });
 }
 
 function toggleStatus(status) {
-  filters.status = filters.status === status ? "" : status;
-}
-
-function imageCount(id) {
-  return store.images.filter((image) => image.ownerType === "mistake" && image.ownerId === id).length;
+  applyFilters({ status: filters.value.status === status ? "" : status });
 }
 
 async function setStatus(item, status) {
@@ -246,7 +258,7 @@ function formatDate(value) {
     <!-- 状态 chip：一眼看出还剩多少没掌握，点一下就是筛选 -->
     <DsSection title="掌握状态" description="点一下按状态筛选">
       <div class="review-status-chips">
-        <button type="button" :class="{ active: !filters.status }" @click="filters.status = ''">
+        <button type="button" :class="{ active: !filters.status }" :aria-pressed="!filters.status" @click="applyFilters({ status: '' })">
           全部 <b>{{ store.mistakes.length }}</b>
         </button>
         <button
@@ -254,6 +266,7 @@ function formatDate(value) {
           :key="status"
           type="button"
           :class="{ active: filters.status === status }"
+          :aria-pressed="filters.status === status"
           @click="toggleStatus(status)"
         >
           {{ status }} <b>{{ statusCounts.get(status) || 0 }}</b>
@@ -265,32 +278,32 @@ function formatDate(value) {
     <DsFilterBar :min-field-width="140">
       <label class="ds-field">
         <span class="ds-field-label">搜索</span>
-        <input v-model.trim="keywordDraft" type="search" placeholder="题目、知识点或解析" />
+        <input v-model.trim="keywordDraft" type="search" placeholder="题目、知识点或解析" @keydown.enter="applySearch" />
       </label>
       <label class="ds-field">
         <span class="ds-field-label">科目</span>
-        <select v-model="filters.subjectId">
+        <select :value="filters.subjectId" @change="applyFilters({ subjectId: $event.target.value })">
           <option value="">全部科目</option>
           <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
         </select>
       </label>
       <label class="ds-field">
         <span class="ds-field-label">章节 / 知识点</span>
-        <select v-model="filters.knowledgePoint">
+        <select :value="filters.knowledgePoint" @change="applyFilters({ knowledgePoint: $event.target.value })">
           <option value="">全部章节</option>
           <option v-for="item in knowledgePoints" :key="item.value" :value="item.value">{{ item.value }}（{{ item.count }}）</option>
         </select>
       </label>
       <label class="ds-field">
         <span class="ds-field-label">难度</span>
-        <select v-model="filters.difficulty">
+        <select :value="filters.difficulty" @change="applyFilters({ difficulty: $event.target.value })">
           <option value="">全部难度</option>
           <option v-for="item in DIFFICULTY_OPTIONS" :key="item" :value="item">{{ item }}</option>
         </select>
       </label>
       <label class="ds-field">
         <span class="ds-field-label">排序</span>
-        <select v-model="filters.sort">
+        <select :value="filters.sort" @change="applyFilters({ sort: $event.target.value })">
           <option v-for="item in SORT_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</option>
         </select>
       </label>
@@ -301,7 +314,7 @@ function formatDate(value) {
 
       <template #meta>
         <span v-if="!store.isReady">正在读取…</span>
-        <span v-else>{{ filteredMistakes.length }} 条结果{{ activeFilterCount ? ` · 已应用 ${activeFilterCount} 个筛选` : "" }}</span>
+        <span v-else role="status">{{ filteredMistakes.length }} 条结果{{ activeFilterCount ? ` · 已应用 ${activeFilterCount} 个筛选` : "" }}</span>
         <span>{{ store.imageStorageStats.count }} 张图 / {{ store.imageStorageStats.label }}</span>
       </template>
     </DsFilterBar>
@@ -317,7 +330,7 @@ function formatDate(value) {
          这里用骨架屏顶上，避免先闪一下「错题库还是空的」再跳出内容。 -->
     <DsLoadingState v-if="!store.isReady" variant="cards" :rows="4" label="正在读取错题库…" />
     <template v-else-if="filteredMistakes.length">
-      <div class="ds-card-list">
+      <div ref="resultsRef" class="ds-card-list mistake-results" role="region" aria-label="错题列表" tabindex="-1">
         <article v-for="item in pagedMistakes" :key="item.id" class="review-card">
           <RouterLink class="review-card-main" :to="reviewLink(item.id)">
             <span class="review-card-title">{{ item.title }}</span>
@@ -326,7 +339,7 @@ function formatDate(value) {
               <span>{{ item.knowledgePoint || "未分类知识点" }}</span>
               <span>{{ item.difficulty || "难度未填" }}</span>
               <span>{{ formatDate(item.createdAt) }} 创建</span>
-              <span v-if="imageCount(item.id)"><Image :size="13" /> {{ imageCount(item.id) }} 张图</span>
+              <span v-if="imageCounts.has(item.id)"><Image :size="13" /> {{ imageCounts.get(item.id) }} 张图</span>
               <span v-if="item.analysis">已写解析</span>
               <span v-else>待补解析</span>
             </span>
@@ -339,6 +352,7 @@ function formatDate(value) {
                 :key="status"
                 type="button"
                 :class="{ active: (item.status || '待复盘') === status }"
+                :aria-pressed="(item.status || '待复盘') === status"
                 :disabled="Boolean(savingId)"
                 @click="setStatus(item, status)"
               >
@@ -354,11 +368,11 @@ function formatDate(value) {
       </div>
 
       <!-- 分页：和成绩页共用同一套 .pager 样式 -->
-      <div v-if="pageCount > 1" class="pager">
-        <button type="button" :disabled="page === 1" @click="page -= 1"><ChevronLeft :size="16" />上一页</button>
-        <span>{{ page }} / {{ pageCount }}</span>
-        <button type="button" :disabled="page === pageCount" @click="page += 1">下一页<ChevronRight :size="16" /></button>
-      </div>
+      <nav v-if="pageCount > 1" class="pager" aria-label="错题列表分页">
+        <button type="button" :disabled="page === 1" @click="goToPage(page - 1)"><ChevronLeft :size="16" />上一页</button>
+        <span role="status">第 {{ page }} / {{ pageCount }} 页</span>
+        <button type="button" :disabled="page === pageCount" @click="goToPage(page + 1)">下一页<ChevronRight :size="16" /></button>
+      </nav>
     </template>
 
     <DsEmptyState
@@ -376,3 +390,9 @@ function formatDate(value) {
     </DsEmptyState>
   </div>
 </template>
+
+<style scoped>
+.mistake-results {
+  scroll-margin-block-start: 1rem;
+}
+</style>

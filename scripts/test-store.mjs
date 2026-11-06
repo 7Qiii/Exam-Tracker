@@ -239,14 +239,7 @@ check("25 小时前删的已经过期", trashStore.deletedRecordRemainingHours({
 check("没有 deletedAt 时算 0", trashStore.deletedRecordRemainingHours({}), 0);
 check("没有参数时算 0", trashStore.deletedRecordRemainingHours(undefined), 0);
 
-// 回收站存在 localStorage 里，重开一次要能读回来，并且过期条目要被清掉。
-//
-// 这里分两步看，因为「过滤」和「落盘」是两件事：
-//   - readDeletedRecords() 只过滤，不动存储 —— 内存里立刻是干净的；
-//   - load() 里的 purgeExpiredDeletedRecords() 才会把清理结果写回去。
-// 也就是说，过期条目要等下一次启动 load() 才真正从存储里消失。
-// 实际使用中 load() 一定在启动时跑，所以没问题；但这两步的行为都值得钉住，
-// 免得哪天有人把 load() 里的 purge 删掉，过期条目就永远留在本地了。
+// 旧版回收站迁移有效条目。新表会继续保留已经过期但尚未送达云端的删除。
 env.storage.setItem(
   RECORD_TRASH_KEY,
   JSON.stringify([
@@ -255,12 +248,15 @@ env.storage.setItem(
   ])
 );
 const reloaded = freshStore();
-checkDeep("重开时内存里只留下未过期的", reloaded.deletedRecords.map((e) => e.id), ["fresh"]);
-check("只是读的话，存储里还留着过期条目", JSON.parse(env.storage.getItem(RECORD_TRASH_KEY)).length, 2);
+await db.deletedRecords.bulkPut([
+  { id: "queued", deletedAt: hours(30 * 3600e3), pendingSync: true, userId: "user-1", record: { id: "queued" } },
+  { id: "expired", deletedAt: hours(30 * 3600e3), pendingSync: false, record: { id: "expired" } }
+]);
 
 await reloaded.load();
-check("load() 之后过期条目从存储里抹掉", JSON.parse(env.storage.getItem(RECORD_TRASH_KEY)).length, 1);
-checkDeep("load() 之后存储里剩的是未过期那条", JSON.parse(env.storage.getItem(RECORD_TRASH_KEY)).map((e) => e.id), ["fresh"]);
+checkDeep("迁移后回收站只显示未过期的成绩", reloaded.deletedRecords.map((entry) => entry.id), ["fresh"]);
+check("迁移后旧存储已清理", env.storage.getItem(RECORD_TRASH_KEY), null);
+checkDeep("过期的待同步删除仍保留", dbStub.read("deletedRecords").map((entry) => entry.id).sort(), ["fresh", "queued"]);
 
 // ---------------------------------------------------------------------------
 section("科目名兜底");
@@ -282,9 +278,9 @@ const trashPersisted = await (async () => {
   const s = freshStore();
   const rec = await s.addRecord({ subjectId: "math1", paperName: "落盘检查", score: 1, fullScore: 2, date: "2026-10-03" });
   await s.removeRecord(rec.id);
-  return JSON.parse(env.storage.getItem(RECORD_TRASH_KEY));
+  return dbStub.read("deletedRecords");
 })();
-check("移入回收站会写 localStorage", trashPersisted.some((e) => e.record.paperName === "落盘检查"), true);
+check("移入回收站会写 IndexedDB", trashPersisted.some((e) => e.record.paperName === "落盘检查"), true);
 
 // ---------------------------------------------------------------------------
 section("测试桩自检：write() 必须对 db.<table> 可见");

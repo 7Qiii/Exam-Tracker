@@ -9,7 +9,7 @@
  * - 两个面板各自独立初始化：某个面板没数据被 v-if 掉时，另一个照常渲染。
  * - 面板尺寸变化（侧栏在 rail / 抽屉之间切换）时用 ResizeObserver 重新适配。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ChartLine } from "@lucide/vue";
 import DsEmptyState from "./ds/DsEmptyState.vue";
 import { useTrackerStore } from "../stores/tracker";
@@ -26,7 +26,7 @@ const store = useTrackerStore();
 const rootRef = ref(null);
 const trendRef = ref(null);
 const comparisonRef = ref(null);
-const isChartReady = ref(false);
+const chartState = ref("idle");
 
 let echarts = null;
 let trendChart = null;
@@ -34,8 +34,10 @@ let comparisonChart = null;
 let observer = null;
 let resizeObserver = null;
 let themeObserver = null;
-let systemThemeQuery = null;
+let isActive = false;
 let isUnmounted = false;
+let compactLayout = null;
+let resizeFrame = 0;
 
 function normalizePaperVariant(record) {
   const raw = String(record?.paperVariant || "").trim().toLowerCase();
@@ -63,6 +65,7 @@ function chartValue(record) {
   if (!useRate.value) return Number(record.score) || 0;
   return Number(record.fullScore) > 0 ? Math.round(Number(record.score) / Number(record.fullScore) * 1000) / 10 : null;
 }
+const trendValues = computed(() => scopedRecords.value.map(chartValue));
 
 /** 柱状图：选了科目就看该科目最近几次，没选就横向比各科最新一次 */
 const comparison = computed(() => {
@@ -77,11 +80,16 @@ const comparison = computed(() => {
     }));
   }
 
+  const latestBySubject = new Map();
+  for (const record of scopedRecords.value) {
+    const previous = latestBySubject.get(record.subjectId);
+    if (!previous || previous.date !== record.date || previous.createdAt !== record.createdAt) {
+      latestBySubject.set(record.subjectId, record);
+    }
+  }
   return store.visibleSubjects
     .map((subject) => {
-      const latest = [...scopedRecords.value]
-        .filter((record) => record.subjectId === subject.id)
-        .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+      const latest = latestBySubject.get(subject.id);
       if (!latest) return null;
       return {
         label: subject.name,
@@ -185,11 +193,12 @@ function drawTrend(theme) {
           name: useRate.value ? "得分率" : "得分",
           type: "line",
           smooth: true,
+          showSymbol: records.length <= 120,
           symbolSize: compact ? 6 : 8,
           lineStyle: { width: 2.5, color: theme.blue },
           itemStyle: { color: theme.blue, borderColor: theme.surface, borderWidth: 2 },
           areaStyle: { color: theme.area },
-          data: records.map(chartValue)
+          data: trendValues.value
         }
       ]
     },
@@ -241,40 +250,42 @@ function drawComparison(theme) {
   );
 }
 
-async function draw() {
-  if (isUnmounted) return;
-  if (!trendRef.value && !comparisonRef.value) return;
-  echarts ||= await import("echarts");
-  if (isUnmounted) return;
+function draw() {
+  if (!echarts || isUnmounted) return;
+  compactLayout = isCompact();
   const theme = getChartTheme();
   drawTrend(theme);
   drawComparison(theme);
-  isChartReady.value = true;
 }
 
-/**
- * 容器在「没有数据」时是 v-if 掉的，所以不能只在 mounted 时初始化：
- * 数据从无到有时容器才刚被挂上，必须等 nextTick 之后 echarts 才量得到尺寸。
- */
-async function activateCharts() {
-  if (!hasTrendData.value && !hasComparisonData.value) return;
-  await nextTick();
-  await draw();
+async function updateCharts() {
+  if (!isActive || isUnmounted || (!trendRef.value && !comparisonRef.value)) return;
+  if (chartState.value === "ready") {
+    draw();
+    return;
+  }
+  if (chartState.value !== "idle") return;
+  chartState.value = "loading";
+  try {
+    echarts = await import("../services/scoreChartRuntime");
+    if (isUnmounted) return;
+    draw();
+    chartState.value = "ready";
+  } catch {
+    if (!isUnmounted) chartState.value = "error";
+  }
 }
 
 function resize() {
+  resizeFrame = 0;
   trendChart?.resize();
   comparisonChart?.resize();
-  // 窄屏/宽屏切换时坐标轴配置不同，需要整张重画
-  draw();
+  if (chartState.value === "ready" && compactLayout !== isCompact()) draw();
 }
 
-function watchChartTheme() {
-  if (typeof window === "undefined") return;
-  themeObserver = new MutationObserver(() => draw());
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  systemThemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") || null;
-  systemThemeQuery?.addEventListener?.("change", draw);
+function scheduleResize() {
+  if (chartState.value !== "ready" || resizeFrame) return;
+  resizeFrame = requestAnimationFrame(resize);
 }
 
 onMounted(() => {
@@ -284,26 +295,28 @@ onMounted(() => {
         if (entries.some((entry) => entry.isIntersecting)) {
           observer?.disconnect();
           observer = null;
-          activateCharts();
+          isActive = true;
+          updateCharts();
         }
       },
       { rootMargin: "180px" }
     );
     observer.observe(rootRef.value);
   } else {
-    activateCharts();
+    isActive = true;
+    updateCharts();
   }
 
   if ("ResizeObserver" in window && rootRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      if (isChartReady.value) resize();
-    });
+    resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(rootRef.value);
-  } else {
-    window.addEventListener("resize", resize);
   }
+  window.addEventListener("resize", scheduleResize);
 
-  watchChartTheme();
+  themeObserver = new MutationObserver(() => {
+    if (chartState.value === "ready") draw();
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 });
 
 /**
@@ -322,23 +335,21 @@ function disposeOrphanCharts() {
 }
 
 watch(
-  [scopedRecords, comparison],
-  async () => {
+  [scopedRecords, trendValues, comparison],
+  () => {
     disposeOrphanCharts();
-    await nextTick();
-    if (!hasTrendData.value && !hasComparisonData.value) return;
-    await activateCharts();
+    updateCharts();
   },
-  { deep: true }
+  { flush: "post" }
 );
 
 onBeforeUnmount(() => {
   isUnmounted = true;
-  window.removeEventListener("resize", resize);
+  window.removeEventListener("resize", scheduleResize);
+  cancelAnimationFrame(resizeFrame);
   observer?.disconnect();
   resizeObserver?.disconnect();
   themeObserver?.disconnect();
-  systemThemeQuery?.removeEventListener?.("change", draw);
   trendChart?.dispose();
   comparisonChart?.dispose();
   trendChart = null;
@@ -358,7 +369,12 @@ onBeforeUnmount(() => {
           </span>
         </div>
       </div>
-      <div v-if="hasTrendData" ref="trendRef" class="chart-box" />
+      <div v-if="hasTrendData" class="chart-stage">
+        <div ref="trendRef" class="chart-box" />
+        <div v-if="chartState !== 'ready'" class="chart-status" role="status">
+          {{ chartState === "error" ? "趋势图加载失败，请刷新后重试。" : "正在准备趋势图…" }}
+        </div>
+      </div>
       <DsEmptyState
         v-else
         :icon="ChartLine"
@@ -374,7 +390,12 @@ onBeforeUnmount(() => {
           <span class="ds-section-meta">{{ subjectId ? "范围内最近 6 次" : "范围内各科最新一次" }} · {{ useRate ? '得分率 %' : '得分' }}</span>
         </div>
       </div>
-      <div v-if="hasComparisonData" ref="comparisonRef" class="chart-box" />
+      <div v-if="hasComparisonData" class="chart-stage">
+        <div ref="comparisonRef" class="chart-box" />
+        <div v-if="chartState !== 'ready'" class="chart-status" role="status">
+          {{ chartState === "error" ? "对比图加载失败，请刷新后重试。" : "正在准备对比图…" }}
+        </div>
+      </div>
       <DsEmptyState
         v-else
         :icon="ChartLine"
@@ -384,3 +405,18 @@ onBeforeUnmount(() => {
     </section>
   </div>
 </template>
+
+<style scoped>
+.chart-stage {
+  position: relative;
+}
+
+.chart-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+</style>

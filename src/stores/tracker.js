@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, toRaw } from "vue";
 import {
   addImageEntries,
   db,
@@ -13,12 +13,13 @@ import {
 } from "../services/storage";
 import { compressImage } from "../services/imageTools";
 import { compareByTimeThenId } from "../utils/sorting";
-import { appendNoteMeta, normalizeReadingParts, readingPartsFromRecord, stripNoteMeta } from "../utils/recordDisplay";
+import { appendNoteMeta, normalizeReadingParts, readingPartsFromRecord, recordTitle, stripNoteMeta } from "../utils/recordDisplay";
 import { uploadMistakeImage } from "../services/r2";
 import {
   deleteMistakeCloud,
   deleteMistakeImageCloud,
   deleteRecordCloud,
+  deleteRecordsCloud,
   deleteSubjectCloud,
   getSession,
   isSupabaseConfigured,
@@ -32,7 +33,7 @@ import {
   supabase,
   upsertMistake,
   upsertMistakeImage,
-  upsertRecord,
+  upsertRecords,
   upsertSubject
 } from "../services/supabase";
 
@@ -43,11 +44,12 @@ const COMPOSITE_NOTE_META_PREFIX = "\n\n<!-- exam-tracker-composite:";
 const COMPOSITE_NOTE_META_SUFFIX = " -->";
 const RECORD_TRASH_KEY = "exam-tracker-deleted-records";
 const RECORD_TRASH_TTL = 24 * 60 * 60 * 1000;
+const RECORD_SYNC_BATCH_SIZE = 50;
 
 export const useTrackerStore = defineStore("tracker", () => {
   const subjects = ref([]);
   const records = ref([]);
-  const deletedRecords = ref(readDeletedRecords());
+  const deletedRecords = ref([]);
   const mistakes = ref([]);
   const images = ref([]);
   const isReady = ref(false);
@@ -71,10 +73,16 @@ export const useTrackerStore = defineStore("tracker", () => {
   let cloudCalibrationTimer = null;
   let unsubscribeRealtime = null;
   let realtimeReconnectTimer = null;
+  let recordWrites = Promise.resolve();
+  let recordSyncPromise = null;
+  let recordSyncRequested = false;
+  let recordSyncError = "";
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
+  const recordMap = computed(() => new Map(records.value.map((record) => [record.id, record])));
+  const deletedRecordMap = computed(() => new Map(deletedRecords.value.map((entry) => [entry.id, entry])));
   const visibleSubjects = computed(() => subjects.value.filter((subject) => !subject.hidden));
-  const restorableDeletedRecords = computed(() => deletedRecords.value.filter(isDeletedRecordRestorable));
+  const restorableDeletedRecords = computed(() => deletedRecords.value.filter(canRestoreDeletedRecord));
   const imageStorageStats = computed(() => {
     const totalBytes = images.value.reduce((sum, image) => sum + Number(image.size || image.blob?.size || 0), 0);
     const cloudCount = images.value.filter((image) => image.url || image.storageKey).length;
@@ -97,17 +105,12 @@ export const useTrackerStore = defineStore("tracker", () => {
     return autoSyncStarted ? "后台同步已开启" : "同步待启动";
   });
 
-  async function load() {
+  async function load(prepareLocalData) {
     syncError.value = "";
     // 只有纯本地模式才灌演示数据。
     // 云端模式下用户的数据在云上，本地灌进去的假数据会被同步当成「本地新增」
     // 上传，从此每台设备每次同步都拉回来 —— 就是用户看到的「从没记过的成绩」。
-    const localData = await loadAllData({ seedDemo: !isSupabaseConfigured });
-    subjects.value = normalizeSubjects(localData.subjects);
-    records.value = localData.records;
-    purgeExpiredDeletedRecords();
-    mistakes.value = localData.mistakes;
-    images.value = localData.images;
+    await reloadLocalData({ seedDemo: !isSupabaseConfigured }, prepareLocalData);
     syncMode.value = isSupabaseConfigured ? "signed-out" : "local";
     isReady.value = true;
     subscribeAuth();
@@ -132,13 +135,27 @@ export const useTrackerStore = defineStore("tracker", () => {
         startCloudSync();
       } else {
         stopAutoSync();
-        const data = await loadAllData();
-        subjects.value = normalizeSubjects(data.subjects);
-        records.value = data.records;
-        mistakes.value = data.mistakes;
-        images.value = data.images;
+        await reloadLocalData();
         syncMode.value = "signed-out";
       }
+    });
+  }
+
+  function writeRecordChanges(action) {
+    const result = recordWrites.then(action);
+    recordWrites = result.catch(() => {});
+    return result;
+  }
+
+  function reloadLocalData(options, prepare) {
+    return writeRecordChanges(async () => {
+      if (prepare) await prepare();
+      const [data, trash] = await Promise.all([loadAllData(options), loadDeletedRecords()]);
+      subjects.value = data.subjects;
+      records.value = data.records;
+      deletedRecords.value = trash;
+      mistakes.value = data.mistakes;
+      images.value = data.images;
     });
   }
 
@@ -154,32 +171,36 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   async function runCloudLoad() {
     isSyncing.value = true;
+    const startedAt = Date.now();
+    const sessionUserId = user.value?.id;
     try {
       const data = await loadCloudData();
       if (!data) return;
-      const localRecords = records.value;
-      const localMistakes = mistakes.value;
-      user.value = data.user;
-      subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
-      records.value = mergeCloudEntries(data.records, localRecords, "updatedAt", isSameRecord, isDemoRecord);
-      mistakes.value = mergeCloudEntries(data.mistakes, localMistakes, "updatedAt", isSameMistake, isDemoMistake);
-      images.value = mergeCloudImages(data.images);
-      syncMode.value = "cloud";
-      lastSyncedAt.value = new Date().toISOString();
-      // 先清理再算签名：签名要反映清理后的状态，否则下一次加载会因为签名不一致
-      // 又整表重写一遍。
-      await purgeDemoEntries();
-      const signature = dataSignature({ subjects: subjects.value, records: records.value, mistakes: mistakes.value, images: images.value });
-      if (signature !== lastCloudSignature) {
-        await replaceAllData({
-          subjects: subjects.value,
-          records: records.value,
-          mistakes: mistakes.value,
-          images: images.value
+      const demoMistakeIds = await writeRecordChanges(async () => {
+        if (user.value?.id !== sessionUserId && user.value?.id !== data.user.id) return null;
+        user.value = data.user;
+        const cloudRecords = data.records.filter((record) => {
+          const entry = deletedRecordMap.value.get(record.id);
+          return entry?.userId !== data.user.id || (!entry.pendingSync && entry.syncedAt < startedAt);
         });
-        lastCloudSignature = signature;
+        subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
+        records.value = mergeCloudEntries(cloudRecords, records.value, "updatedAt", isSameRecord, isDemoRecord);
+        mistakes.value = mergeCloudEntries(data.mistakes, mistakes.value, "updatedAt", isSameMistake, isDemoMistake);
+        images.value = mergeCloudImages(data.images);
+        markSyncHeartbeat();
+        const removedMistakeIds = await purgeDemoEntries();
+        const payload = { subjects: subjects.value, records: records.value, mistakes: mistakes.value, images: images.value };
+        const signature = dataSignature(payload);
+        if (signature !== lastCloudSignature) {
+          await replaceAllData(payload);
+          lastCloudSignature = signature;
+        }
+        return removedMistakeIds;
+      });
+      if (demoMistakeIds && user.value?.id === data.user.id) {
+        await Promise.all(demoMistakeIds.map((id) => safeCloud(() => deleteMistakeCloud(id))));
+        await retryUnsyncedData();
       }
-      retryUnsyncedData();
     } finally {
       isSyncing.value = false;
     }
@@ -191,7 +212,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     }
     syncError.value = "";
     await syncPendingQueues(true);
-    notify("快速同步已完成。", "success");
+    if (syncError.value) notify("部分更改等待同步，恢复网络后会重试。", "error", 5200);
+    else notify("快速同步已完成。", "success");
   }
 
   async function calibrateCloud() {
@@ -256,8 +278,10 @@ export const useTrackerStore = defineStore("tracker", () => {
       createdAt: now,
       updatedAt: now
     };
-    await db.records.put(record);
-    records.value.push(record);
+    await writeRecordChanges(async () => {
+      await db.records.put(record);
+      records.value.push(record);
+    });
     scheduleAutoSync(250, true);
     notify("成绩已保存。", "success");
     return record;
@@ -275,14 +299,54 @@ export const useTrackerStore = defineStore("tracker", () => {
       next.durationMinutes = normalizeDuration(normalized.durationMinutes);
     }
     next.pendingSync = true;
-    await db.records.update(id, next);
-    records.value = records.value.map((record) => (record.id === id ? { ...record, ...next } : record));
+    const updated = await writeRecordChanges(async () => {
+      if (!(await db.records.update(id, next))) return false;
+      records.value = records.value.map((record) => (record.id === id ? { ...record, ...next } : record));
+      return true;
+    });
+    if (!updated) return;
     scheduleAutoSync(250, true);
     notify("成绩已更新。", "success");
   }
 
+  async function moveRecordsToSubject(ids, subjectId) {
+    if (!subjectMap.value.has(subjectId)) throw new Error("请选择有效的科目。");
+    const recordIds = normalizeIdList(ids);
+    if (!recordIds.length) return 0;
+
+    const count = await writeRecordChanges(async () => {
+      const changed = await db.transaction("rw", db.records, async () => {
+        const now = new Date().toISOString();
+        const current = await db.records.bulkGet(recordIds);
+        const updates = current.filter((record) =>
+          record && record.subjectId !== subjectId && record.recordType !== "composite"
+        ).map((record) => {
+          const convertExercise = subjectId !== "math1" && record.recordType === "exercise";
+          const recordType = convertExercise ? "paper" : record.recordType || "paper";
+          return {
+            ...record,
+            subjectId,
+            recordType,
+            ...(convertExercise ? { paperName: recordTitle(record), exerciseBookName: "", exercisePage: "", exerciseQuestion: "" } : {}),
+            paperVariant: subjectId === "math1" && recordType === "paper"
+              ? normalizePaperVariant(record.paperVariant, record.paperName)
+              : "",
+            pendingSync: true,
+            updatedAt: now
+          };
+        });
+        if (updates.length) await db.records.bulkPut(updates);
+        return updates;
+      });
+      applyRecordUpdates(changed);
+      return changed.length;
+    });
+    if (count) scheduleAutoSync(250, true);
+    return count;
+  }
+
   async function addCompositeRecord(sourceIds, payload = {}) {
-    const sourceRecords = sourceIds.map((id) => records.value.find((record) => record.id === id)).filter(Boolean);
+    const sourceRecords = sourceIds.map((id) => recordMap.value.get(id)).filter(Boolean);
     if (sourceRecords.length < 2) {
       throw new Error("请至少选择两条成绩进行合成。");
     }
@@ -317,33 +381,53 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function removeRecord(id) {
-    const record = records.value.find((item) => item.id === id);
-    if (record) saveDeletedRecord(record);
-    await db.records.delete(id);
-    await safeCloud(() => deleteRecordCloud(id));
-    records.value = records.value.filter((record) => record.id !== id);
-    notify("成绩已移入回收站，24 小时内可恢复。", "success", 5200);
+    if (await removeRecords([id])) {
+      notify("成绩已移入回收站，24 小时内可恢复。", "success", 5200);
+    }
+  }
+
+  async function removeRecords(ids) {
+    const recordIds = normalizeIdList(ids);
+    if (!recordIds.length) return 0;
+    const userId = user.value?.id;
+    const count = await writeRecordChanges(async () => {
+      const entries = await db.transaction("rw", db.records, db.deletedRecords, async () => {
+        const current = (await db.records.bulkGet(recordIds)).filter(Boolean);
+        return persistRecordDeletions(current, userId);
+      });
+      applyRecordDeletions(entries);
+      return entries.length;
+    });
+    if (count) scheduleAutoSync(250, true);
+    return count;
   }
 
   async function restoreDeletedRecord(id) {
-    purgeExpiredDeletedRecords();
-    const entry = deletedRecords.value.find((item) => item.id === id);
-    if (!entry || !isDeletedRecordRestorable(entry)) {
+    const result = await writeRecordChanges(async () => {
+      const restored = await db.transaction("rw", db.records, db.deletedRecords, async () => {
+        const entry = await db.deletedRecords.get(id);
+        if (!canRestoreDeletedRecord(entry)) return null;
+        const current = await db.records.get(id);
+        if (current) {
+          await db.deletedRecords.delete(id);
+          return { alreadyRestored: true };
+        }
+        const record = { ...entry.record, pendingSync: true, updatedAt: new Date().toISOString() };
+        await db.records.put(record);
+        await db.deletedRecords.delete(id);
+        return { record };
+      });
+      if (!restored) return null;
+      deletedRecords.value = deletedRecords.value.filter((entry) => entry.id !== id);
+      if (restored.record) records.value = sortRecords(upsertById(records.value, restored.record));
+      return restored;
+    });
+    if (!result) {
       notify("这条成绩已超过可恢复时间。", "error", 5200);
       return;
     }
-    const now = new Date().toISOString();
-    const record = {
-      ...entry.record,
-      pendingSync: true,
-      updatedAt: now
-    };
-    await db.records.put(record);
-    records.value = sortRecords([...records.value.filter((item) => item.id !== record.id), record]);
-    saveDeletedRecords(deletedRecords.value.filter((item) => item.id !== id));
-    const synced = await safeCloud(() => upsertRecord(record));
-    if (synced) await markRecordSynced(record.id);
-    notify("成绩已恢复。", "success");
+    if (result.record) scheduleAutoSync(250, true);
+    notify(result.alreadyRestored ? "这条成绩已在列表中。" : "成绩已恢复。", "success");
   }
 
   async function addMistake(payload, files = []) {
@@ -465,8 +549,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   async function importData(payload, merge) {
-    await importPortableData(payload, merge);
-    await load();
+    await load(() => importPortableData(payload, merge));
   }
 
   async function clearAll() {
@@ -475,10 +558,12 @@ export const useTrackerStore = defineStore("tracker", () => {
       ...mistakes.value.map((mistake) => safeCloud(() => deleteMistakeCloud(mistake.id))),
       ...records.value.map((record) => safeCloud(() => deleteRecordCloud(record.id)))
     ]);
-    await replaceAllData({ subjects: subjects.value, records: [], mistakes: [], images: [] });
-    records.value = [];
-    mistakes.value = [];
-    images.value = [];
+    await writeRecordChanges(async () => {
+      await replaceAllData({ subjects: subjects.value, records: [], mistakes: [], images: [] });
+      records.value = [];
+      mistakes.value = [];
+      images.value = [];
+    });
     notify("数据已清空。", "success");
   }
 
@@ -901,24 +986,128 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function syncPendingQueues(silent = false) {
     await retryUnsyncedData();
     await retryPendingImageUploads(silent);
-    markSyncHeartbeat();
+    if (!syncError.value) markSyncHeartbeat();
   }
 
   async function retryUnsyncedData() {
     if (!user.value || !supabase) return;
-    // 双保险：即使某处把演示数据标成了待同步，这里也不上传。
-    const recordQueue = records.value.filter((record) => record.pendingSync && !isDemoRecord(record));
     const mistakeQueue = mistakes.value.filter((mistake) => mistake.pendingSync && !isDemoMistake(mistake));
-    await Promise.all([
-      ...recordQueue.map(async (record) => {
-        const synced = await safeCloud(() => upsertRecord(record));
-        if (synced) markRecordSynced(record.id);
-      }),
-      ...mistakeQueue.map(async (mistake) => {
+    const [recordError] = await Promise.all([
+      syncRecordQueue(),
+      Promise.all(mistakeQueue.map(async (mistake) => {
         const synced = await safeCloud(() => upsertMistake(mistake));
-        if (synced) markMistakeSynced(mistake.id);
-      })
+        if (synced) await markMistakeSynced(mistake.id);
+      }))
     ]);
+    if (recordError || syncError.value === recordSyncError) syncError.value = recordError;
+    recordSyncError = recordError;
+  }
+
+  function syncRecordQueue() {
+    recordSyncRequested = true;
+    if (!recordSyncPromise) recordSyncPromise = drainRecordQueue();
+    return recordSyncPromise;
+  }
+
+  async function drainRecordQueue() {
+    // 让同时触发的手动同步、联网事件和自动同步共享一次队列。
+    await Promise.resolve();
+    let failure = "";
+    try {
+      while (recordSyncRequested) {
+        recordSyncRequested = false;
+        await recordWrites;
+        const userId = user.value?.id;
+        if (!userId || !supabase) break;
+        failure = "";
+        const deletions = deletedRecords.value.filter((entry) => entry.pendingSync && entry.userId === userId);
+        const uploads = records.value.filter((record) => record.pendingSync && !isDemoRecord(record));
+        if (!deletions.length && !uploads.length) continue;
+        if (globalThis.navigator?.onLine === false) return "当前离线，成绩将在联网后同步。";
+
+        for (let offset = 0; offset < deletions.length && user.value?.id === userId; offset += RECORD_SYNC_BATCH_SIZE) {
+          const batch = deletions.slice(offset, offset + RECORD_SYNC_BATCH_SIZE).filter((entry) => deletedRecordMap.value.get(entry.id) === entry);
+          if (!batch.length) continue;
+          try {
+            await deleteRecordsCloud(batch.map((entry) => entry.id), userId);
+            await acknowledgeRecordDeletions(batch);
+          } catch (error) {
+            failure ||= error.message || "成绩删除同步失败";
+          }
+        }
+
+        const uploaded = [];
+        for (let offset = 0; offset < uploads.length && user.value?.id === userId; offset += RECORD_SYNC_BATCH_SIZE) {
+          const batch = uploads.slice(offset, offset + RECORD_SYNC_BATCH_SIZE);
+          const error = await syncRecordUploads(batch, userId, uploaded);
+          failure ||= error;
+        }
+        if (uploaded.length) {
+          try {
+            await acknowledgeRecordUploads(uploaded, userId);
+          } catch (error) {
+            failure ||= error.message || "无法更新本地成绩同步状态";
+          }
+        }
+        if (!failure && user.value?.id === userId) markSyncHeartbeat();
+      }
+      return failure;
+    } finally {
+      recordSyncPromise = null;
+    }
+  }
+
+  async function syncRecordUploads(batch, userId, uploaded) {
+    if (user.value?.id !== userId) return "";
+    const current = batch.filter((record) => recordMap.value.get(record.id) === record);
+    if (!current.length) return "";
+    try {
+      await upsertRecords(current, userId);
+    } catch (error) {
+      // 旧备份里的一条无效记录只影响自己，合法的记录仍可同步。
+      if (current.length > 1 && /^2[23]/.test(error.code || "")) {
+        const middle = Math.floor(current.length / 2);
+        const first = await syncRecordUploads(current.slice(0, middle), userId, uploaded);
+        const second = await syncRecordUploads(current.slice(middle), userId, uploaded);
+        return first || second;
+      }
+      return error.message || "成绩同步失败";
+    }
+    uploaded.push(...current);
+    return "";
+  }
+
+  function acknowledgeRecordUploads(sent, userId) {
+    return writeRecordChanges(async () => {
+      if (user.value?.id !== userId) return;
+      const sentById = new Map(sent.map((record) => [record.id, record]));
+      const updated = await db.transaction("rw", db.records, async () => {
+        const rows = await db.records.bulkGet([...sentById.keys()]);
+        const synced = rows.filter((record) => {
+          if (!record?.pendingSync) return false;
+          const original = sentById.get(record.id);
+          return record.updatedAt === original.updatedAt && isSameRecord(record, original);
+        }).map((record) => ({ ...record, pendingSync: false }));
+        if (synced.length) await db.records.bulkPut(synced);
+        return synced;
+      });
+      applyRecordUpdates(updated);
+    });
+  }
+
+  function acknowledgeRecordDeletions(sent) {
+    return writeRecordChanges(async () => {
+      const sentById = new Map(sent.map((entry) => [entry.id, entry]));
+      const updated = await db.transaction("rw", db.deletedRecords, async () => {
+        const rows = await db.deletedRecords.bulkGet([...sentById.keys()]);
+        const synced = rows.filter((entry) => entry?.pendingSync && entry.operationId === sentById.get(entry.id).operationId)
+          .map((entry) => ({ ...entry, pendingSync: false, syncedAt: Date.now() }));
+        if (synced.length) await db.deletedRecords.bulkPut(synced);
+        return synced;
+      });
+      const syncedById = new Map(updated.map((entry) => [entry.id, entry]));
+      deletedRecords.value = deletedRecords.value.map((entry) => syncedById.get(entry.id) || entry);
+    });
   }
 
   /**
@@ -933,36 +1122,27 @@ export const useTrackerStore = defineStore("tracker", () => {
    * 一律当真实数据保留。删之前照例进回收站，24 小时内还能恢复。
    */
   async function purgeDemoEntries() {
-    if (!user.value || !supabase) return 0;
-
     const demoRecords = records.value.filter(isDemoRecord);
     const demoMistakes = mistakes.value.filter(isDemoMistake);
-    if (!demoRecords.length && !demoMistakes.length) return 0;
+    if (!demoRecords.length && !demoMistakes.length) return [];
 
-    for (const record of demoRecords) {
-      saveDeletedRecord(record);
-      await db.records.delete(record.id);
-      await safeCloud(() => deleteRecordCloud(record.id));
+    if (demoRecords.length) {
+      const entries = await db.transaction("rw", db.records, db.deletedRecords, () =>
+        persistRecordDeletions(demoRecords.map(toRaw), user.value.id)
+      );
+      applyRecordDeletions(entries);
     }
-    for (const mistake of demoMistakes) {
-      await db.mistakes.delete(mistake.id);
-      await safeCloud(() => deleteMistakeCloud(mistake.id));
+    const mistakeIds = demoMistakes.map((mistake) => mistake.id);
+    if (mistakeIds.length) {
+      const ids = new Set(mistakeIds);
+      await db.mistakes.bulkDelete(mistakeIds);
+      mistakes.value = mistakes.value.filter((mistake) => !ids.has(mistake.id));
+      images.value = images.value.filter((image) => !(image.ownerType === "mistake" && ids.has(image.ownerId)));
     }
-
-    const recordIds = new Set(demoRecords.map((record) => record.id));
-    const mistakeIds = new Set(demoMistakes.map((mistake) => mistake.id));
-    records.value = records.value.filter((record) => !recordIds.has(record.id));
-    mistakes.value = mistakes.value.filter((mistake) => !mistakeIds.has(mistake.id));
-    images.value = images.value.filter((image) => !(image.ownerType === "mistake" && mistakeIds.has(image.ownerId)));
 
     const total = demoRecords.length + demoMistakes.length;
     notify(`已清理 ${total} 条旧版本自动生成的演示数据。`, "info", 5200);
-    return total;
-  }
-
-  async function markRecordSynced(id) {
-    await db.records.update(id, { pendingSync: false });
-    records.value = records.value.map((record) => (record.id === id ? { ...record, pendingSync: false } : record));
+    return mistakeIds;
   }
 
   async function markMistakeSynced(id) {
@@ -1036,11 +1216,11 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function scheduleAutoSync(delay = 0, force = false) {
-    if (!user.value || isSyncing.value) return;
+    if (!user.value) return;
     if (pendingFallbackTimer) window.clearTimeout(pendingFallbackTimer);
     pendingFallbackTimer = window.setTimeout(() => {
       pendingFallbackTimer = null;
-      if (!user.value || isSyncing.value || document.hidden) return;
+      if (!user.value || document.hidden) return;
       const now = Date.now();
       if (!force && now - lastAutoSyncAt < ACTIVE_FALLBACK_THROTTLE) return;
       lastAutoSyncAt = now;
@@ -1076,16 +1256,17 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   function startRealtimeSync() {
     if (!user.value?.id || unsubscribeRealtime || !supabase) return;
+    const userId = user.value.id;
     realtimeStatus.value = "connecting";
     realtimeError.value = "";
-    unsubscribeRealtime = subscribeCloudChanges(user.value.id, {
+    unsubscribeRealtime = subscribeCloudChanges(userId, {
       subjects: {
         upsert: (subject) => applyRealtimeSubject(subject),
         delete: (id) => removeRealtimeSubject(id)
       },
       records: {
-        upsert: (record) => applyRealtimeRecord(record),
-        delete: (id) => removeRealtimeRecord(id)
+        upsert: (record) => applyRealtimeRecord(record, userId),
+        delete: (id, old) => removeRealtimeRecord(id, userId, old)
       },
       mistakes: {
         upsert: (mistake) => applyRealtimeMistake(mistake),
@@ -1159,30 +1340,41 @@ export const useTrackerStore = defineStore("tracker", () => {
     markSyncHeartbeat();
   }
 
-  async function applyRealtimeRecord(record) {
-    const incoming = { ...record, pendingSync: false };
-    const local = records.value.find((item) => item.id === incoming.id);
-    if (local && shouldKeepLocalRecord(local, incoming)) {
-      if (!local.pendingSync && hasDuration(local) && !hasDuration(incoming)) {
-        await db.records.update(local.id, { pendingSync: true });
-        records.value = records.value.map((item) => (item.id === local.id ? { ...item, pendingSync: true } : item));
-        scheduleAutoSync(0, true);
+  function applyRealtimeRecord(record, userId) {
+    return writeRecordChanges(async () => {
+      if (user.value?.id !== userId) return;
+      const entry = deletedRecordMap.value.get(record.id);
+      if (entry?.userId === userId && (entry.pendingSync ||
+        !(Date.parse(record.updatedAt || record.createdAt) > Date.parse(entry.record.updatedAt || entry.record.createdAt)))) return;
+      const incoming = { ...record, pendingSync: false };
+      const local = recordMap.value.get(incoming.id);
+      // 批量上传由队列一次性确认，跳过 Realtime 回送的同版本记录。
+      if (local && isSameRecord(local, incoming) &&
+        (local.pendingSync || Date.parse(incoming.updatedAt) <= Date.parse(local.updatedAt))) return;
+      if (local && shouldKeepLocalRecord(local, incoming)) {
+        if (!local.pendingSync && hasDuration(local) && !hasDuration(incoming)) {
+          await db.records.update(local.id, { pendingSync: true });
+          applyRecordUpdates([{ ...local, pendingSync: true }]);
+          scheduleAutoSync(0, true);
+        }
+        return;
       }
-      return;
-    }
-    const nextRecord = local?.pendingSync ? { ...local, pendingSync: false } : incoming;
-    records.value = sortRecords(upsertById(records.value, nextRecord));
-    await db.records.put(nextRecord);
-    markSyncHeartbeat();
+      const nextRecord = local?.pendingSync ? { ...toRaw(local), pendingSync: false } : incoming;
+      await db.records.put(nextRecord);
+      records.value = sortRecords(upsertById(records.value, nextRecord));
+      markSyncHeartbeat();
+    });
   }
 
-  async function removeRealtimeRecord(id) {
-    if (!id) return;
-    const local = records.value.find((item) => item.id === id);
-    if (local?.pendingSync) return;
-    records.value = records.value.filter((record) => record.id !== id);
-    await db.records.delete(id);
-    markSyncHeartbeat();
+  function removeRealtimeRecord(id, userId, old) {
+    return writeRecordChanges(async () => {
+      if (!id || user.value?.id !== userId) return;
+      const local = recordMap.value.get(id);
+      if (!local || local.pendingSync || (old?.updated_at && new Date(local.updatedAt) > new Date(old.updated_at))) return;
+      await db.records.delete(id);
+      records.value = records.value.filter((record) => record.id !== id);
+      markSyncHeartbeat();
+    });
   }
 
   async function applyRealtimeMistake(mistake) {
@@ -1259,39 +1451,72 @@ export const useTrackerStore = defineStore("tracker", () => {
     return record?.durationMinutes !== "" && record?.durationMinutes !== null && record?.durationMinutes !== undefined;
   }
 
-  function saveDeletedRecord(record) {
-    const entry = {
-      id: record.id,
-      deletedAt: new Date().toISOString(),
-      record: { ...record, pendingSync: false }
-    };
-    saveDeletedRecords([entry, ...deletedRecords.value.filter((item) => item.id !== record.id)]);
+  function applyRecordUpdates(updates) {
+    if (!updates.length) return;
+    const byId = new Map(updates.map((record) => [record.id, record]));
+    records.value = records.value.map((record) => byId.get(record.id) || record);
   }
 
-  function readDeletedRecords() {
+  async function persistRecordDeletions(recordsToDelete, userId) {
+    if (!recordsToDelete.length) return [];
+    const deletedAt = new Date().toISOString();
+    const operationId = crypto.randomUUID();
+    const entries = recordsToDelete.map((record) => {
+      // 云端成绩主键是 UUID。旧版演示数据等本地专用 ID 仍能在本地删除和恢复。
+      const owner = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(record.id) ? userId : null;
+      return {
+        id: record.id,
+        deletedAt,
+        operationId,
+        userId: owner || "",
+        pendingSync: Boolean(owner),
+        record: { ...record, pendingSync: false }
+      };
+    });
+    await db.deletedRecords.bulkPut(entries);
+    await db.records.bulkDelete(entries.map((entry) => entry.id));
+    return entries;
+  }
+
+  function applyRecordDeletions(entries) {
+    if (!entries.length) return;
+    const ids = new Set(entries.map((entry) => entry.id));
+    records.value = records.value.filter((record) => !ids.has(record.id));
+    deletedRecords.value = [...entries, ...deletedRecords.value.filter((entry) => !ids.has(entry.id))];
+  }
+
+  async function loadDeletedRecords() {
+    let legacy = [];
     try {
       const parsed = JSON.parse(readLocalValue(RECORD_TRASH_KEY, "[]"));
-      return Array.isArray(parsed) ? parsed.filter(isDeletedRecordRestorable) : [];
+      if (Array.isArray(parsed)) legacy = parsed.filter(isDeletedRecordRestorable);
     } catch {
-      return [];
+      // 浏览器存储受限或旧回收站损坏时，仍可读取 IndexedDB。
     }
-  }
-
-  function saveDeletedRecords(entries) {
-    const next = entries
-      .filter(isDeletedRecordRestorable)
-      .sort((a, b) => new Date(b.deletedAt || 0).getTime() - new Date(a.deletedAt || 0).getTime());
-    deletedRecords.value = next;
-    writeLocalValue(RECORD_TRASH_KEY, JSON.stringify(next));
-  }
-
-  function purgeExpiredDeletedRecords() {
-    saveDeletedRecords(deletedRecords.value);
+    const trash = await db.transaction("rw", db.deletedRecords, async () => {
+      const persisted = await db.deletedRecords.toArray();
+      const existing = new Set(persisted.map((entry) => entry.id));
+      const migrated = legacy.filter((entry) => !existing.has(entry.id));
+      const expired = persisted.filter((entry) => !entry.pendingSync && !isDeletedRecordRestorable(entry));
+      if (migrated.length) await db.deletedRecords.bulkPut(migrated);
+      if (expired.length) await db.deletedRecords.bulkDelete(expired.map((entry) => entry.id));
+      return [...persisted.filter((entry) => entry.pendingSync || isDeletedRecordRestorable(entry)), ...migrated];
+    });
+    try {
+      globalThis.localStorage?.removeItem(RECORD_TRASH_KEY);
+    } catch {
+      // 下次加载按 ID 去重。
+    }
+    return trash.sort((a, b) => compareByTimeThenId(Date.parse(a.deletedAt), Date.parse(b.deletedAt), a, b));
   }
 
   function isDeletedRecordRestorable(entry) {
     const deletedAt = new Date(entry?.deletedAt || 0).getTime();
     return Boolean(entry?.id && entry?.record?.id && deletedAt && Date.now() - deletedAt < RECORD_TRASH_TTL);
+  }
+
+  function canRestoreDeletedRecord(entry) {
+    return isDeletedRecordRestorable(entry) && (!entry.userId || !user.value || entry.userId === user.value.id);
   }
 
   function deletedRecordRemainingHours(entry) {
@@ -1398,6 +1623,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     deviceName,
     lastBackupAt,
     subjectMap,
+    recordMap,
     visibleSubjects,
     imageStorageStats,
     pendingImages,
@@ -1414,7 +1640,9 @@ export const useTrackerStore = defineStore("tracker", () => {
     addRecord,
     addCompositeRecord,
     updateRecord,
+    moveRecordsToSubject,
     removeRecord,
+    removeRecords,
     restoreDeletedRecord,
     deletedRecordRemainingHours,
     addMistake,

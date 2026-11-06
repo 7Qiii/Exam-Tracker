@@ -18,7 +18,7 @@ import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import { useConfirm } from "../composables/useConfirm";
 import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
-import { MISTAKE_STATUS_OPTIONS, filterAndSortMistakes, readMistakeFilters, toMistakeQuery } from "../utils/mistakeQueue";
+import { MISTAKE_STATUS_OPTIONS, filterAndSortMistakes, readMistakeFilters, readMistakePage, toMistakeQuery } from "../utils/mistakeQueue";
 
 const route = useRoute();
 const router = useRouter();
@@ -45,7 +45,7 @@ const nextMistake = computed(() =>
 );
 const queueSize = computed(() => reviewQueue.value.length);
 
-const listQuery = computed(() => toMistakeQuery(readMistakeFilters(route.query)));
+const listQuery = computed(() => toMistakeQuery(readMistakeFilters(route.query), readMistakePage(route.query)));
 
 // 图片地址统一在 JS 里算好。
 // 之前写成模板里的 `URL.createObjectURL(...)`，模板表达式会被编译成 `_ctx.URL`，
@@ -106,60 +106,48 @@ function logKey(id) {
   return `exam-tracker-review-log-${id}`;
 }
 
-function loadReviewLog() {
-  const id = route.params.id;
-  if (!id || typeof localStorage === "undefined") {
-    reviewLog.value = [];
-    return;
-  }
+function readReviewLog(id) {
+  if (!id) return [];
   try {
     const parsed = JSON.parse(localStorage.getItem(logKey(id)) || "[]");
-    reviewLog.value = Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    reviewLog.value = [];
+    return [];
   }
 }
 
-function appendReviewLog(status) {
-  const id = route.params.id;
-  if (!id || typeof localStorage === "undefined") return;
-  const next = [{ at: new Date().toISOString(), status }, ...reviewLog.value].slice(0, 50);
-  reviewLog.value = next;
-  localStorage.setItem(logKey(id), JSON.stringify(next));
+function appendReviewLog(id, status, reviewedAt) {
+  const isCurrent = route.params.id === id;
+  const next = [{ at: reviewedAt, status }, ...(isCurrent ? reviewLog.value : readReviewLog(id))].slice(0, 50);
+  if (isCurrent) reviewLog.value = next;
+  try {
+    localStorage.setItem(logKey(id), JSON.stringify(next));
+  } catch {
+    store.notify("复习状态已保存，浏览器无法写入本地复习日志。", "error");
+  }
 }
 
-async function setStatus(status) {
-  const current = mistake.value?.status || "待复盘";
-  if (!mistake.value || current === status || savingStatus.value) return;
+async function setStatus(status, logRepeat = false) {
+  const item = mistake.value;
+  if (!item || savingStatus.value) return;
+  const sameStatus = (item.status || "待复盘") === status;
+  if (sameStatus && !logRepeat) return;
+  const { id } = item;
+  const reviewedAt = new Date().toISOString();
   savingStatus.value = status;
   try {
-    await store.updateMistake(mistake.value.id, { status, reviewedAt: new Date().toISOString() });
-    appendReviewLog(status);
-    store.notify(`已标记为「${status}」`, "success");
+    await store.updateMistake(id, { status, reviewedAt });
+    appendReviewLog(id, status, reviewedAt);
+    store.notify(sameStatus ? "已记录本次复习" : `已标记为「${status}」`, "success");
+  } catch (error) {
+    store.notify(error.message || "保存复习状态失败，请重试。", "error", 6000);
   } finally {
     savingStatus.value = "";
   }
 }
 
-/**
- * 完成本次复习：记为一次复习，并默认标为已掌握。
- *
- * 这里不能直接复用 setStatus("已掌握")：setStatus 遇到「状态没变化」会直接 return，
- * 于是「已经掌握的题再复习一遍」——间隔重复里最常见的场景——点按钮毫无反馈，
- * 不计复习次数、不更新复习时间、连 toast 都没有。
- * 所以无论状态变不变，都记一次复习。
- */
-async function markReviewed() {
-  if (!mistake.value || savingStatus.value) return;
-  const wasMastered = (mistake.value.status || "待复盘") === "已掌握";
-  savingStatus.value = "review";
-  try {
-    await store.updateMistake(mistake.value.id, { status: "已掌握", reviewedAt: new Date().toISOString() });
-    appendReviewLog("已掌握");
-    store.notify(wasMastered ? "已记录本次复习" : "已标记为「已掌握」", "success");
-  } finally {
-    savingStatus.value = "";
-  }
+function markReviewed() {
+  return setStatus("已掌握", true);
 }
 
 function goTo(target) {
@@ -218,8 +206,8 @@ function onKeydown(event) {
 
 watch(
   () => route.params.id,
-  () => {
-    loadReviewLog();
+  (id) => {
+    reviewLog.value = readReviewLog(id);
     // 换题时退出编辑态并回到顶部，避免翻页后停在半空
     isEditing.value = false;
     window.scrollTo({ top: 0, behavior: "auto" });

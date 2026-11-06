@@ -57,6 +57,8 @@ const { confirm } = useConfirm();
 const router = useRouter();
 const page = ref(1);
 const pageSize = 8;
+const compositePage = ref(1);
+const compositeSourceListRef = ref(null);
 const sortBy = ref("date-desc");
 const isSortMenuOpen = ref(false);
 const sortOptions = [
@@ -75,10 +77,11 @@ const formPanelRef = ref(null);
 const editingRecordId = ref("");
 const selectedRecordIds = ref([]);
 const compositeForm = reactive({ paperName: "", date: "", note: "" });
-const compositeRows = reactive({});
+const compositeRows = reactive(Object.create(null));
 const isCompositeDialogOpen = ref(false);
 const isCompositeSaving = ref(false);
 const isRestorePanelOpen = ref(false);
+const restorePage = ref(1);
 const batchSubjectId = ref("");
 const isBatchWorking = ref(false);
 const workingRecordActions = reactive(new Set());
@@ -96,7 +99,7 @@ const isMathDraftFilter = computed(() => draftFilters.subjectId === "math1");
 
 const filteredRecords = computed(() => {
   const keyword = normalizeSearch(filters.keyword);
-  return [...store.records]
+  return store.records
     .filter((record) => {
       if (filters.subjectId && record.subjectId !== filters.subjectId) return false;
       if (!matchesPaperVariantFilter(record)) return false;
@@ -127,22 +130,26 @@ const filteredRecords = computed(() => {
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)));
 const pagedRecords = computed(() => filteredRecords.value.slice((page.value - 1) * pageSize, page.value * pageSize));
 const currentSortOption = computed(() => sortOptions.find((option) => option.value === sortBy.value) || sortOptions[0]);
-const editingRecord = computed(() => store.records.find((record) => record.id === editingRecordId.value) || null);
+const editingRecord = computed(() => editingRecordId.value ? store.recordMap.get(editingRecordId.value) || null : null);
 const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.subjectId || filters.paperVariant !== "all"));
 const selectableFilteredRecords = computed(() => filteredRecords.value.filter((record) => record.recordType !== "composite"));
 const selectedRecords = computed(() =>
   selectedRecordIds.value
-    .map((id) => store.records.find((record) => record.id === id))
+    .map((id) => store.recordMap.get(id))
     .filter((record) => record && record.recordType !== "composite")
 );
-const allFilteredRecordsSelected = computed(() => {
-  if (!selectableFilteredRecords.value.length) return false;
-  const selectedIds = new Set(selectedRecordIds.value);
-  return selectableFilteredRecords.value.every((record) => selectedIds.has(record.id));
-});
+const selectedIds = computed(() => new Set(selectedRecordIds.value));
+const allFilteredRecordsSelected = computed(() =>
+  selectedIds.value.size >= selectableFilteredRecords.value.length &&
+  selectableFilteredRecords.value.length > 0 &&
+  selectableFilteredRecords.value.every((record) => selectedIds.value.has(record.id))
+);
+const previewSelection = computed(() => selectedRecords.value.slice(0, pageSize));
 const selectedSubjectCount = computed(() => new Set(selectedRecords.value.map((record) => record.subjectId)).size);
 const canCreateComposite = computed(() => selectedRecords.value.length >= 2 && selectedSubjectCount.value === 1 && compositeSummary.value.fullScore > 0);
 const selectedCompositeRows = computed(() => selectedRecords.value.map((record) => ({ record, draft: compositeRows[record.id] })).filter((item) => item.draft));
+const compositePageCount = computed(() => Math.max(1, Math.ceil(selectedRecords.value.length / pageSize)));
+const pagedCompositeRows = computed(() => selectedCompositeRows.value.slice((compositePage.value - 1) * pageSize, compositePage.value * pageSize));
 const selectedAverageStats = computed(() => {
   const records = selectedRecords.value;
   const scoredRecords = records.filter((record) => normalizeScoreValue(record.fullScore) > 0);
@@ -172,9 +179,12 @@ const compositeSummary = computed(() => {
   const fullScore = selectedCompositeRows.value.reduce((sum, item) => sum + normalizeScoreValue(item.draft.fullScore), 0);
   const durations = selectedCompositeRows.value.map((item) => normalizeDurationMinutes(item.draft.durationMinutes));
   const durationMinutes = durations.every((value) => value !== "") ? durations.reduce((sum, value) => sum + Number(value), 0) : "";
-  const latestDate = selectedRecords.value.map((record) => record.date).filter(Boolean).sort().at(-1) || new Date().toISOString().slice(0, 10);
-  return { score, fullScore, durationMinutes, latestDate };
+  return { score, fullScore, durationMinutes };
 });
+const latestSelectedDate = computed(() =>
+  selectedRecords.value.reduce((latest, record) => record.date > latest ? record.date : latest, "") ||
+  new Date().toISOString().slice(0, 10)
+);
 const defaultCompositeName = computed(() => {
   const year = commonYearLabel(selectedRecords.value);
   return year ? `${year} 合成成绩` : "合成成绩";
@@ -215,6 +225,8 @@ const selectionProgress = computed(() => {
 // 删除时会自动把它打开（见 deleteRecord 和批量删除），所以去掉这个兜底
 // 不会丢掉「误删了怎么办」的提示。
 const shouldShowRestorePanel = computed(() => isRestorePanelOpen.value);
+const restorePageCount = computed(() => Math.max(1, Math.ceil(store.deletedRecords.length / pageSize)));
+const pagedDeletedRecords = computed(() => store.deletedRecords.slice((restorePage.value - 1) * pageSize, restorePage.value * pageSize));
 const rawHealthIssues = computed(() => buildHealthIssues());
 const ignoredHealthIssues = computed(() => rawHealthIssues.value.filter((issue) => ignoredHealthIssueIds.value.includes(issue.id)));
 const healthIssues = computed(() => rawHealthIssues.value.filter((issue) => !ignoredHealthIssueIds.value.includes(issue.id)));
@@ -228,6 +240,7 @@ const healthStatusText = computed(() => {
 
 watch(() => [filters.keyword, filters.subjectId, filters.paperVariant], () => {
   page.value = 1;
+  if (!selectedRecordIds.value.length) return;
   const validIds = new Set(selectableFilteredRecords.value.map((record) => record.id));
   selectedRecordIds.value = selectedRecordIds.value.filter((id) => validIds.has(id));
 });
@@ -241,15 +254,32 @@ watch(
   }
 );
 
-watch(selectedRecordIds, () => {
-  const validIds = selectedRecordIds.value.filter((id) => store.records.some((record) => record.id === id && record.recordType !== "composite"));
-  if (validIds.length !== selectedRecordIds.value.length || validIds.some((id, index) => id !== selectedRecordIds.value[index])) {
-    selectedRecordIds.value = validIds;
-    return;
+watch(pageCount, (count) => {
+  page.value = Math.min(page.value, count);
+});
+
+watch(restorePageCount, (count) => {
+  restorePage.value = Math.min(restorePage.value, count);
+});
+
+watch(compositePageCount, (count) => {
+  compositePage.value = Math.min(compositePage.value, count);
+});
+
+watch(compositePage, () => {
+  if (!isCompositeDialogOpen.value) return;
+  compositeSourceListRef.value?.focus({ preventScroll: true });
+  compositeSourceListRef.value?.scrollIntoView({ block: "start" });
+}, { flush: "post" });
+
+watch(selectedRecords, (records) => {
+  if (records.length !== selectedRecordIds.value.length) {
+    selectedRecordIds.value = records.map((record) => record.id);
   }
-  syncCompositeRows();
-  syncCompositeDefaults();
-  if (!selectedRecords.value.length) isCompositeDialogOpen.value = false;
+  for (const id of Object.keys(compositeRows)) {
+    if (!selectedIds.value.has(id)) delete compositeRows[id];
+  }
+  if (!records.length) isCompositeDialogOpen.value = false;
   if (!batchSubjectId.value && selectedRecords.value[0]?.subjectId) {
     batchSubjectId.value = selectedRecords.value[0].subjectId;
   }
@@ -331,6 +361,7 @@ function compareRecords(a, b) {
 
 function chooseSort(value) {
   sortBy.value = value;
+  page.value = 1;
   isSortMenuOpen.value = false;
 }
 
@@ -404,7 +435,7 @@ async function deleteRecord(record) {
     await store.removeRecord(record.id);
     selectedRecordIds.value = selectedRecordIds.value.filter((id) => id !== record.id);
     delete compositeRows[record.id];
-    isRestorePanelOpen.value = true;
+    revealRestorePanel();
   });
 }
 
@@ -437,7 +468,7 @@ function toggleSelect(record) {
 }
 
 function isSelected(id) {
-  return selectedRecordIds.value.includes(id);
+  return selectedIds.value.has(id);
 }
 
 /**
@@ -460,6 +491,7 @@ function readingLabel(record) {
 
 function clearSelection() {
   selectedRecordIds.value = [];
+  compositePage.value = 1;
   Object.keys(compositeRows).forEach((id) => delete compositeRows[id]);
   compositeForm.paperName = "";
   compositeForm.note = "";
@@ -468,9 +500,9 @@ function clearSelection() {
 }
 
 function selectAllFilteredRecords() {
-  const ids = selectableFilteredRecords.value.map((record) => record.id);
-  if (!ids.length) return;
-  selectedRecordIds.value = allFilteredRecordsSelected.value ? [] : ids;
+  selectedRecordIds.value = allFilteredRecordsSelected.value
+    ? []
+    : selectableFilteredRecords.value.map((record) => record.id);
 }
 
 function closeCompositeDialog() {
@@ -502,7 +534,8 @@ useDismissable(isIgnoredHealthOpen, healthPanelRef, { onClose: () => (isIgnoredH
 function openCompositeDialog() {
   if (selectedRecords.value.length) {
     syncCompositeRows();
-    syncCompositeDefaults();
+    compositeForm.date = latestSelectedDate.value;
+    if (!compositeForm.paperName) compositeForm.paperName = defaultCompositeName.value;
     isCompositeDialogOpen.value = true;
   }
 }
@@ -516,25 +549,16 @@ function removeCompositeSource(id) {
 }
 
 function syncCompositeRows(force = false) {
-  const selectedIds = new Set(selectedRecords.value.map((record) => record.id));
-  Object.keys(compositeRows).forEach((id) => {
-    if (!selectedIds.has(id)) delete compositeRows[id];
-  });
   selectedRecords.value.forEach((record) => {
     if (!compositeRows[record.id] || force) {
+      const duration = normalizeDurationMinutes(record.durationMinutes);
       compositeRows[record.id] = {
         score: String(record.score ?? ""),
         fullScore: String(record.fullScore ?? ""),
-        durationMinutes: normalizeDurationMinutes(record.durationMinutes) === "" ? "" : String(normalizeDurationMinutes(record.durationMinutes))
+        durationMinutes: String(duration)
       };
     }
   });
-}
-
-function syncCompositeDefaults(force = false) {
-  if (!selectedRecords.value.length) return;
-  compositeForm.date = compositeSummary.value.latestDate;
-  if (force || !compositeForm.paperName) compositeForm.paperName = defaultCompositeName.value;
 }
 
 function resetCompositeValues() {
@@ -544,25 +568,28 @@ function resetCompositeValues() {
 }
 
 async function restoreDeletedRecord(entry) {
-  await store.restoreDeletedRecord(entry.id);
-  if (!store.deletedRecords.length) isRestorePanelOpen.value = false;
+  await withRecordAction(entry, "restore", async () => {
+    await store.restoreDeletedRecord(entry.id);
+    if (!store.deletedRecords.length) isRestorePanelOpen.value = false;
+  });
 }
 
 function toggleRestorePanel() {
   isRestorePanelOpen.value = !isRestorePanelOpen.value;
 }
 
+function revealRestorePanel() {
+  restorePage.value = 1;
+  isRestorePanelOpen.value = true;
+}
+
 async function batchMoveSelectedRecords() {
-  if (!selectedRecords.value.length || !batchSubjectId.value) return;
+  if (isBatchWorking.value || !selectedRecords.value.length || !batchSubjectId.value) return;
   isBatchWorking.value = true;
   try {
-    const records = [...selectedRecords.value];
-    for (const record of records) {
-      if (record.subjectId !== batchSubjectId.value) {
-        await store.updateRecord(record.id, buildRecordUpdatePayload(record, { subjectId: batchSubjectId.value }));
-      }
-    }
-    store.notify(`已批量调整 ${records.length} 条成绩科目。`, "success");
+    const count = await store.moveRecordsToSubject(selectedRecords.value.map((record) => record.id), batchSubjectId.value);
+    if (count) store.notify(`已批量调整 ${count} 条成绩的科目。`, "success");
+    else store.notify("所选成绩已在目标科目中。", "info");
   } catch (error) {
     store.notify(error.message || "批量改科目失败。", "error", 6000);
   } finally {
@@ -571,8 +598,9 @@ async function batchMoveSelectedRecords() {
 }
 
 async function batchDeleteSelectedRecords() {
-  if (!selectedRecords.value.length) return;
-  const count = selectedRecords.value.length;
+  if (isBatchWorking.value || !selectedRecords.value.length) return;
+  const ids = selectedRecords.value.map((record) => record.id);
+  const count = ids.length;
   const ok = await confirm({
     title: `删除选中的 ${count} 条成绩？`,
     message: "这些成绩会移入最近删除，24 小时内可以逐条恢复。",
@@ -581,13 +609,12 @@ async function batchDeleteSelectedRecords() {
   if (!ok) return;
   isBatchWorking.value = true;
   try {
-    const ids = selectedRecords.value.map((record) => record.id);
-    for (const id of ids) {
-      await store.removeRecord(id);
-    }
+    const removed = await store.removeRecords(ids);
     clearSelection();
-    isRestorePanelOpen.value = true;
-    store.notify(`${count} 条成绩已移入最近删除。`, "success", 5200);
+    if (removed) {
+      revealRestorePanel();
+      store.notify(`${removed} 条成绩已移入最近删除。`, "success", 5200);
+    }
   } catch (error) {
     store.notify(error.message || "批量删除失败。", "error", 6000);
   } finally {
@@ -642,7 +669,18 @@ function saveIgnoredHealthIssues(ids) {
 }
 
 async function createCompositeRecord() {
-  if (!canCreateComposite.value) return;
+  if (!canCreateComposite.value || isCompositeSaving.value) return;
+  // 原生表单只校验当前页的输入框，提交前同时检查其他页的草稿。
+  const invalidIndex = selectedCompositeRows.value.findIndex(({ draft }) =>
+    !isValidCompositeNumber(draft.score, 0.5) ||
+    !isValidCompositeNumber(draft.fullScore, 0.5) ||
+    !isValidCompositeNumber(draft.durationMinutes, 1)
+  );
+  if (invalidIndex >= 0) {
+    compositePage.value = Math.floor(invalidIndex / pageSize) + 1;
+    store.notify("请检查该页的分数和用时。分数以 0.5 为单位，用时为整分钟。", "error", 6000);
+    return;
+  }
   isCompositeSaving.value = true;
   try {
     await store.addCompositeRecord(selectedRecordIds.value, {
@@ -650,7 +688,7 @@ async function createCompositeRecord() {
       score: compositeSummary.value.score,
       fullScore: compositeSummary.value.fullScore,
       durationMinutes: compositeSummary.value.durationMinutes,
-      date: compositeForm.date || compositeSummary.value.latestDate,
+      date: compositeForm.date || latestSelectedDate.value,
       note: compositeForm.note,
       sources: selectedCompositeRows.value.map(({ record, draft }) => ({
         id: record.id,
@@ -667,29 +705,14 @@ async function createCompositeRecord() {
   }
 }
 
+function isValidCompositeNumber(value, step) {
+  const number = Number(value);
+  return number >= 0 && number % step === 0;
+}
+
 function matchesPaperVariantFilter(record) {
   if (filters.subjectId !== "math1" || filters.paperVariant === "all") return true;
   return record.subjectId === "math1" && (record.recordType || "paper") === "paper" && normalizePaperVariant(record) === filters.paperVariant;
-}
-
-function buildRecordUpdatePayload(record, overrides = {}) {
-  const subjectId = overrides.subjectId || record.subjectId;
-  const targetIsMath = subjectId === "math1";
-  const recordType = !targetIsMath && record.recordType === "exercise" ? "paper" : record.recordType || "paper";
-  return {
-    subjectId,
-    recordType,
-    paperVariant: subjectId === "math1" && recordType === "paper" ? normalizePaperVariant(record) : "",
-    paperName: recordType === "exercise" ? record.paperName : recordTitle(record),
-    exerciseBookName: recordType === "exercise" ? record.exerciseBookName || "" : "",
-    exercisePage: recordType === "exercise" ? record.exercisePage || "" : "",
-    exerciseQuestion: recordType === "exercise" ? record.exerciseQuestion || "" : "",
-    score: record.score,
-    fullScore: record.fullScore,
-    durationMinutes: record.durationMinutes,
-    date: record.date,
-    note: store.displayRecordNote(record) || ""
-  };
 }
 
 function buildHealthIssues() {
@@ -1000,8 +1023,13 @@ function scoreBarStyle(record) {
             </label>
           </div>
 
-          <div class="composite-source-editor-list">
-            <article v-for="{ record, draft } in selectedCompositeRows" :key="record.id" class="composite-source-editor">
+          <nav v-if="compositePageCount > 1" class="pager composite-source-pager" aria-label="合成来源分页">
+            <button type="button" :disabled="compositePage === 1" @click="compositePage -= 1"><ChevronLeft :size="16" />上一页</button>
+            <span role="status">第 {{ compositePage }} / {{ compositePageCount }} 页</span>
+            <button type="button" :disabled="compositePage === compositePageCount" @click="compositePage += 1">下一页<ChevronRight :size="16" /></button>
+          </nav>
+          <div ref="compositeSourceListRef" class="composite-source-editor-list" role="region" aria-label="合成来源" tabindex="-1">
+            <article v-for="{ record, draft } in pagedCompositeRows" :key="record.id" class="composite-source-editor">
               <div class="composite-source-title">
                 <strong>{{ record.paperName }}</strong>
                 <span>{{ store.subjectName(record.subjectId) }} · 原始 {{ record.score }}/{{ record.fullScore }} · {{ formatDuration(record.durationMinutes) }}</span>
@@ -1025,7 +1053,6 @@ function scoreBarStyle(record) {
               </button>
             </article>
           </div>
-
           <label>
             备注
             <textarea v-model.trim="compositeForm.note" rows="2"></textarea>
@@ -1061,7 +1088,7 @@ function scoreBarStyle(record) {
               <Trash2 :size="15" />
               最近删除 {{ store.deletedRecords.length }}
             </button>
-            <button class="secondary-button compact" type="button" :disabled="!selectableFilteredRecords.length" @click="selectAllFilteredRecords">
+            <button class="secondary-button compact" type="button" :aria-pressed="allFilteredRecordsSelected" :disabled="!selectableFilteredRecords.length" @click="selectAllFilteredRecords">
               {{ allFilteredRecordsSelected ? "取消全选" : "全选当前结果" }}
             </button>
           </div>
@@ -1074,15 +1101,22 @@ function scoreBarStyle(record) {
             </div>
             <span>{{ store.deletedRecords.length }} 条</span>
           </div>
-          <div v-if="store.deletedRecords.length" class="record-restore-list">
-            <article v-for="entry in store.deletedRecords" :key="entry.id">
-              <div>
-                <strong>{{ recordTitle(entry.record) }}</strong>
-                <span>{{ store.subjectName(entry.record.subjectId) }} · {{ entry.record.score }}/{{ entry.record.fullScore }} · 还剩约 {{ store.deletedRecordRemainingHours(entry) }} 小时</span>
-              </div>
-              <button class="secondary-button compact" type="button" @click="restoreDeletedRecord(entry)">恢复</button>
-            </article>
-          </div>
+          <template v-if="store.deletedRecords.length">
+            <div class="record-restore-list">
+              <article v-for="entry in pagedDeletedRecords" :key="entry.id">
+                <div>
+                  <strong>{{ recordTitle(entry.record) }}</strong>
+                  <span>{{ store.subjectName(entry.record.subjectId) }} · {{ entry.record.score }}/{{ entry.record.fullScore }} · 还剩约 {{ store.deletedRecordRemainingHours(entry) }} 小时</span>
+                </div>
+                <button class="secondary-button compact" type="button" :disabled="isRecordActionWorking(entry, 'restore')" @click="restoreDeletedRecord(entry)">恢复</button>
+              </article>
+            </div>
+            <nav v-if="restorePageCount > 1" class="pager" aria-label="最近删除分页">
+              <button type="button" :disabled="restorePage === 1" @click="restorePage -= 1"><ChevronLeft :size="16" />上一页</button>
+              <span role="status">第 {{ restorePage }} / {{ restorePageCount }} 页</span>
+              <button type="button" :disabled="restorePage === restorePageCount" @click="restorePage += 1">下一页<ChevronRight :size="16" /></button>
+            </nav>
+          </template>
           <div v-else class="record-restore-empty">
             暂无可恢复成绩。删除成绩后，这里会保留 24 小时。
           </div>
@@ -1150,9 +1184,9 @@ function scoreBarStyle(record) {
         <div v-if="selectedRecords.length" class="batch-management-panel">
           <div class="batch-management-copy">
             <strong>批量管理</strong>
-            <span>已选 {{ selectedRecords.length }} 条，可统一改科目或移入最近删除。</span>
+            <span role="status">{{ isBatchWorking ? "正在写入本地记录…" : `已选 ${selectedRecords.length} 条，可统一改科目或移入最近删除。` }}</span>
           </div>
-          <select v-model="batchSubjectId">
+          <select v-model="batchSubjectId" aria-label="目标科目" :disabled="isBatchWorking">
             <option value="">选择目标科目</option>
             <option v-for="subject in store.visibleSubjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
           </select>
@@ -1170,6 +1204,9 @@ function scoreBarStyle(record) {
             <strong>选择分析</strong>
             <span v-if="selectedSubjectCount === 1">{{ store.subjectName(selectedRecords[0].subjectId) }} · {{ selectedRecords.length }} 条记录 · 实时计算不保存</span>
             <span v-else class="danger-text">包含多个科目，请保留同一科目来计算均分</span>
+            <span v-if="selectedRecords.length > previewSelection.length">
+              展示前 {{ previewSelection.length }} 条，另有 {{ selectedRecords.length - previewSelection.length }} 条已选
+            </span>
           </div>
           <div class="selection-average-card" :class="{ muted: !selectedAverageStats.isReady }">
             <div class="selection-average-head">
@@ -1188,7 +1225,7 @@ function scoreBarStyle(record) {
           </div>
           <div class="composite-selection-list">
             <button
-              v-for="record in selectedRecords"
+              v-for="record in previewSelection"
               :key="record.id"
               class="selected-record-chip"
               type="button"
@@ -1363,12 +1400,27 @@ function scoreBarStyle(record) {
             <template v-else>还没有成绩记录，点上方「新增成绩」开始第一条。</template>
           </div>
         </div>
-        <div v-if="store.isReady" class="pager">
+        <nav v-if="store.isReady && pageCount > 1" class="pager" aria-label="成绩列表分页">
           <button type="button" :disabled="page === 1" @click="page -= 1"><ChevronLeft :size="16" />上一页</button>
-          <span>{{ page }} / {{ pageCount }}</span>
+          <span role="status">第 {{ page }} / {{ pageCount }} 页</span>
           <button type="button" :disabled="page === pageCount" @click="page += 1">下一页<ChevronRight :size="16" /></button>
-        </div>
+        </nav>
       </div>
     </section>
   </div>
 </template>
+
+<style scoped>
+.composite-source-pager {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding-block: 0.375rem;
+  background: var(--surface);
+}
+
+.composite-source-editor-list {
+  scroll-margin-block-start: 3.5rem;
+}
+</style>

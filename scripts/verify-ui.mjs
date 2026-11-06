@@ -18,6 +18,7 @@ import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { createRequire } from "node:module";
 import { listenSafePort } from "./lib/safe-listen.mjs";
+import { seedRows } from "./lib/seed-rows.mjs";
 
 // playwright-core 装在托管工作区里（不污染项目依赖），
 // ESM 不认 NODE_PATH，所以用 createRequire 从那个目录解析。
@@ -345,6 +346,17 @@ async function main() {
       viewport: { width: size.width, height: size.height },
       deviceScaleFactor: 1
     });
+
+    // 每个视口使用独立的浏览器存储，详情页用例在空库也有固定入口。
+    const fixturePage = await context.newPage();
+    await fixturePage.goto(`${base}/#/records`);
+    await fixturePage.getByRole("heading", { name: "成绩工作台", exact: true }).waitFor();
+    const createdAt = new Date().toISOString();
+    await seedRows(fixturePage, {
+      records: [{ id: "ui-score", subjectId: "math1", recordType: "paper", paperName: "积分综合练习", date: createdAt.slice(0, 10), createdAt, score: 108, fullScore: 150, durationMinutes: 120 }],
+      mistakes: [{ id: "ui-mistake", subjectId: "math1", title: "变上限积分求导", knowledgePoint: "高等数学", status: "待复盘", difficulty: "中等", createdAt }]
+    });
+    await fixturePage.close();
 
     for (const entry of routes) {
       const route = typeof entry === "string" ? entry : entry.path;

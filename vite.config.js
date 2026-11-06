@@ -3,6 +3,10 @@ import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
   plugins: [vue()],
+  // 在开发服务器启动时预构建，避免第一次滚到图表时 Vite 重新加载页面。
+  optimizeDeps: {
+    include: ["echarts/core", "echarts/charts", "echarts/components", "echarts/renderers"]
+  },
   server: {
     host: "0.0.0.0",
     port: 5173

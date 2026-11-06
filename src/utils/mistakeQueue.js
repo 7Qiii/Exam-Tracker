@@ -1,4 +1,5 @@
 import { byId } from "./sorting";
+import { normalizeSearch } from "./recordDisplay";
 
 /**
  * 错题复习队列：筛选 + 排序的唯一实现。
@@ -21,10 +22,6 @@ export const MISTAKE_SORT_OPTIONS = [
 
 const DEFAULT_SORT = "created-desc";
 
-function normalizeSearch(value) {
-  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
-}
-
 /** 从路由 query 里读出筛选条件，非法值一律回落 */
 export function readMistakeFilters(query = {}) {
   const pick = (key) => (typeof query[key] === "string" ? query[key] : "");
@@ -39,8 +36,13 @@ export function readMistakeFilters(query = {}) {
   };
 }
 
-/** 把筛选条件写回 query，空值不写 */
-export function toMistakeQuery(filters = {}) {
+export function readMistakePage(query = {}) {
+  const page = typeof query.page === "string" ? Number(query.page) : 1;
+  return Number.isSafeInteger(page) && page > 0 ? page : 1;
+}
+
+/** 把筛选条件和列表页码写回 query，默认值不写 */
+export function toMistakeQuery(filters = {}, page = 1) {
   const query = {};
   if (filters.keyword) query.q = filters.keyword;
   if (filters.subjectId) query.subject = filters.subjectId;
@@ -48,6 +50,7 @@ export function toMistakeQuery(filters = {}) {
   if (filters.status) query.status = filters.status;
   if (filters.difficulty) query.difficulty = filters.difficulty;
   if (filters.sort && filters.sort !== DEFAULT_SORT) query.sort = filters.sort;
+  if (page > 1) query.page = String(page);
   return query;
 }
 
@@ -70,15 +73,14 @@ export function hasActiveMistakeFilters(filters = {}) {
 export function filterAndSortMistakes(mistakes, filters, subjectName = () => "") {
   const keyword = normalizeSearch(filters.keyword);
   const list = mistakes.filter((item) => {
-    const haystack = normalizeSearch(
-      [item.title, item.knowledgePoint, item.analysis, item.questionText, subjectName(item.subjectId)].join(" ")
-    );
     return (
-      (!keyword || haystack.includes(keyword)) &&
       (!filters.subjectId || item.subjectId === filters.subjectId) &&
       (!filters.knowledgePoint || (item.knowledgePoint || "") === filters.knowledgePoint) &&
       (!filters.status || (item.status || "待复盘") === filters.status) &&
-      (!filters.difficulty || (item.difficulty || "") === filters.difficulty)
+      (!filters.difficulty || (item.difficulty || "") === filters.difficulty) &&
+      (!keyword || normalizeSearch(
+        [item.title, item.knowledgePoint, item.analysis, item.questionText, subjectName(item.subjectId)].join(" ")
+      ).includes(keyword))
     );
   });
 

@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { createRequire } from "node:module";
 import { listenSafePort } from "./lib/safe-listen.mjs";
+import { seedRows } from "./lib/seed-rows.mjs";
 
 const WORKSPACE = "C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace";
 const chromium = createRequire(`${WORKSPACE}/package.json`)("playwright-core").chromium;
@@ -81,29 +82,6 @@ const SEED = Array.from({ length: 8 }, (_, index) => ({
   note: ""
 }));
 
-/** 应用用的是 Dexie/IndexedDB，等它自己建好库之后直接往里塞记录 */
-function seedRecords(page) {
-  return page.evaluate(
-    (rows) =>
-      new Promise((resolve, reject) => {
-        const request = indexedDB.open("exam-tracker-v3");
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          const db = request.result;
-          const tx = db.transaction("records", "readwrite");
-          const store = tx.objectStore("records");
-          rows.forEach((row) => store.put(row));
-          tx.oncomplete = () => {
-            db.close();
-            resolve(rows.length);
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-      }),
-    SEED
-  );
-}
-
 /**
  * 打开页面 → 等应用建库 → 塞数据 → 重载。
  *
@@ -113,7 +91,7 @@ function seedRecords(page) {
 async function openSeeded(page, url) {
   await page.goto(url, { waitUntil: "networkidle" });
   await page.waitForTimeout(1200);
-  await seedRecords(page);
+  await seedRows(page, { records: SEED });
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForTimeout(1000);
 }
@@ -320,10 +298,12 @@ if (!resultCount) {
   await searchPage.waitForTimeout(1200);
   await searchPage.fill(SEARCH, "模拟");
   await searchPage.waitForTimeout(400);
+  await searchPage.keyboard.press("ArrowDown");
   await searchPage.keyboard.press("Escape");
   await searchPage.waitForTimeout(300);
-  const popoverAfterEscape = await searchPage.evaluate(() => !!document.querySelector(".global-search-popover"));
-  check(!popoverAfterEscape, "Escape 能收起搜索浮层", "Escape 收不起搜索浮层");
+  const searchRestored = await searchPage.evaluate((selector) =>
+    !document.querySelector(".global-search-popover") && document.activeElement.matches(selector), SEARCH);
+  check(searchRestored, "Escape 收起搜索浮层并将焦点还给输入框", "Escape 后搜索浮层或焦点状态不正确");
 }
 await searchPage.close();
 
@@ -486,6 +466,61 @@ if (!askedMistake) {
     `地址里还留着 ${s9.hash} —— 这个页面一改筛选就会 replace 掉整个 query，把预填的标题冲掉`);
 }
 await formPage.close();
+
+console.log("\n场景 10：错题搜索保留焦点，复习返回保留页码");
+const reviewPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await reviewPage.goto(`${base}/#/mistakes`);
+await reviewPage.getByRole("heading", { name: "错题库", exact: true }).waitFor();
+await seedRows(reviewPage, { mistakes: Array.from({ length: 18 }, (_, index) => ({
+  id: `review-${index}`,
+  subjectId: "math1",
+  title: `积分复习 ${index + 1}`,
+  status: "待复盘",
+  createdAt: new Date(Date.UTC(2026, 8, index + 1)).toISOString()
+})) });
+await reviewPage.reload();
+const reviewSearch = reviewPage.getByPlaceholder("题目、知识点或解析");
+await reviewSearch.fill("积分");
+await reviewPage.waitForURL((url) => url.hash.includes("q="));
+check(await reviewSearch.evaluate((input) => input === document.activeElement),
+  "搜索条件生效后输入框仍保持焦点", "搜索条件生效后输入框失去焦点");
+const reviewPager = reviewPage.getByRole("navigation", { name: "错题列表分页" });
+await reviewPager.getByRole("button", { name: "下一页" }).click();
+await reviewPager.getByText("第 2 / 3 页").waitFor();
+const reviewTitle = await reviewPage.locator(".review-card-title").first().innerText();
+await reviewPage.getByRole("link", { name: "复习", exact: true }).first().click();
+await reviewPage.getByRole("heading", { name: reviewTitle, exact: true }).waitFor();
+await reviewPage.getByRole("link", { name: "返回错题库" }).click();
+await reviewPager.getByText("第 2 / 3 页").waitFor();
+check(await reviewSearch.inputValue() === "积分" && await reviewPage.locator(".review-card-title").first().innerText() === reviewTitle,
+  "从复习返回后保留关键词和列表页码", "从复习返回后筛选或页码丢失");
+
+console.log("\n场景 11：复习保存尚未完成时翻到下一题");
+await reviewPage.getByRole("link", { name: "复习", exact: true }).first().click();
+await reviewPage.getByRole("heading", { name: reviewTitle, exact: true }).waitFor();
+const getReviewId = () => reviewPage.evaluate(() => location.hash.split("?")[0].split("/").at(-1));
+const firstReviewId = await getReviewId();
+await reviewPage.evaluate(() => {
+  const store = document.querySelector("#app").__vue_app__.config.globalProperties.$pinia._s.get("tracker");
+  const save = store.updateMistake;
+  store.updateMistake = async (...args) => {
+    const result = await save(...args);
+    await new Promise((resolve) => { window.finishReviewSave = resolve; });
+    return result;
+  };
+});
+await reviewPage.getByRole("button", { name: "完成本次复习" }).click();
+await reviewPage.waitForFunction(() => typeof window.finishReviewSave === "function");
+await reviewPage.getByRole("button", { name: "下一题" }).click();
+await reviewPage.waitForURL((url) => !url.hash.includes(`/${firstReviewId}?`));
+const secondReviewId = await getReviewId();
+await reviewPage.evaluate(() => window.finishReviewSave());
+await reviewPage.getByText("已标记为「已掌握」", { exact: true }).waitFor();
+const logs = await reviewPage.evaluate((ids) => ids.map((id) =>
+  JSON.parse(localStorage.getItem(`exam-tracker-review-log-${id}`) || "[]")), [firstReviewId, secondReviewId]);
+check(firstReviewId !== secondReviewId && logs[0].length === 1 && logs[0][0].status === "已掌握" && logs[1].length === 0,
+  "复习日志只写入操作时的题目", "翻题后复习日志写错了题目");
+await reviewPage.close();
 
 console.log(`\n${problems === 0 ? "没有发现问题" : `共 ${problems} 个问题`}`);
 await browser.close();
