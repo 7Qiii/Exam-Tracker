@@ -408,6 +408,70 @@ await restarted.syncNow();
 check("合法成绩正常上传", cloudTables.records.some((row) => row.id === valid.id), true);
 check("失败的成绩单独留在待同步队列", dbStub.read("records").find((row) => row.id === invalid.id)?.pendingSync, true);
 
+section("备份合并先写本机，云端版本须经校准");
+dbStub.write("records", []);
+dbStub.write("mistakes", []);
+dbStub.write("images", []);
+dbStub.write("deletedRecords", []);
+cloudTables = { subjects: [], records: [], mistakes: [], mistake_images: [] };
+const backupStore = useTrackerStore(createPinia());
+await backupStore.loadFromCloud();
+const importedRows = ["云端更新", "时间相同", "备份更新", "云端尚未确认"].map((paperName) => ({
+  id: crypto.randomUUID(), subjectId: "math1", paperName, score: 80, fullScore: 150,
+  date: "2026-10-03", createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-03T00:00:00.000Z", pendingSync: true
+}));
+const [cloudNewer, cloudEqual, localNewer, notInSnapshot] = importedRows;
+const backupPayload = {
+  version: 3, records: importedRows,
+  subjects: [{ id: "local-backup-subject", name: "备份科目", fullScore: 100 }],
+  mistakes: [{ id: "local-backup-mistake", title: "备份错题", subjectId: "local-backup-subject" }],
+  images: [{ id: "local-backup-image", ownerId: "local-backup-mistake", url: "https://example.invalid/image.webp" }]
+};
+let rejectedDestructiveActions = 0;
+for (const action of [() => backupStore.importData(backupPayload, false), () => backupStore.clearAll()]) {
+  try {
+    await action();
+  } catch (error) {
+    rejectedDestructiveActions += Number(/云同步/.test(error.message));
+  }
+}
+check("云同步环境拒绝覆盖与清空", rejectedDestructiveActions, 2);
+calls.length = 0;
+await backupStore.importData(backupPayload);
+await backupStore.syncNow();
+check("备份里的同步标记不会触发上传", writesFor("records").length, 0);
+cloudTables.subjects = [{ id: "math1", name: "数一", full_score: 150 }];
+cloudTables.records = [
+  recordRow(cloudNewer, cloudNewer.id, { score: 120, updated_at: "2026-10-04T00:00:00.000Z" }),
+  recordRow(cloudEqual, cloudEqual.id, { score: 110, updated_at: cloudEqual.updatedAt }),
+  recordRow(localNewer, localNewer.id, { score: 65, updated_at: "2026-10-02T00:00:00.000Z" })
+];
+await backupStore.loadFromCloud();
+checkDeep("按可靠时间比较云端和备份版本", importedRows.map((row) => backupStore.records.find((record) => record.id === row.id)?.score), [120, 110, 80, 80]);
+checkDeep("只有确认比云端更新的记录被上传", writesFor("records").flatMap((call) => call.body.map((row) => row.id)), [localNewer.id]);
+check("云端读取中缺失的成绩保留在本机", dbStub.read("records").some((row) => row.id === notInSnapshot.id && row.restoredFromBackup), true);
+check("本机恢复的科目、错题和图片在云端校准后保留", ["subjects", "mistakes", "images"].every((table) =>
+  dbStub.read(table).some((row) => row.id.startsWith("local-backup-"))), true);
+
+section("导入期间返回的旧云端快照不会提前确认备份数据");
+const duringRead = { ...cloudNewer, id: crypto.randomUUID(), paperName: "在校准期间导入" };
+cloudTables.records = [...cloudTables.records, recordRow(duringRead, duringRead.id, { score: 50, updated_at: "2026-10-01T00:00:00.000Z" })];
+const heldBackupRead = holdRequest();
+holdRecordRead = heldBackupRead.hold;
+const beforeImport = backupStore.loadFromCloud();
+await heldBackupRead.started;
+await backupStore.importData({ records: [duringRead] });
+cloudTables.records = cloudTables.records.map((row) => row.id === duringRead.id
+  ? { ...row, score: 125, updated_at: "2026-10-05T00:00:00.000Z" }
+  : row);
+calls.length = 0;
+heldBackupRead.release();
+await beforeImport;
+check("过期的云端读取不触发备份上传", writesFor("records").length, 0);
+check("过期的云端读取保留本机导入内容", dbStub.read("records").find((row) => row.id === duringRead.id)?.score, 80);
+await backupStore.loadFromCloud();
+check("重新校准后较新的云端版本写回本机", dbStub.read("records").find((row) => row.id === duringRead.id)?.score, 125);
+
 // ---------------------------------------------------------------------------
 
 const cleared = env.cleanup();

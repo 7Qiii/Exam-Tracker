@@ -58,7 +58,7 @@ function rebuildImageSources(list) {
   releaseImageSources();
   const next = {};
   list.forEach((image) => {
-    if (image.url) {
+    if (image.url && !image.blob) {
       next[image.id] = image.url;
       return;
     }

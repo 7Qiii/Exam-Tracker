@@ -32,6 +32,7 @@ import {
   Upload
 } from "@lucide/vue";
 import ContributionHeatmap from "../components/ContributionHeatmap.vue";
+import BackupImportControl from "../components/BackupImportControl.vue";
 import RecordForm from "../components/RecordForm.vue";
 import ScoreCharts from "../components/ScoreCharts.vue";
 import { exportRecordsToExcel } from "../services/excelExport";
@@ -43,6 +44,7 @@ import { confirmDiscardChanges } from "../composables/useUnsavedChanges";
 import { useTrackerStore } from "../stores/tracker";
 import { formatDuration } from "../utils/recordDisplay";
 import { isInDateRange, localDateKey } from "../utils/dateRange";
+import { downloadBackup } from "../utils/downloadBackup";
 
 const store = useTrackerStore();
 
@@ -75,7 +77,6 @@ const initialFilter = readFilter();
 const selectedSubject = ref(initialFilter.subjectId);
 const rangeDays = ref(initialFilter.rangeDays);
 const showRecordForm = ref(false);
-const importFile = ref(null);
 
 /**
  * 收起 / 关闭录入表单前先问一句。
@@ -337,15 +338,12 @@ function recordMeta(record) {
 }
 
 async function exportData() {
-  const data = await store.exportData();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `exam-tracker-${new Date().toISOString().slice(0, 10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-  store.markBackupExported();
+  try {
+    await downloadBackup(store, "exam-tracker");
+  } catch (error) {
+    console.error(error);
+    store.notify("无法导出当前档案，请检查浏览器存储后重试。", "error", 6000);
+  }
 }
 
 /**
@@ -371,21 +369,8 @@ async function exportScoresExcel() {
   }
 }
 
-function chooseImport() {
-  importFile.value?.click();
-}
-
-async function onImport(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  try {
-    await store.importData(JSON.parse(await file.text()), true);
-    store.notify("数据已合并导入", "success");
-  } catch (error) {
-    store.notify(error.message || "导入失败，请检查文件格式", "error", 6000);
-  } finally {
-    event.target.value = "";
-  }
+function onBackupImported(message, warning) {
+  store.notify(message, warning ? "error" : "success", 6000);
 }
 </script>
 
@@ -526,20 +511,19 @@ async function onImport(event) {
       </DsSection>
 
       <DsSection title="快捷入口">
-        <div class="ds-quick-grid">
-          <button class="ds-quick-item" type="button" @click="exportScoresExcel">
-            <FileSpreadsheet :size="17" />导出成绩 Excel
-          </button>
-          <RouterLink class="ds-quick-item" to="/records"><ClipboardList :size="17" />成绩记录</RouterLink>
-          <RouterLink class="ds-quick-item" to="/mistakes"><BookOpenCheck :size="17" />错题库</RouterLink>
-          <RouterLink class="ds-quick-item" to="/subjects"><FolderCog :size="17" />科目管理</RouterLink>
-          <RouterLink class="ds-quick-item" to="/backup"><Database :size="17" />数据备份</RouterLink>
-          <button class="ds-quick-item" type="button" @click="exportData"><Upload :size="17" />备份全部数据</button>
-          <button class="ds-quick-item" type="button" @click="chooseImport"><Database :size="17" />恢复备份</button>
-        </div>
-        <!-- 隐藏的文件框只是「恢复备份」按钮的实现细节，真正的控件是那个按钮。
-             从可访问性树里摘掉，免得读屏用户多停一个说不清用途的输入框。 -->
-        <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" aria-hidden="true" tabindex="-1" @change="onImport" />
+        <BackupImportControl v-slot="{ choose, busy }" @completed="onBackupImported" @failed="store.notify($event, 'error', 6000)">
+          <div class="ds-quick-grid">
+            <button class="ds-quick-item" type="button" @click="exportScoresExcel">
+              <FileSpreadsheet :size="17" />导出成绩 Excel
+            </button>
+            <RouterLink class="ds-quick-item" to="/records"><ClipboardList :size="17" />成绩记录</RouterLink>
+            <RouterLink class="ds-quick-item" to="/mistakes"><BookOpenCheck :size="17" />错题库</RouterLink>
+            <RouterLink class="ds-quick-item" to="/subjects"><FolderCog :size="17" />科目管理</RouterLink>
+            <RouterLink class="ds-quick-item" to="/backup"><Database :size="17" />数据备份</RouterLink>
+            <button class="ds-quick-item" type="button" @click="exportData"><Upload :size="17" />备份全部数据</button>
+            <button class="ds-quick-item" type="button" :disabled="busy" @click="choose()"><Database :size="17" />恢复备份</button>
+          </div>
+        </BackupImportControl>
       </DsSection>
     </section>
 

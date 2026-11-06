@@ -1,4 +1,5 @@
 import Dexie from "dexie";
+import { BACKUP_TABLES, BACKUP_VERSION, BackupImportError, backupTimestamp } from "./backup.js";
 
 export const db = new Dexie("exam-tracker-v3");
 
@@ -141,14 +142,17 @@ export async function seedIfEmpty({ seedDemo = false } = {}) {
 }
 
 export async function loadAllData(options = {}) {
+  // Dexie 首次打开失败后会记住失败状态，用户重试时需要显式再次打开。
+  await db.open();
   await seedIfEmpty(options);
-  const [subjects, records, mistakes, images] = await Promise.all([
-    db.subjects.toArray(),
-    db.records.toArray(),
-    db.mistakes.toArray(),
-    db.images.toArray()
-  ]);
-  return { subjects: normalizeSubjects(subjects), records, mistakes, images };
+  return readLocalData();
+}
+
+export async function readLocalData() {
+  return db.transaction("r", db.subjects, db.records, db.mistakes, db.images, async () => {
+    const [subjects, records, mistakes, images] = await Promise.all(BACKUP_TABLES.map((table) => db[table].toArray()));
+    return { subjects: normalizeSubjects(subjects), records, mistakes, images };
+  });
 }
 
 export async function replaceAllData(payload) {
@@ -190,51 +194,178 @@ export async function addImageEntries(entries) {
 }
 
 export async function exportPortableData() {
-  const data = await loadAllData();
+  const data = await readLocalData();
   const images = await Promise.all(
-    data.images.map(async (image) => ({
-      ...image,
-      blob: image.blob ? await blobToDataUrl(image.blob) : null
+    data.images.map(async ({ restoredFromBackup, pendingUpload, uploadError, ...image }) => ({
+      ...image, blob: image.blob ? await blobToDataUrl(image.blob) : null
     }))
   );
-  return { ...data, images, exportedAt: new Date().toISOString(), version: 3 };
+  const withoutLocalState = (rows) => rows.map(({ restoredFromBackup, pendingSync, ...row }) => row);
+  return {
+    subjects: withoutLocalState(data.subjects),
+    records: withoutLocalState(data.records),
+    mistakes: withoutLocalState(data.mistakes),
+    images,
+    exportedAt: new Date().toISOString(),
+    version: BACKUP_VERSION
+  };
 }
 
-export async function importPortableData(payload, merge = true) {
-  const images = await Promise.all(
-    (payload.images || []).map(async (image) => ({
-      ...image,
-      blob: typeof image.blob === "string" ? await dataUrlToBlob(image.blob) : image.blob || null
-    }))
-  );
+function backupTables() {
+  return [...BACKUP_TABLES.map((table) => db[table]), db.deletedRecords];
+}
 
-  const normalized = {
-    subjects: normalizeSubjects(payload.subjects || []),
-    records: toPlainEntries(payload.records || []),
-    mistakes: toPlainEntries(payload.mistakes || []),
-    images: toPlainEntries(images)
-  };
-
-  await db.transaction("rw", db.subjects, db.records, db.mistakes, db.images, db.deletedRecords, async () => {
-    // 恢复备份中的同一条成绩，也会撤销它尚未发出的删除。
-    const ids = normalized.records.map((record) => record.id);
-    const trash = await db.deletedRecords.bulkGet(ids);
-    if (trash.some(Boolean)) {
-      const now = new Date().toISOString();
-      normalized.records = normalized.records.map((record, index) =>
-        trash[index] ? { ...record, pendingSync: true, updatedAt: now } : record
-      );
-      await db.deletedRecords.bulkDelete(trash.filter(Boolean).map((entry) => entry.id));
-    }
-    if (merge) {
-      await db.subjects.bulkPut(normalized.subjects);
-      await db.records.bulkPut(normalized.records);
-      await db.mistakes.bulkPut(normalized.mistakes);
-      await db.images.bulkPut(normalized.images);
-    } else {
-      await replaceAllData(normalized);
-    }
+export function previewPortableImport(backup, options = {}) {
+  return db.transaction("r", ...backupTables(), async () => {
+    const { summary } = await planPortableImport(backup, options);
+    return summary;
   });
+}
+
+export async function importPortableData(backup, options = {}) {
+  const { merge = true, allowPartial = false, expectedRevision, expectedRestoration, expectedInvalid } = options;
+  const result = await db.transaction("rw", ...backupTables(), async () => {
+    const { summary, writes, restoredIds, trash } = await planPortableImport(backup, options);
+    if (!merge && expectedRevision !== undefined && expectedRevision !== summary.revision) {
+      throw new BackupImportError("预览后，本机数据发生了变化。请重新核对覆盖范围。", "STALE_PREVIEW");
+    }
+    if ((expectedRestoration !== undefined && expectedRestoration !== summary.restorationRevision) ||
+      (expectedInvalid !== undefined && summary.invalid > expectedInvalid)) {
+      throw new BackupImportError("预览后，可恢复或需跳过的数据发生了变化。请重新确认。", "STALE_PREVIEW");
+    }
+    if (summary.blockingMessage) throw new BackupImportError(summary.blockingMessage);
+    if (summary.invalid && !allowPartial) throw new BackupImportError("请确认跳过无效条目后再合并。");
+
+    if (!merge) {
+      await replaceAllData(writes);
+      await dropTrashSnapshots(trash, restoredIds);
+    } else {
+      for (const table of BACKUP_TABLES) {
+        if (writes[table].length) await db[table].bulkPut(writes[table]);
+      }
+      if (restoredIds.size) await db.deletedRecords.bulkDelete([...restoredIds]);
+    }
+    return summary;
+  });
+  if (!merge) markDemoSeeded();
+  return result;
+}
+
+export async function clearLocalArchive() {
+  const pending = await db.transaction("rw", db.records, db.mistakes, db.images, db.deletedRecords, async () => {
+    const trash = await db.deletedRecords.toArray();
+    await Promise.all([db.records.clear(), db.mistakes.clear(), db.images.clear()]);
+    return dropTrashSnapshots(trash, new Set());
+  });
+  markDemoSeeded();
+  return pending;
+}
+
+async function dropTrashSnapshots(trash, restoredIds) {
+  // 删除仍需送达云端时，保留身份、版本和回执所需的信息，清掉可恢复的内容。
+  const pending = trash.filter((entry) => entry.pendingSync && !restoredIds.has(entry.id))
+    .map((entry) => ({ ...entry, record: null }));
+  await db.deletedRecords.clear();
+  if (pending.length) await db.deletedRecords.bulkPut(pending);
+  return pending;
+}
+
+async function planPortableImport(backup, { merge = true, restoreDeleted = false, userId, cloudConfigured = false } = {}) {
+  const { data, rejected, issues } = backup;
+  const complete = BACKUP_TABLES.every((table) => Object.hasOwn(data, table));
+  if (!merge && !complete) throw new BackupImportError("覆盖恢复需要包含科目、成绩、错题和图片的完整备份。");
+  if (!merge && issues.length) throw new BackupImportError(`覆盖恢复要求每条数据有效。${issues[0]}`);
+
+  const imageOwnerIds = (data.images || []).map((image) => image.ownerId);
+  const reads = BACKUP_TABLES.map((table) => {
+    if (!merge) return db[table].toArray();
+    const ids = (data[table] || []).map((row) => row.id);
+    if (table === "mistakes") ids.push(...imageOwnerIds);
+    return db[table].bulkGet([...new Set(ids)]).then((rows) => rows.filter(Boolean));
+  });
+  const [existingRows, trash] = await Promise.all([
+    Promise.all(reads),
+    merge ? db.deletedRecords.bulkGet((data.records || []).map((row) => row.id)).then((rows) => rows.filter(Boolean))
+      : db.deletedRecords.toArray()
+  ]);
+  const trashById = new Map(trash.map((entry) => [entry.id, entry]));
+  const existingByTable = Object.fromEntries(BACKUP_TABLES.map((table, index) => [table, existingRows[index]]));
+  const restoredIds = new Set();
+  const writes = {};
+  const tables = {};
+  const details = [...issues];
+  let blockedDeleted = 0;
+  const mistakeIds = new Set(merge ? existingByTable.mistakes.map((row) => row.id) : []);
+
+  for (const table of BACKUP_TABLES) {
+    const existing = new Map(existingByTable[table].map((row) => [row.id, row]));
+    const stats = { added: 0, updated: 0, skipped: 0, invalid: rejected[table] || 0,
+      deleted: 0, restorable: 0, restored: 0, remoteOnly: 0, current: merge ? null : existing.size };
+    writes[table] = [];
+    tables[table] = stats;
+    for (const row of data[table] || []) {
+      if (table === "images" && !mistakeIds.has(row.ownerId)) {
+        stats.invalid += 1;
+        if (details.length < 5) details.push("有图片找不到关联的错题。");
+        continue;
+      }
+      const local = existing.get(row.id);
+      if (merge && local && !canUpdateFromBackup(table, local, row)) {
+        stats.skipped += 1;
+        continue;
+      }
+      const deleted = table === "records" ? trashById.get(row.id) : undefined;
+      if (deleted) {
+        const canRestore = !deleted.userId || deleted.userId === userId;
+        if (canRestore) stats.restorable += 1;
+        if (!canRestore || !restoreDeleted) {
+          stats.deleted += 1;
+          stats.skipped += 1;
+          blockedDeleted += Number(!canRestore);
+          continue;
+        }
+        stats.restored += 1;
+        restoredIds.add(row.id);
+      }
+      if (table === "mistakes") mistakeIds.add(row.id);
+      if (table === "images" && !row.blob) stats.remoteOnly += 1;
+      stats[merge && local ? "updated" : "added"] += 1;
+      const next = { ...row };
+      if (cloudConfigured) next.restoredFromBackup = true;
+      if (deleted?.userId && deleted.userId === userId) {
+        // 恢复是一次新的显式操作，上传要排在同一账号已发出的删除之后。
+        next.pendingSync = true;
+        next.updatedAt = new Date().toISOString();
+      }
+      writes[table].push(next);
+    }
+  }
+  const totals = Object.values(tables);
+  const count = (key) => totals.reduce((sum, table) => sum + table[key], 0);
+  let blockingMessage = "";
+  if (!merge && count("invalid")) blockingMessage = "覆盖恢复要求每条数据有效，当前备份里有图片缺少关联错题。";
+  else if (!merge && blockedDeleted) blockingMessage = "备份包含其他账号尚有删除记录的成绩，无法覆盖恢复。";
+  else if (!merge && count("deleted")) blockingMessage = "请先确认恢复备份中曾删除的成绩。";
+  else if (merge && !count("added") && !count("updated") && !count("skipped") && count("invalid")) {
+    blockingMessage = "备份里没有可导入的有效条目。";
+  }
+  const summary = {
+    tables, details, blockingMessage,
+    added: count("added"), updated: count("updated"), skipped: count("skipped") + count("invalid"),
+    invalid: count("invalid"), restored: count("restored"), restorable: count("restorable"),
+    remoteOnly: count("remoteOnly"),
+    restorationRevision: JSON.stringify([...restoredIds].map((id) => [id, trashById.get(id).operationId || trashById.get(id).deletedAt])),
+    revision: merge ? null : JSON.stringify([existingRows, trash], (_key, value) =>
+      value instanceof Blob ? { size: value.size, type: value.type } : value)
+  };
+  return { summary, writes, restoredIds, trash };
+}
+
+function canUpdateFromBackup(table, local, incoming) {
+  if (table !== "records" && table !== "mistakes") return false;
+  const current = backupTimestamp(local);
+  const next = backupTimestamp(incoming);
+  return current !== null && next !== null && next > current;
 }
 
 function sampleRecord(subjectId, paperName, daysAgo, score, fullScore, durationMinutes, note, paperVariant = "") {
@@ -296,9 +427,4 @@ function blobToDataUrl(blob) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
-}
-
-async function dataUrlToBlob(dataUrl) {
-  const response = await fetch(dataUrl);
-  return response.blob();
 }

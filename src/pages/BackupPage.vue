@@ -2,18 +2,17 @@
 import { computed, ref } from "vue";
 import { BookOpenCheck, ClipboardList, Database, Download, FolderCog, HardDrive, ShieldCheck, Trash2, Upload } from "@lucide/vue";
 import { useTrackerStore } from "../stores/tracker";
-import { useConfirm } from "../composables/useConfirm";
+import BackupImportControl from "../components/BackupImportControl.vue";
 import DsPageHeader from "../components/ds/DsPageHeader.vue";
 import DsSection from "../components/ds/DsSection.vue";
 import DsStatCard from "../components/ds/DsStatCard.vue";
+import { downloadBackup } from "../utils/downloadBackup";
 
 const store = useTrackerStore();
-const { confirm } = useConfirm();
-const importFile = ref(null);
-const importMode = ref("merge");
 const confirmText = ref("");
 const message = ref("");
 const error = ref("");
+const clearing = ref(false);
 
 const totals = computed(() => [
   { label: "科目", value: store.subjects.length, unit: "个", icon: FolderCog },
@@ -35,62 +34,46 @@ const backupHint = computed(() => {
 const shouldBackup = computed(() => hasData.value && (backupAgeDays.value >= 7 || !store.lastBackupAt));
 
 async function exportData() {
-  const data = await store.exportData();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `exam-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-  store.markBackupExported();
-  message.value = "备份文件已生成。";
-  error.value = "";
-}
-
-function chooseImport(mode) {
-  importMode.value = mode;
-  importFile.value?.click();
-}
-
-async function onImport(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
   message.value = "";
   error.value = "";
   try {
-    const payload = JSON.parse(await file.text());
-
-    // 覆盖恢复会清掉当前全部成绩、错题、图片和科目配置，且不可撤销。
-    // 之前选完文件就直接替换了，选错一个文件等于清档，所以这里必须二次确认。
-    if (importMode.value === "replace") {
-      const ok = await confirm({
-        title: "覆盖恢复？",
-        message: `将用「${file.name}」替换当前全部成绩、错题、图片和科目配置，现有数据会被清掉且无法撤销。`,
-        confirmText: "覆盖恢复"
-      });
-      if (!ok) return;
-    }
-
-    await store.importData(payload, importMode.value === "merge");
-    message.value = importMode.value === "merge" ? "数据已合并导入。" : "数据已覆盖恢复。";
-  } catch (err) {
-    error.value = err.message || "导入失败，请检查备份文件。";
-  } finally {
-    event.target.value = "";
+    await downloadBackup(store);
+    message.value = "备份文件已生成。";
+  } catch (cause) {
+    console.error(cause);
+    error.value = "无法导出当前档案，请检查浏览器存储后重试。";
   }
 }
 
+function onImportCompleted(text, warning) {
+  message.value = warning ? "" : text;
+  error.value = warning ? text : "";
+}
+
+function onImportFailed(text) {
+  message.value = "";
+  error.value = text;
+}
+
 async function clearData() {
+  if (clearing.value || !store.canReplaceBackup) return;
   message.value = "";
   error.value = "";
   if (confirmText.value !== "清空") {
     error.value = "请输入“清空”后再执行。";
     return;
   }
-  await store.clearAll();
-  confirmText.value = "";
-  message.value = "成绩、错题和图片已清空，科目配置保留。";
+  clearing.value = true;
+  try {
+    await store.clearAll();
+    confirmText.value = "";
+    message.value = "成绩、错题、图片和最近删除中的可恢复内容已清空，科目配置保留。";
+  } catch (cause) {
+    console.error(cause);
+    error.value = "清空未完成，请检查浏览器存储后重试。";
+  } finally {
+    clearing.value = false;
+  }
 }
 </script>
 
@@ -127,40 +110,41 @@ async function clearData() {
     </section>
 
     <section class="content-grid">
-      <DsSection title="导入恢复" description="支持合并或覆盖恢复">
-        <div class="action-stack">
-          <button class="secondary-button" type="button" @click="chooseImport('merge')">
-            <Upload :size="17" />
-            合并导入
-          </button>
-          <button class="secondary-button" type="button" @click="chooseImport('replace')">
-            <Database :size="17" />
-            覆盖恢复
-          </button>
-          <!-- 同上：真正的控件是「合并导入 / 覆盖恢复」两个按钮 -->
-          <input ref="importFile" class="visually-hidden" type="file" accept=".json,application/json" aria-hidden="true" tabindex="-1" @change="onImport" />
-          <p class="form-tip">
-            <ShieldCheck :size="16" />
-            合并导入会保留现有数据；覆盖恢复会替换当前成绩、错题、图片和科目配置。
-          </p>
-        </div>
+      <DsSection title="导入恢复" description="先查看预览，再确认写入">
+        <BackupImportControl v-slot="{ choose, busy }" @completed="onImportCompleted" @failed="onImportFailed">
+          <div class="action-stack">
+            <button class="secondary-button" type="button" :disabled="busy || clearing" @click="choose('merge')">
+              <Upload :size="17" />
+              合并导入
+            </button>
+            <button class="secondary-button" type="button" :disabled="busy || clearing || !store.canReplaceBackup" @click="choose('replace')">
+              <Database :size="17" />
+              覆盖恢复
+            </button>
+            <p class="form-tip">
+              <ShieldCheck :size="16" />
+              {{ store.canReplaceBackup ? "合并会保留较新的本机记录。覆盖会替换本机档案。" : "当前环境已配置云同步，仅支持合并导入。" }}
+            </p>
+          </div>
+        </BackupImportControl>
       </DsSection>
 
-      <DsSection title="危险操作" description="清空时会保留科目配置">
+      <DsSection title="危险操作" description="清空本机数据和可恢复快照，保留科目配置">
         <div class="form-grid">
           <label>
             输入“清空”确认
-            <input v-model.trim="confirmText" placeholder="清空" />
+            <input v-model.trim="confirmText" placeholder="清空" :disabled="clearing || !store.canReplaceBackup" />
           </label>
-          <button class="secondary-button danger-text" type="button" @click="clearData">
+          <button class="secondary-button danger-text" type="button" :disabled="clearing || !store.canReplaceBackup" @click="clearData">
             <Trash2 :size="17" />
-            清空成绩、错题和图片
+            {{ clearing ? "正在清空…" : "清空成绩、错题和图片" }}
           </button>
+          <p v-if="!store.canReplaceBackup" class="ds-muted">配置云同步的环境暂不支持清空。</p>
         </div>
       </DsSection>
     </section>
 
-    <div v-if="message || error" class="inline-alert" :class="{ danger: error }">
+    <div v-if="message || error" class="inline-alert" :class="{ danger: error }" :role="error ? 'alert' : 'status'">
       {{ error || message }}
     </div>
   </div>

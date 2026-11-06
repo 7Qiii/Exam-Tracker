@@ -141,10 +141,11 @@ try {
   const importCounts = await page.evaluate(async () => {
     const { db } = await import("/src/services/storage.js");
     const entries = await db.deletedRecords.limit(2).toArray();
-    await window.entryStore.importData({ records: [entries[0].record] }, true);
+    await window.entryStore.importData({ records: [entries[0].record] }, true, { restoreDeleted: true });
     const merged = [await db.records.count(), await db.deletedRecords.count()];
-    await window.entryStore.importData({ records: [entries[1].record] }, false);
+    // 覆盖恢复要求完整备份，并清掉不属于新档案的可恢复快照。
+    await window.entryStore.importData({ subjects: [], records: [entries[1].record], mistakes: [], images: [] }, false, { restoreDeleted: true });
     return [merged, [await db.records.count(), await db.deletedRecords.count()]];
   });
-  assert.deepEqual(importCounts, [[2, 2999], [1, 2998]], "Backup recovery restores records and removes their deletion entries");
+  assert.deepEqual(importCounts, [[2, 2999], [1, 0]], "Backup recovery restores selected records and clears superseded snapshots");
 } finally { await browser?.close(); await server.close(); }

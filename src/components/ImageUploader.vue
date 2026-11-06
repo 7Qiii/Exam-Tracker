@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ChevronLeft, ChevronRight, ImagePlus, Maximize2, Trash2, X } from "@lucide/vue";
 import { useDialogA11y } from "../composables/useDialogA11y";
 
@@ -13,12 +13,23 @@ const pending = ref([]);
 const activeIndex = ref(-1);
 const warning = ref("");
 const isDragging = ref(false);
+const persistedUrls = new Map();
+
+function imageUrl(image) {
+  if (!image.blob) return image.url || "";
+  const existing = persistedUrls.get(image.id);
+  if (existing?.blob === image.blob) return existing.url;
+  if (existing) URL.revokeObjectURL(existing.url);
+  const url = URL.createObjectURL(image.blob);
+  persistedUrls.set(image.id, { blob: image.blob, url });
+  return url;
+}
 
 const previews = computed(() => [
   ...props.images.map((image) => ({
     id: image.id,
     name: image.name,
-    url: image.url || URL.createObjectURL(image.blob),
+    url: imageUrl(image),
     size: image.size || image.blob?.size || 0,
     pendingUpload: Boolean(image.pendingUpload),
     uploadError: image.uploadError || "",
@@ -29,6 +40,20 @@ const previews = computed(() => [
 const activeImage = computed(() => previews.value[activeIndex.value] || null);
 const totalSize = computed(() => previews.value.reduce((sum, image) => sum + Number(image.size || 0), 0));
 const summary = computed(() => `${previews.value.length} 张 / ${formatBytes(totalSize.value)}`);
+
+watch(() => props.images, (images) => {
+  const blobs = new Map(images.map((image) => [image.id, image.blob]));
+  for (const [id, entry] of persistedUrls) {
+    if (blobs.get(id) === entry.blob) continue;
+    URL.revokeObjectURL(entry.url);
+    persistedUrls.delete(id);
+  }
+});
+
+onBeforeUnmount(() => {
+  for (const { url } of persistedUrls.values()) URL.revokeObjectURL(url);
+  for (const { url } of pending.value) URL.revokeObjectURL(url);
+});
 
 watch(
   () => props.resetKey,

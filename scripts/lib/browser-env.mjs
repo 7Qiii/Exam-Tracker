@@ -229,6 +229,7 @@ export function stubDatabase(db, { seed = {} } = {}) {
     const callback = args[args.length - 1];
     return typeof callback === "function" ? callback() : undefined;
   };
+  db.open = async () => db;
 
   return {
     rows,

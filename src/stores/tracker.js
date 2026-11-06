@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref, toRaw } from "vue";
 import {
   addImageEntries,
+  clearLocalArchive,
   db,
   exportPortableData,
   importPortableData,
@@ -9,8 +10,11 @@ import {
   isDemoRecord,
   loadAllData,
   normalizeSubjects,
+  previewPortableImport,
+  readLocalData,
   replaceAllData
 } from "../services/storage";
+import { BackupImportError, backupTimestamp, inspectBackupPayload } from "../services/backup";
 import { compressImage } from "../services/imageTools";
 import { compareByTimeThenId } from "../utils/sorting";
 import { appendNoteMeta, normalizeReadingParts, readingPartsFromRecord, recordTitle, stripNoteMeta } from "../utils/recordDisplay";
@@ -18,7 +22,6 @@ import { uploadMistakeImage } from "../services/r2";
 import {
   deleteMistakeCloud,
   deleteMistakeImageCloud,
-  deleteRecordCloud,
   deleteRecordsCloud,
   deleteSubjectCloud,
   getSession,
@@ -77,11 +80,13 @@ export const useTrackerStore = defineStore("tracker", () => {
   let recordSyncPromise = null;
   let recordSyncRequested = false;
   let recordSyncError = "";
+  let backupImportRevision = 0;
 
   const subjectMap = computed(() => new Map(subjects.value.map((subject) => [subject.id, subject])));
   const recordMap = computed(() => new Map(records.value.map((record) => [record.id, record])));
   const deletedRecordMap = computed(() => new Map(deletedRecords.value.map((entry) => [entry.id, entry])));
   const visibleSubjects = computed(() => subjects.value.filter((subject) => !subject.hidden));
+  const canReplaceBackup = !isSupabaseConfigured;
   const restorableDeletedRecords = computed(() => deletedRecords.value.filter(canRestoreDeletedRecord));
   const imageStorageStats = computed(() => {
     const totalBytes = images.value.reduce((sum, image) => sum + Number(image.size || image.blob?.size || 0), 0);
@@ -105,21 +110,23 @@ export const useTrackerStore = defineStore("tracker", () => {
     return autoSyncStarted ? "后台同步已开启" : "同步待启动";
   });
 
-  async function load(prepareLocalData) {
+  async function load() {
     syncError.value = "";
     // 只有纯本地模式才灌演示数据。
     // 云端模式下用户的数据在云上，本地灌进去的假数据会被同步当成「本地新增」
     // 上传，从此每台设备每次同步都拉回来 —— 就是用户看到的「从没记过的成绩」。
-    await reloadLocalData({ seedDemo: !isSupabaseConfigured }, prepareLocalData);
+    await reloadLocalData({ seedDemo: !isSupabaseConfigured });
     syncMode.value = isSupabaseConfigured ? "signed-out" : "local";
     isReady.value = true;
     subscribeAuth();
 
     if (isSupabaseConfigured) {
-      const session = await getSession();
-      user.value = session?.user || null;
-      if (user.value) {
-        startCloudSync();
+      try {
+        const session = await getSession();
+        user.value = session?.user || null;
+        if (user.value) startCloudSync();
+      } catch {
+        syncError.value = "本机档案已读取，暂时无法确认云端登录状态。";
       }
     }
   }
@@ -147,16 +154,19 @@ export const useTrackerStore = defineStore("tracker", () => {
     return result;
   }
 
-  function reloadLocalData(options, prepare) {
+  function reloadLocalData(options) {
     return writeRecordChanges(async () => {
-      if (prepare) await prepare();
-      const [data, trash] = await Promise.all([loadAllData(options), loadDeletedRecords()]);
-      subjects.value = data.subjects;
-      records.value = data.records;
-      deletedRecords.value = trash;
-      mistakes.value = data.mistakes;
-      images.value = data.images;
+      await applyLocalSnapshot(loadAllData(options));
     });
+  }
+
+  async function applyLocalSnapshot(dataPromise) {
+    const [data, trash] = await Promise.all([dataPromise, loadDeletedRecords()]);
+    subjects.value = data.subjects;
+    records.value = data.records;
+    deletedRecords.value = trash;
+    mistakes.value = data.mistakes;
+    images.value = data.images;
   }
 
   async function loadFromCloud() {
@@ -173,20 +183,26 @@ export const useTrackerStore = defineStore("tracker", () => {
     isSyncing.value = true;
     const startedAt = Date.now();
     const sessionUserId = user.value?.id;
+    const requestedBackupRevision = backupImportRevision;
     try {
       const data = await loadCloudData();
       if (!data) return;
       const demoMistakeIds = await writeRecordChanges(async () => {
         if (user.value?.id !== sessionUserId && user.value?.id !== data.user.id) return null;
         user.value = data.user;
+        const reconcileRestored = requestedBackupRevision === backupImportRevision;
         const cloudRecords = data.records.filter((record) => {
           const entry = deletedRecordMap.value.get(record.id);
           return entry?.userId !== data.user.id || (!entry.pendingSync && entry.syncedAt < startedAt);
         });
-        subjects.value = normalizeSubjects(data.subjects.length ? data.subjects : subjects.value);
-        records.value = mergeCloudEntries(cloudRecords, records.value, "updatedAt", isSameRecord, isDemoRecord);
-        mistakes.value = mergeCloudEntries(data.mistakes, mistakes.value, "updatedAt", isSameMistake, isDemoMistake);
-        images.value = mergeCloudImages(data.images);
+        const cloudSubjects = new Map(data.subjects.map((subject) => [subject.id, subject]));
+        for (const subject of subjects.value) {
+          if (subject.restoredFromBackup && (!reconcileRestored || !cloudSubjects.has(subject.id))) cloudSubjects.set(subject.id, subject);
+        }
+        subjects.value = normalizeSubjects(data.subjects.length ? [...cloudSubjects.values()] : subjects.value);
+        records.value = mergeCloudEntries(cloudRecords, records.value, isSameRecord, isDemoRecord, reconcileRestored);
+        mistakes.value = mergeCloudEntries(data.mistakes, mistakes.value, isSameMistake, isDemoMistake, reconcileRestored);
+        images.value = mergeCloudImages(data.images, reconcileRestored);
         markSyncHeartbeat();
         const removedMistakeIds = await purgeDemoEntries();
         const payload = { subjects: subjects.value, records: records.value, mistakes: mistakes.value, images: images.value };
@@ -548,23 +564,53 @@ export const useTrackerStore = defineStore("tracker", () => {
     return exportPortableData();
   }
 
-  async function importData(payload, merge) {
-    await load(() => importPortableData(payload, merge));
+  function backupImportOptions(options = {}) {
+    if (options.merge === false && !canReplaceBackup) {
+      throw new BackupImportError("当前环境已配置云同步，只支持合并导入。");
+    }
+    const userId = user.value?.id ?? null;
+    if (options.expectedUserId !== undefined && options.expectedUserId !== userId) {
+      throw new BackupImportError("账号状态已变化，请重新核对导入预览。", "STALE_PREVIEW");
+    }
+    return { ...options, userId, cloudConfigured: isSupabaseConfigured };
   }
 
-  async function clearAll() {
-    await Promise.all([
-      ...images.value.map((image) => safeCloud(() => deleteMistakeImageCloud(image.id))),
-      ...mistakes.value.map((mistake) => safeCloud(() => deleteMistakeCloud(mistake.id))),
-      ...records.value.map((record) => safeCloud(() => deleteRecordCloud(record.id)))
-    ]);
-    await writeRecordChanges(async () => {
-      await replaceAllData({ subjects: subjects.value, records: [], mistakes: [], images: [] });
+  async function previewBackupImport(backup, options) {
+    const scoped = backupImportOptions(options);
+    return { ...await previewPortableImport(backup, scoped), userId: scoped.userId };
+  }
+
+  function applyBackupImport(backup, options) {
+    return writeRecordChanges(async () => {
+      const result = await importPortableData(backup, backupImportOptions(options));
+      if (!result.added && !result.updated && options?.merge !== false) return result;
+      backupImportRevision += 1;
+      lastCloudSignature = "";
+      try {
+        // 写入已提交。刷新或登录失败不能让用户以为还需要再导一次。
+        await applyLocalSnapshot(readLocalData());
+      } catch (error) {
+        console.error(error);
+        return { ...result, refreshFailed: true };
+      }
+      if (result.restored) scheduleAutoSync(250, true);
+      return result;
+    });
+  }
+
+  function importData(payload, merge = true, options = {}) {
+    return applyBackupImport(inspectBackupPayload(payload), { ...options, merge });
+  }
+
+  function clearAll() {
+    return writeRecordChanges(async () => {
+      if (!canReplaceBackup) throw new BackupImportError("当前环境已配置云同步，暂不支持清空档案。");
+      const pending = await clearLocalArchive();
       records.value = [];
       mistakes.value = [];
       images.value = [];
+      deletedRecords.value = pending;
     });
-    notify("数据已清空。", "success");
   }
 
   function subjectName(id) {
@@ -922,7 +968,7 @@ export const useTrackerStore = defineStore("tracker", () => {
 
   function dataSignature(data) {
     return JSON.stringify({
-      subjects: data.subjects.map((item) => [item.id, item.name, item.fullScore, item.color, item.hidden, item.sortOrder]),
+      subjects: data.subjects.map((item) => [item.id, item.name, item.fullScore, item.color, item.hidden, item.sortOrder, item.restoredFromBackup]),
       records: data.records.map((item) => [
         item.id,
         item.subjectId,
@@ -939,24 +985,50 @@ export const useTrackerStore = defineStore("tracker", () => {
         item.note,
         item.createdAt,
         item.updatedAt,
+        item.pendingSync,
+        item.restoredFromBackup,
         normalizeIdList(item.compositeSourceIds).join(","),
         JSON.stringify(normalizeCompositeSources(item.compositeSources))
       ]),
-      mistakes: data.mistakes.map((item) => [item.id, item.subjectId, item.title, item.knowledgePoint, item.analysis, item.updatedAt]),
-      images: data.images.map((item) => [item.id, item.ownerId, item.name, item.size, item.storageKey, item.url, item.pendingUpload, item.uploadError])
+      mistakes: data.mistakes.map((item) => [item.id, item.subjectId, item.title, item.knowledgePoint, item.analysis, item.updatedAt, item.pendingSync, item.restoredFromBackup]),
+      images: data.images.map((item) => [item.id, item.ownerId, item.name, item.size, item.storageKey, item.url, item.pendingUpload, item.uploadError, item.restoredFromBackup])
     });
   }
 
-  function mergeCloudImages(cloudImages) {
+  function mergeCloudImages(cloudImages, reconcileRestored) {
     const cloudIds = new Set(cloudImages.map((image) => image.id));
-    const localPending = images.value.filter((image) => isLocalPendingImage(image) && !cloudIds.has(image.id));
-    return [...cloudImages, ...localPending];
+    const restored = new Map(images.value.filter((image) => image.restoredFromBackup).map((image) => [image.id, image]));
+    const localPending = images.value.filter((image) => (image.restoredFromBackup || isLocalPendingImage(image)) && !cloudIds.has(image.id));
+    const incoming = cloudImages.map((image) => {
+      const local = restored.get(image.id);
+      return !reconcileRestored && local ? local : keepRestoredImageBlob(local, image);
+    });
+    return [...incoming, ...localPending];
   }
 
-  function mergeCloudEntries(cloudEntries, localEntries, stampField, isSame = null, isDemo = null) {
+  function keepRestoredImageBlob(local, remote) {
+    if (!local?.restoredFromBackup || !local.blob || local.ownerId !== remote.ownerId) return remote;
+    return { ...remote, blob: local.blob, restoredFromBackup: true };
+  }
+
+  function isRestoredBackupNewer(local, remote) {
+    const localTime = backupTimestamp(local);
+    const remoteTime = backupTimestamp(remote);
+    return localTime !== null && remoteTime !== null && localTime > remoteTime;
+  }
+
+  function mergeCloudEntries(cloudEntries, localEntries, isSame, isDemo, reconcileRestored) {
     const merged = new Map(cloudEntries.map((entry) => [entry.id, { ...entry, pendingSync: false }]));
     localEntries.forEach((entry) => {
       const cloudEntry = merged.get(entry.id);
+      if (entry.restoredFromBackup && !entry.pendingSync) {
+        // 导入前发起的读取不能确认刚导入的版本。缺少同 ID 时也只保存在本机。
+        if (!reconcileRestored || !cloudEntry) merged.set(entry.id, entry);
+        else if (isRestoredBackupNewer(entry, cloudEntry)) {
+          merged.set(entry.id, { ...entry, restoredFromBackup: false, pendingSync: !(isDemo && isDemo(entry)) });
+        }
+        return;
+      }
       if (!cloudEntry) {
         // 本地有、云端没有 → 排队上传。
         // 但演示数据永远不上传：一旦上传，它就被「洗白」成真实的云端记录，
@@ -967,7 +1039,7 @@ export const useTrackerStore = defineStore("tracker", () => {
         });
         return;
       }
-      const localIsNewer = isNewerEntry(entry, cloudEntry, stampField);
+      const localIsNewer = isNewerEntry(entry, cloudEntry, "updatedAt");
       const shouldPreserveDuration = isSame === isSameRecord && hasDuration(entry) && !hasDuration(cloudEntry);
       if (entry.pendingSync || localIsNewer || shouldPreserveDuration) {
         const needsCloudRetry = Boolean(user.value && supabase && (localIsNewer || shouldPreserveDuration) && isSame && !isSame(entry, cloudEntry));
@@ -1345,13 +1417,15 @@ export const useTrackerStore = defineStore("tracker", () => {
       if (user.value?.id !== userId) return;
       const entry = deletedRecordMap.value.get(record.id);
       if (entry?.userId === userId && (entry.pendingSync ||
-        !(Date.parse(record.updatedAt || record.createdAt) > Date.parse(entry.record.updatedAt || entry.record.createdAt)))) return;
+        !(Date.parse(record.updatedAt || record.createdAt) > Date.parse(entry.record?.updatedAt || entry.record?.createdAt || entry.deletedAt)))) return;
       const incoming = { ...record, pendingSync: false };
       const local = recordMap.value.get(incoming.id);
+      const restoredOnly = local?.restoredFromBackup && !local.pendingSync;
+      if (restoredOnly && isRestoredBackupNewer(local, incoming)) return;
       // 批量上传由队列一次性确认，跳过 Realtime 回送的同版本记录。
-      if (local && isSameRecord(local, incoming) &&
+      if (!restoredOnly && local && isSameRecord(local, incoming) &&
         (local.pendingSync || Date.parse(incoming.updatedAt) <= Date.parse(local.updatedAt))) return;
-      if (local && shouldKeepLocalRecord(local, incoming)) {
+      if (!restoredOnly && local && shouldKeepLocalRecord(local, incoming)) {
         if (!local.pendingSync && hasDuration(local) && !hasDuration(incoming)) {
           await db.records.update(local.id, { pendingSync: true });
           applyRecordUpdates([{ ...local, pendingSync: true }]);
@@ -1380,6 +1454,7 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function applyRealtimeMistake(mistake) {
     const incoming = { ...mistake, pendingSync: false };
     const local = mistakes.value.find((item) => item.id === incoming.id);
+    if (local?.restoredFromBackup && !local.pendingSync && isRestoredBackupNewer(local, incoming)) return;
     if (local?.pendingSync && !isSameMistake(local, incoming)) return;
     const nextMistake = local?.pendingSync ? { ...local, pendingSync: false } : incoming;
     mistakes.value = sortMistakes(upsertById(mistakes.value, nextMistake));
@@ -1403,7 +1478,8 @@ export const useTrackerStore = defineStore("tracker", () => {
   async function applyRealtimeImage(image) {
     const incoming = { ...image, pendingUpload: false, uploadError: "" };
     const local = images.value.find((item) => item.id === incoming.id);
-    const nextImage = local?.blob ? { ...local, ...incoming, blob: local.blob } : incoming;
+    const nextImage = local?.restoredFromBackup ? keepRestoredImageBlob(local, incoming)
+      : local?.blob ? { ...local, ...incoming, blob: local.blob } : incoming;
     images.value = sortImages(upsertById(images.value, nextImage));
     await db.images.put(nextImage);
     markSyncHeartbeat();
@@ -1595,13 +1671,19 @@ export const useTrackerStore = defineStore("tracker", () => {
   }
 
   function readLocalValue(key, fallback) {
-    if (typeof localStorage === "undefined") return fallback;
-    return localStorage.getItem(key) || fallback;
+    try {
+      return globalThis.localStorage?.getItem(key) || fallback;
+    } catch {
+      return fallback;
+    }
   }
 
   function writeLocalValue(key, value) {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(key, value);
+    try {
+      globalThis.localStorage?.setItem(key, value);
+    } catch {
+      // 存储受限时仍允许本机档案加载。
+    }
   }
 
   return {
@@ -1625,6 +1707,7 @@ export const useTrackerStore = defineStore("tracker", () => {
     subjectMap,
     recordMap,
     visibleSubjects,
+    canReplaceBackup,
     imageStorageStats,
     pendingImages,
     failedImages,
@@ -1656,6 +1739,8 @@ export const useTrackerStore = defineStore("tracker", () => {
     removeSubject,
     exportData,
     importData,
+    previewBackupImport,
+    applyBackupImport,
     clearAll,
     markBackupExported,
     subjectName,

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import {
+  AlertTriangle,
   BarChart3,
   BookOpenCheck,
   ClipboardList,
@@ -22,7 +23,9 @@ import {
   X
 } from "@lucide/vue";
 import AnnouncementCenter from "./components/AnnouncementCenter.vue";
+import RouteErrorBoundary from "./components/RouteErrorBoundary.vue";
 import DsConfirmHost from "./components/ds/DsConfirmHost.vue";
+import DsEmptyState from "./components/ds/DsEmptyState.vue";
 import { useDialogA11y } from "./composables/useDialogA11y";
 import { useDismissable } from "./composables/useDismissable";
 import { useTrackerStore } from "./stores/tracker";
@@ -33,6 +36,7 @@ const route = useRoute();
 const router = useRouter();
 /** 正文容器。换页后把焦点移到这里，见下面的 route watcher */
 const mainRef = ref(null);
+const loadFailed = ref(false);
 const isSidebarOpen = ref(false);
 const isOnline = ref(typeof navigator === "undefined" ? true : navigator.onLine);
 const globalSearch = ref("");
@@ -326,8 +330,10 @@ function setThemeMode(mode) {
   const normalized = normalizeThemeMode(mode);
   themeMode.value = normalized;
   applyThemeMode(normalized);
-  if (typeof localStorage !== "undefined") {
+  try {
     localStorage.setItem(themeStorageKey, normalized);
+  } catch {
+    // 主题仍在当前页面生效。
   }
 }
 
@@ -397,12 +403,26 @@ function syncSidebarForViewport() {
   if (window.innerWidth >= 1024) closeSidebar();
 }
 
+async function loadArchive() {
+  loadFailed.value = false;
+  try {
+    await store.load();
+  } catch (error) {
+    console.error("本机档案读取失败", error);
+    loadFailed.value = true;
+  }
+}
+
 onMounted(() => {
   detectInstallContext();
-  setThemeMode(normalizeThemeMode(localStorage.getItem(themeStorageKey) || "system"));
+  try {
+    setThemeMode(localStorage.getItem(themeStorageKey) || "system");
+    signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
+  } catch {
+    setThemeMode("system");
+  }
   watchSystemTheme();
-  signatureText.value = localStorage.getItem(signatureStorageKey) || signatureText.value;
-  store.load();
+  loadArchive();
   window.addEventListener("online", updateOnlineState);
   window.addEventListener("offline", updateOnlineState);
   window.addEventListener("resize", syncSidebarForViewport);
@@ -582,11 +602,26 @@ onBeforeUnmount(() => {
       </header>
 
       <main ref="mainRef" tabindex="-1">
-        <div v-if="!store.isReady" class="loading-panel">
+        <DsEmptyState
+          v-if="loadFailed"
+          :icon="AlertTriangle"
+          title="暂时无法读取本机档案"
+          description="请确认浏览器允许此站点使用存储，然后重试。"
+          role="alert"
+        >
+          <template #action>
+            <button class="secondary-button" type="button" @click="loadArchive">重试读取</button>
+          </template>
+        </DsEmptyState>
+        <div v-else-if="!store.isReady" class="loading-panel">
           <Upload :size="22" />
           <span>正在加载本地学习档案...</span>
         </div>
-        <RouterView v-else />
+        <RouterView v-else v-slot="{ Component, route: currentRoute }">
+          <RouteErrorBoundary :path="currentRoute.path">
+            <component :is="Component" />
+          </RouteErrorBoundary>
+        </RouterView>
       </main>
     </div>
 
