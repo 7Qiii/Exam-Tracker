@@ -17,6 +17,9 @@
     <script>
       (function () {
         var root = document.documentElement;
+        if (navigator.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches) {
+          root.dataset.standalone = "";
+        }
         try {
           var mode = localStorage.getItem("exam-tracker-theme-mode");
           if (mode !== "light" && mode !== "dark" && mode !== "system") mode = "system";
@@ -36,6 +39,54 @@
         }
       })();
     </script>
+    <style>
+      #app-launch { display: none; }
+
+      :root[data-standalone] #app-launch {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        background: #dfe7f0;
+        color: #253451;
+        transition: opacity 220ms ease-out;
+      }
+
+      :root[data-theme="dark"] #app-launch {
+        background: #0f141b;
+        color: #e8edfa;
+      }
+
+      #app-launch.is-leaving { opacity: 0; }
+
+      #app-launch .launch-brand {
+        display: grid;
+        justify-items: center;
+        gap: 16px;
+        font: 600 1.25rem/1.2 system-ui, sans-serif;
+        animation: launch-brand-in 360ms cubic-bezier(.2, .7, .25, 1) both;
+      }
+
+      #app-launch .launch-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 18px;
+        background: #ccd8ff url("/icon.svg") center / contain no-repeat;
+        box-shadow: 0 12px 32px rgb(51 61 117 / .2);
+      }
+
+      @keyframes launch-brand-in {
+        from { opacity: .2; transform: translateY(8px) scale(.94); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        :root[data-standalone] #app-launch { transition: none; }
+        #app-launch .launch-brand { animation: none; }
+      }
+    </style>
     <!-- 用 default 而不是 black-translucent。
          black-translucent 会让状态栏文字变白并浮在内容之上，而这个应用顶部在浅色
          主题下是浅色的（#dfe7f0 起），白字在上面基本看不见；default 给不透明状态栏
@@ -59,10 +110,8 @@
     <!-- 启动图。没有这一组，从主屏幕点开会先闪一张白屏再出现内容 ——
          iOS 不像安卓能用 manifest 的 background_color 自动生成，必须每种机型
          的分辨率各给一张，靠 media 精确匹配（device-width/height 用 CSS 点）。
-         内容是**一块纯色**，不放 logo 也不放文字 —— 这是照 Apple HIG 抄的：
-         启动屏要和首屏「几乎一样」，首屏是纯色就只放那个纯色；放字标/logo
-         反而多一次闪，而文字又没法本地化。底色就是 App 的 --bg，由
-         scripts/gen-splash.mjs 直接从 design-system.css 读，不在这里手抄。
+         系统读取的是静态图片。网页开始渲染后，由下面的 #app-launch 接续动画。
+         图片由 scripts/gen-splash.mjs 生成，使用 App 的底色和导航轮廓。
          每种机型两条：先浅色，再深色（深色那条多一个 prefers-color-scheme 条件）。
          **顺序不能反** —— 万一 iOS 不支持带配色条件的启动图，会回落到前一条
          浅色，而不是变成「一张都匹配不上」退回白闪。清单见 public/splash/screens.json。
@@ -123,7 +172,45 @@
     <link rel="apple-touch-startup-image" href="/splash/dark/2266x1488.png" media="(prefers-color-scheme: dark) and (device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
   </head>
   <body>
+    <div id="app-launch" aria-hidden="true">
+      <div class="launch-brand">
+        <span class="launch-icon"></span>
+        <span>Score Record</span>
+      </div>
+    </div>
     <div id="app"></div>
+    <script>
+      (function () {
+        var launch = document.getElementById("app-launch");
+        if (!document.documentElement.hasAttribute("data-standalone")) {
+          launch.remove();
+          return;
+        }
+
+        var reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+        var startedAt = performance.now();
+        var deadline = window.setTimeout(dismiss, 1600);
+
+        function dismiss() {
+          document.removeEventListener("score-record:launch-ready", onReady);
+          if (reducedMotion?.matches) {
+            launch.remove();
+            return;
+          }
+          launch.classList.add("is-leaving");
+          window.setTimeout(function () { launch.remove(); }, 240);
+        }
+
+        function onReady() {
+          window.clearTimeout(deadline);
+          // 首页准备好时仍给入场动画留出完整的播放时间。
+          var delay = reducedMotion?.matches ? 0 : Math.max(0, 440 - (performance.now() - startedAt));
+          window.setTimeout(dismiss, delay);
+        }
+
+        document.addEventListener("score-record:launch-ready", onReady, { once: true });
+      })();
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

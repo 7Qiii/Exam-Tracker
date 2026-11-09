@@ -23,6 +23,7 @@
  *      两边一致地漏掉 iPad 时它们照样全绿 —— 自洽的清单证明不了清单完整，
  *      所以这里点名要求 iPad 机型。上一版就是这么漏的。
  *   9. iOS 安装引导只在 iPhone Safari 上出现，关掉后刷新也不再出现
+ *  10. iPad 独立窗口的入场动画、首屏交接、离线启动及失败时的退出
  *
  * 用法：node scripts/check-pwa.mjs
  */
@@ -351,6 +352,7 @@ const hasHint = (p) => p.evaluate(() => !!document.querySelector(".install-hint"
 
 const ios = await iosPage();
 check(await hasHint(ios.page), "iPhone Safari 上出现「添加到主屏幕」引导", "iOS 用户看不到安装方法");
+check(!(await ios.page.locator("#app-launch").count()), "Safari 标签页跳过启动画面");
 if (await hasHint(ios.page)) {
   await ios.page.locator(".install-hint button").click();
   await ios.page.waitForTimeout(300);
@@ -367,6 +369,78 @@ const standalone = await iosPage(() => {
 });
 check(!(await hasHint(standalone.page)), "已装到主屏幕（standalone）时不再提示");
 await standalone.context.close();
+
+console.log("\niPad 独立窗口启动");
+const ipadUa = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+const entryJs = /\/assets\/index-[^/]+\.js$/;
+
+async function ipadLaunchPage({ landscape = false, reducedMotion = "no-preference", colorScheme = "light" } = {}) {
+  const context = await browser.newContext({
+    userAgent: ipadUa,
+    viewport: landscape ? { width: 1194, height: 834 } : { width: 834, height: 1194 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion,
+    colorScheme
+  });
+  const page = await context.newPage();
+  await page.addInitScript((useDisplayMode) => {
+    if (useDisplayMode) {
+      const matchMedia = window.matchMedia.bind(window);
+      window.matchMedia = (query) => matchMedia(query === "(display-mode: standalone)" ? "(min-width: 0px)" : query);
+    } else {
+      Object.defineProperty(navigator, "standalone", { value: true });
+    }
+    document.addEventListener("animationstart", (event) => {
+      if (event.animationName === "launch-brand-in") window.launchAnimated = true;
+    });
+    document.addEventListener("score-record:launch-ready", () => {
+      window.launchReadyWithDashboard = !!document.querySelector(".dashboard-page");
+    });
+  }, landscape);
+  return { context, page, launch: page.locator("#app-launch") };
+}
+
+const ipad = await ipadLaunchPage();
+let releaseEntry;
+const entryGate = new Promise((resolve) => { releaseEntry = resolve; });
+await ipad.page.route(entryJs, async (route) => {
+  await entryGate;
+  await route.continue();
+});
+await ipad.page.goto(base, { waitUntil: "commit" });
+await ipad.launch.waitFor({ state: "visible", timeout: 1500 });
+await ipad.page.waitForFunction(() => window.launchAnimated, undefined, { timeout: 1500 });
+check(!(await ipad.page.locator("#app[data-v-app]").count()), "iPad 竖屏在 Vue 下载完之前就能播放动画");
+releaseEntry();
+await ipad.page.unrouteAll({ behavior: "wait" });
+await ipad.launch.waitFor({ state: "detached", timeout: 3500 });
+check(await ipad.page.evaluate(() => window.launchReadyWithDashboard), "档案与首页已渲染，再退出启动画面");
+
+await ipad.page.waitForFunction(() => !!navigator.serviceWorker.controller, undefined, { timeout: 8000 });
+await ipad.page.reload({ waitUntil: "load" });
+await ipad.page.locator(".dashboard-page").waitFor({ timeout: 3500 });
+await ipad.context.setOffline(true);
+await ipad.page.reload({ waitUntil: "load" });
+await ipad.launch.waitFor({ state: "detached", timeout: 3500 });
+check(await ipad.page.evaluate(() => window.launchAnimated && window.launchReadyWithDashboard), "已缓存的 iPad 独立窗口离线启动也能播放并进入首页");
+await ipad.context.close();
+
+const reduced = await ipadLaunchPage({ landscape: true, reducedMotion: "reduce", colorScheme: "dark" });
+await reduced.page.route(entryJs, (route) => route.abort());
+await reduced.page.goto(base, { waitUntil: "commit" });
+await reduced.launch.waitFor({ state: "visible", timeout: 1500 });
+const reducedStyles = await reduced.launch.evaluate((el) => ({
+  background: getComputedStyle(el).backgroundColor,
+  transition: getComputedStyle(el).transitionProperty,
+  animation: getComputedStyle(el.firstElementChild).animationName
+}));
+check(reducedStyles.background === "rgb(15, 20, 27)" && reducedStyles.transition === "none" && reducedStyles.animation === "none",
+  "横屏深色、减少动态效果时显示静态品牌画面", JSON.stringify(reducedStyles));
+await reduced.launch.waitFor({ state: "detached", timeout: 3500 });
+check(!(await reduced.page.locator("#app[data-v-app]").count()), "应用入口加载失败时启动画面也会自动退出");
+await reduced.context.close();
 
 console.log("\nService Worker");
 const swState = await page.evaluate(async () => {

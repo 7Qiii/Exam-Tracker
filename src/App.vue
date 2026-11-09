@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import { RouterLink, RouterView, START_LOCATION, useRoute, useRouter } from "vue-router";
 import {
   AlertTriangle,
   BarChart3,
@@ -275,9 +275,7 @@ function detectInstallContext() {
   // 只认 Safari：其他 iOS 浏览器都在 UA 里带自己的标记
   const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|MicroMessenger|QQBrowser|UCBrowser|DingTalk|Weibo/.test(ua);
   isIosSafari.value = isIos && isSafari;
-  isStandalone.value =
-    navigator.standalone === true ||
-    (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches);
+  isStandalone.value = document.documentElement.hasAttribute("data-standalone");
   try {
     isInstallHintDismissed.value = localStorage.getItem(IOS_HINT_KEY) === "1";
   } catch (error) {
@@ -412,6 +410,12 @@ async function loadArchive() {
     loadFailed.value = true;
   }
 }
+
+watch(
+  () => loadFailed.value || (store.isReady && router.currentRoute.value !== START_LOCATION),
+  () => document.dispatchEvent(new Event("score-record:launch-ready")),
+  { once: true, flush: "post" }
+);
 
 onMounted(() => {
   detectInstallContext();

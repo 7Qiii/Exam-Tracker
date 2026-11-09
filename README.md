@@ -77,3 +77,10 @@ Vercel 使用根目录部署：
 - 如启用云同步，设置环境变量 `APP_PIN` 并连接 Vercel Blob
 
 当前云同步 API 已兼容 `mistakes` 字段；图片云同步仍建议单独实现上传接口。
+
+## iPad 主屏幕与原生 App 准备
+
+- 网页 App 冷启动时，iPadOS 先显示静态启动图，随后网页播放 Score Record 入场动画。通过 `npm run build` 和 `npm run check:pwa` 验证构建产物。真机验收时，联网打开主屏幕图标一次，再从 App 切换器关闭并重开。
+- Vue 在首路由和本机档案渲染完成，或档案读取错误界面出现后，向 `document` 发送一次 `score-record:launch-ready`。后续的 iOS 容器可以在页面初始化前监听这个事件，用它交接启动画面，并保留超时退场。
+- 下一阶段在 macOS 的 Xcode 中用 [Capacitor iOS](https://capacitorjs.com/docs/ios) 打包 Vite 的 `dist`，用 iPad 模拟器和真机验证离线录入、图片、文件分享和安全区。容器内的 `/api` 请求和账号回调需要配置生产 HTTPS 地址及 App 回跳入口。
+- 数据迁移单独验收。先验证已同步档案登录后能恢复，未同步档案可通过现有 JSON 备份导入，再发 TestFlight 测试包。
